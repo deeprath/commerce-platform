@@ -166,6 +166,18 @@ func (o *Orchestrator) OnPaymentFailed(ctx context.Context, eventID, orderID, re
 	return nil
 }
 
+// OnShipmentDelivered: the order's shipment was delivered — move CONFIRMED ->
+// FULFILLED. Idempotent and safe for an already-cancelled order (no-op).
+func (o *Orchestrator) OnShipmentDelivered(ctx context.Context, eventID, orderID string) error {
+	_, err := o.store.Apply(ctx, orderID, eventID, func(o *domain.Order) error {
+		if o.Status != domain.StatusConfirmed {
+			return nil // not confirmed (cancelled, or already fulfilled) — ignore
+		}
+		return o.Fulfill()
+	})
+	return err
+}
+
 // OnReservationExpired: void the payment and cancel the order if still pending.
 func (o *Orchestrator) OnReservationExpired(ctx context.Context, eventID, orderRef string) error {
 	ord, err := o.store.FindByReservationID(ctx, orderRef)

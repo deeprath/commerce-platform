@@ -9,6 +9,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"google.golang.org/protobuf/proto"
 
+	fulfillmentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/fulfillment/v1"
 	inventoryv1 "github.com/deeprath/commerce-platform/gen/go/commerce/inventory/v1"
 	paymentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/payment/v1"
 	"github.com/deeprath/commerce-platform/pkg/kafka"
@@ -21,6 +22,7 @@ func Topics() []string {
 		kafka.Topic("payment", "authorized"),
 		kafka.Topic("payment", "failed"),
 		kafka.Topic("inventory", "reservation_expired"),
+		kafka.Topic("fulfillment", "delivered"),
 	}
 }
 
@@ -49,6 +51,13 @@ func Handler(sg *saga.Orchestrator) func(context.Context, *kgo.Record) error {
 				return skip(ctx, r, err)
 			}
 			return sg.OnReservationExpired(ctx, eventID, e.GetOrderRef())
+
+		case kafka.Topic("fulfillment", "delivered"):
+			var e fulfillmentv1.ShipmentDelivered
+			if err := proto.Unmarshal(r.Value, &e); err != nil {
+				return skip(ctx, r, err)
+			}
+			return sg.OnShipmentDelivered(ctx, eventID, e.GetOrderId())
 
 		default:
 			return nil

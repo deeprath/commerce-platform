@@ -718,11 +718,14 @@ func (x *OrderCreated) GetOccurredAt() string {
 }
 
 type OrderConfirmed struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	OwnerId       string                 `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
-	PaymentId     string                 `protobuf:"bytes,3,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
-	OccurredAt    string                 `protobuf:"bytes,4,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	OrderId    string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	OwnerId    string                 `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	PaymentId  string                 `protobuf:"bytes,3,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
+	OccurredAt string                 `protobuf:"bytes,4,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	// Carried on the event so downstream (fulfillment) needs no back-call.
+	ShipTo        *v1.Address  `protobuf:"bytes,5,opt,name=ship_to,json=shipTo,proto3" json:"ship_to,omitempty"`
+	Lines         []*OrderLine `protobuf:"bytes,6,rep,name=lines,proto3" json:"lines,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -783,6 +786,20 @@ func (x *OrderConfirmed) GetOccurredAt() string {
 		return x.OccurredAt
 	}
 	return ""
+}
+
+func (x *OrderConfirmed) GetShipTo() *v1.Address {
+	if x != nil {
+		return x.ShipTo
+	}
+	return nil
+}
+
+func (x *OrderConfirmed) GetLines() []*OrderLine {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
 }
 
 type OrderCancelled struct {
@@ -853,6 +870,66 @@ func (x *OrderCancelled) GetOccurredAt() string {
 	return ""
 }
 
+type OrderFulfilled struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	OwnerId       string                 `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	OccurredAt    string                 `protobuf:"bytes,3,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OrderFulfilled) Reset() {
+	*x = OrderFulfilled{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OrderFulfilled) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OrderFulfilled) ProtoMessage() {}
+
+func (x *OrderFulfilled) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OrderFulfilled.ProtoReflect.Descriptor instead.
+func (*OrderFulfilled) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *OrderFulfilled) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *OrderFulfilled) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *OrderFulfilled) GetOccurredAt() string {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return ""
+}
+
 var File_commerce_order_v1_order_proto protoreflect.FileDescriptor
 
 const file_commerce_order_v1_order_proto_rawDesc = "" +
@@ -915,19 +992,26 @@ const file_commerce_order_v1_order_proto_rawDesc = "" +
 	"\acart_id\x18\x03 \x01(\tR\x06cartId\x12/\n" +
 	"\x05total\x18\x04 \x01(\v2\x19.commerce.common.v1.MoneyR\x05total\x12\x1f\n" +
 	"\voccurred_at\x18\x05 \x01(\tR\n" +
-	"occurredAt\"\x86\x01\n" +
+	"occurredAt\"\xf0\x01\n" +
 	"\x0eOrderConfirmed\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x1d\n" +
 	"\n" +
 	"payment_id\x18\x03 \x01(\tR\tpaymentId\x12\x1f\n" +
 	"\voccurred_at\x18\x04 \x01(\tR\n" +
-	"occurredAt\"\x7f\n" +
+	"occurredAt\x124\n" +
+	"\aship_to\x18\x05 \x01(\v2\x1b.commerce.common.v1.AddressR\x06shipTo\x122\n" +
+	"\x05lines\x18\x06 \x03(\v2\x1c.commerce.order.v1.OrderLineR\x05lines\"\x7f\n" +
 	"\x0eOrderCancelled\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\x12\x1f\n" +
 	"\voccurred_at\x18\x04 \x01(\tR\n" +
+	"occurredAt\"g\n" +
+	"\x0eOrderFulfilled\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x19\n" +
+	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x1f\n" +
+	"\voccurred_at\x18\x03 \x01(\tR\n" +
 	"occurredAt*\xa1\x01\n" +
 	"\vOrderStatus\x12\x1c\n" +
 	"\x18ORDER_STATUS_UNSPECIFIED\x10\x00\x12 \n" +
@@ -957,7 +1041,7 @@ func file_commerce_order_v1_order_proto_rawDescGZIP() []byte {
 }
 
 var file_commerce_order_v1_order_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_commerce_order_v1_order_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_commerce_order_v1_order_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_commerce_order_v1_order_proto_goTypes = []any{
 	(OrderStatus)(0),            // 0: commerce.order.v1.OrderStatus
 	(*OrderLine)(nil),           // 1: commerce.order.v1.OrderLine
@@ -971,41 +1055,44 @@ var file_commerce_order_v1_order_proto_goTypes = []any{
 	(*OrderCreated)(nil),        // 9: commerce.order.v1.OrderCreated
 	(*OrderConfirmed)(nil),      // 10: commerce.order.v1.OrderConfirmed
 	(*OrderCancelled)(nil),      // 11: commerce.order.v1.OrderCancelled
-	(*v1.Money)(nil),            // 12: commerce.common.v1.Money
-	(*v1.Address)(nil),          // 13: commerce.common.v1.Address
-	(*v1.PageRequest)(nil),      // 14: commerce.common.v1.PageRequest
-	(*v1.PageResponse)(nil),     // 15: commerce.common.v1.PageResponse
+	(*OrderFulfilled)(nil),      // 12: commerce.order.v1.OrderFulfilled
+	(*v1.Money)(nil),            // 13: commerce.common.v1.Money
+	(*v1.Address)(nil),          // 14: commerce.common.v1.Address
+	(*v1.PageRequest)(nil),      // 15: commerce.common.v1.PageRequest
+	(*v1.PageResponse)(nil),     // 16: commerce.common.v1.PageResponse
 }
 var file_commerce_order_v1_order_proto_depIdxs = []int32{
-	12, // 0: commerce.order.v1.OrderLine.unit_price:type_name -> commerce.common.v1.Money
-	12, // 1: commerce.order.v1.OrderLine.line_total:type_name -> commerce.common.v1.Money
+	13, // 0: commerce.order.v1.OrderLine.unit_price:type_name -> commerce.common.v1.Money
+	13, // 1: commerce.order.v1.OrderLine.line_total:type_name -> commerce.common.v1.Money
 	0,  // 2: commerce.order.v1.Order.status:type_name -> commerce.order.v1.OrderStatus
 	1,  // 3: commerce.order.v1.Order.lines:type_name -> commerce.order.v1.OrderLine
-	12, // 4: commerce.order.v1.Order.subtotal:type_name -> commerce.common.v1.Money
-	12, // 5: commerce.order.v1.Order.discount:type_name -> commerce.common.v1.Money
-	12, // 6: commerce.order.v1.Order.tax:type_name -> commerce.common.v1.Money
-	12, // 7: commerce.order.v1.Order.total:type_name -> commerce.common.v1.Money
-	13, // 8: commerce.order.v1.Order.ship_to:type_name -> commerce.common.v1.Address
-	13, // 9: commerce.order.v1.CreateOrderRequest.ship_to:type_name -> commerce.common.v1.Address
+	13, // 4: commerce.order.v1.Order.subtotal:type_name -> commerce.common.v1.Money
+	13, // 5: commerce.order.v1.Order.discount:type_name -> commerce.common.v1.Money
+	13, // 6: commerce.order.v1.Order.tax:type_name -> commerce.common.v1.Money
+	13, // 7: commerce.order.v1.Order.total:type_name -> commerce.common.v1.Money
+	14, // 8: commerce.order.v1.Order.ship_to:type_name -> commerce.common.v1.Address
+	14, // 9: commerce.order.v1.CreateOrderRequest.ship_to:type_name -> commerce.common.v1.Address
 	0,  // 10: commerce.order.v1.CreateOrderResponse.status:type_name -> commerce.order.v1.OrderStatus
-	12, // 11: commerce.order.v1.CreateOrderResponse.total:type_name -> commerce.common.v1.Money
-	14, // 12: commerce.order.v1.ListOrdersRequest.page:type_name -> commerce.common.v1.PageRequest
+	13, // 11: commerce.order.v1.CreateOrderResponse.total:type_name -> commerce.common.v1.Money
+	15, // 12: commerce.order.v1.ListOrdersRequest.page:type_name -> commerce.common.v1.PageRequest
 	2,  // 13: commerce.order.v1.ListOrdersResponse.orders:type_name -> commerce.order.v1.Order
-	15, // 14: commerce.order.v1.ListOrdersResponse.page:type_name -> commerce.common.v1.PageResponse
-	12, // 15: commerce.order.v1.OrderCreated.total:type_name -> commerce.common.v1.Money
-	3,  // 16: commerce.order.v1.OrderService.CreateOrder:input_type -> commerce.order.v1.CreateOrderRequest
-	5,  // 17: commerce.order.v1.OrderService.GetOrder:input_type -> commerce.order.v1.GetOrderRequest
-	6,  // 18: commerce.order.v1.OrderService.ListOrders:input_type -> commerce.order.v1.ListOrdersRequest
-	8,  // 19: commerce.order.v1.OrderService.CancelOrder:input_type -> commerce.order.v1.CancelOrderRequest
-	4,  // 20: commerce.order.v1.OrderService.CreateOrder:output_type -> commerce.order.v1.CreateOrderResponse
-	2,  // 21: commerce.order.v1.OrderService.GetOrder:output_type -> commerce.order.v1.Order
-	7,  // 22: commerce.order.v1.OrderService.ListOrders:output_type -> commerce.order.v1.ListOrdersResponse
-	2,  // 23: commerce.order.v1.OrderService.CancelOrder:output_type -> commerce.order.v1.Order
-	20, // [20:24] is the sub-list for method output_type
-	16, // [16:20] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	16, // 14: commerce.order.v1.ListOrdersResponse.page:type_name -> commerce.common.v1.PageResponse
+	13, // 15: commerce.order.v1.OrderCreated.total:type_name -> commerce.common.v1.Money
+	14, // 16: commerce.order.v1.OrderConfirmed.ship_to:type_name -> commerce.common.v1.Address
+	1,  // 17: commerce.order.v1.OrderConfirmed.lines:type_name -> commerce.order.v1.OrderLine
+	3,  // 18: commerce.order.v1.OrderService.CreateOrder:input_type -> commerce.order.v1.CreateOrderRequest
+	5,  // 19: commerce.order.v1.OrderService.GetOrder:input_type -> commerce.order.v1.GetOrderRequest
+	6,  // 20: commerce.order.v1.OrderService.ListOrders:input_type -> commerce.order.v1.ListOrdersRequest
+	8,  // 21: commerce.order.v1.OrderService.CancelOrder:input_type -> commerce.order.v1.CancelOrderRequest
+	4,  // 22: commerce.order.v1.OrderService.CreateOrder:output_type -> commerce.order.v1.CreateOrderResponse
+	2,  // 23: commerce.order.v1.OrderService.GetOrder:output_type -> commerce.order.v1.Order
+	7,  // 24: commerce.order.v1.OrderService.ListOrders:output_type -> commerce.order.v1.ListOrdersResponse
+	2,  // 25: commerce.order.v1.OrderService.CancelOrder:output_type -> commerce.order.v1.Order
+	22, // [22:26] is the sub-list for method output_type
+	18, // [18:22] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_commerce_order_v1_order_proto_init() }
@@ -1019,7 +1106,7 @@ func file_commerce_order_v1_order_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_commerce_order_v1_order_proto_rawDesc), len(file_commerce_order_v1_order_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
