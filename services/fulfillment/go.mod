@@ -1,4 +1,4 @@
-module github.com/deeprath/commerce-platform/services/order
+module github.com/deeprath/commerce-platform/services/fulfillment
 
 go 1.26.0
 
@@ -10,7 +10,6 @@ replace (
 require (
 	github.com/deeprath/commerce-platform/gen/go v0.0.0-00010101000000-000000000000
 	github.com/deeprath/commerce-platform/pkg v0.0.0-00010101000000-000000000000
-	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
@@ -43,6 +42,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect

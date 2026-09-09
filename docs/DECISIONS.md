@@ -490,3 +490,46 @@ Frontend apps in `web/` (pnpm workspace).
 `buf breaking` catching incompatibilities across all services at once. Repo is larger; CI
 uses path filters and Go build caching to stay fast. Independent deployability is preserved
 because each service is its own module and its own image.
+
+---
+
+## ADR-018 — Fulfillment: event-carried shipment + a sandbox carrier
+
+**Status:** Accepted (Phase 3).
+
+**Context:** A confirmed order had no path to `FULFILLED` — the status existed in the
+`order` aggregate but nothing produced it. Phase 3 adds a `fulfillment` service that turns
+confirmed orders into shipments and drives them to delivery.
+
+**Decision:**
+- **One shipment per order in v1.** `shipments.order_id` is `UNIQUE`. Split shipments
+  (per-warehouse, backorders) are a later change; modelling them now buys nothing while
+  every order ships whole.
+- **Event-carried state, no back-call.** `commerce.order.confirmed` is enriched with
+  `ship_to` + `lines`; `fulfillment` builds the shipment straight from the event. The
+  alternative — `fulfillment` calling `order.GetOrder` — needs either a service token or a
+  not-owner-scoped internal RPC, and adds a synchronous dependency on `order` to a path
+  that is otherwise pure Kafka.
+- **Sandbox carrier = a background advancer.** `internal/carrier` sweeps on a ticker and
+  moves shipments `PENDING → SHIPPED → DELIVERED` after configurable delays
+  (`CARRIER_*_AFTER`), exactly like the reservation sweeper. Admin RPCs
+  (`MarkShipped`/`MarkDelivered`/`CancelShipment`, gated on `order_manager`) allow manual
+  control. Production deletes the advancer; a signature-verified carrier webhook drives the
+  same transitions and emits the same `commerce.fulfillment.*` events.
+- **Lifecycle close.** `fulfillment` emits `commerce.fulfillment.delivered`; `order`
+  consumes it and moves `CONFIRMED → FULFILLED`, emitting `commerce.order.fulfilled` for
+  downstream (notifications, analytics). Idempotent via `processed_events`; a cancelled
+  order ignores a late delivery event.
+
+**Alternatives:**
+- *No `fulfillment` service, `order` self-fulfils on a timer* — puts carrier concerns and
+  a second background loop inside the saga orchestrator; no shipment entity for the admin
+  UI or the customer to track.
+- *Synchronous `order.GetOrder` from `fulfillment`* — see above; couples the two services
+  on the happy path.
+- *`fulfillment` owns the `FULFILLED` transition by writing to `order`'s DB* — breaks
+  database-per-service.
+
+**Consequences:** `order.confirmed` payloads are larger (the line items travel twice — once
+on `order.created`, once on `order.confirmed`). One more service, DB, and Kafka consumer
+group. The `order` consumer now also subscribes to `commerce.fulfillment.delivered`.

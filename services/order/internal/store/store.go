@@ -262,10 +262,16 @@ func outboxTransition(ctx context.Context, tx pgx.Tx, o *domain.Order) error {
 	switch o.Status {
 	case domain.StatusConfirmed:
 		topic = "commerce.order.confirmed"
-		b, err = proto.Marshal(&orderv1.OrderConfirmed{OrderId: o.ID, OwnerId: o.OwnerID, PaymentId: o.PaymentID, OccurredAt: now})
+		b, err = proto.Marshal(&orderv1.OrderConfirmed{
+			OrderId: o.ID, OwnerId: o.OwnerID, PaymentId: o.PaymentID, OccurredAt: now,
+			ShipTo: shipToProto(o.ShipTo), Lines: linesProto(o.Lines),
+		})
 	case domain.StatusCancelled:
 		topic = "commerce.order.cancelled"
 		b, err = proto.Marshal(&orderv1.OrderCancelled{OrderId: o.ID, OwnerId: o.OwnerID, Reason: o.CancelReason, OccurredAt: now})
+	case domain.StatusFulfilled:
+		topic = "commerce.order.fulfilled"
+		b, err = proto.Marshal(&orderv1.OrderFulfilled{OrderId: o.ID, OwnerId: o.OwnerID, OccurredAt: now})
 	default:
 		return nil
 	}
@@ -274,6 +280,27 @@ func outboxTransition(ctx context.Context, tx pgx.Tx, o *domain.Order) error {
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO outbox (topic, key, payload) VALUES ($1,$2,$3)`, topic, []byte(o.ID), b)
 	return wrap(err)
+}
+
+func shipToProto(a domain.Address) *commonv1.Address {
+	return &commonv1.Address{
+		FullName: a.FullName, Line1: a.Line1, Line2: a.Line2, City: a.City,
+		Region: a.Region, PostalCode: a.PostalCode, CountryCode: a.CountryCode, Phone: a.Phone,
+	}
+}
+
+func linesProto(lines []domain.Line) []*orderv1.OrderLine {
+	out := make([]*orderv1.OrderLine, 0, len(lines))
+	for _, l := range lines {
+		uu, un := l.UnitPrice.UnitsNanos()
+		lu, ln := l.LineTotal.UnitsNanos()
+		out = append(out, &orderv1.OrderLine{
+			ProductId: l.ProductID, Title: l.Title, Quantity: l.Quantity,
+			UnitPrice: &commonv1.Money{CurrencyCode: l.UnitPrice.Currency, Units: uu, Nanos: un},
+			LineTotal: &commonv1.Money{CurrencyCode: l.LineTotal.Currency, Units: lu, Nanos: ln},
+		})
+	}
+	return out
 }
 
 func wrap(err error) error {

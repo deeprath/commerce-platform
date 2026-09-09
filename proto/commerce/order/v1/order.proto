@@ -104,6 +104,9 @@ message OrderConfirmed {
   string owner_id = 2;
   string payment_id = 3;
   string occurred_at = 4;
+  // Carried on the event so downstream (fulfillment) needs no back-call.
+  commerce.common.v1.Address ship_to = 5;
+  repeated OrderLine lines = 6;
 }
 
 message OrderCancelled {
@@ -111,4 +114,10 @@ message OrderCancelled {
   string owner_id = 2;
   string reason = 3;
   string occurred_at = 4;
+}
+
+message OrderFulfilled {
+  string order_id = 1;
+  string owner_id = 2;
+  string occurred_at = 3;
 }

@@ -456,6 +456,30 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  fulfillment:
+    build: { context: ../.., dockerfile: deploy/docker/fulfillment.Dockerfile }
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/fulfillment?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+      # Short sandbox-carrier delays so the demo lifecycle completes in ~1 min.
+      CARRIER_SWEEP_INTERVAL: 10s
+      CARRIER_PENDING_AFTER: 20s
+      CARRIER_SHIPPED_AFTER: 40s
+    ports: ["50061:50051"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
   bff:
     build:
       context: ../..

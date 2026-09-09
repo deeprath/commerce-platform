@@ -97,3 +97,15 @@ func (o *Order) Cancel(reason string) error {
 	o.CancelReason = reason
 	return nil
 }
+
+// Fulfill moves CONFIRMED -> FULFILLED (all shipments delivered).
+func (o *Order) Fulfill() error {
+	if o.Status == StatusFulfilled {
+		return nil // idempotent
+	}
+	if !o.CanTransitionTo(StatusFulfilled) {
+		return errs.New(errs.KindFailedPrecondition, "BAD_TRANSITION", "order cannot be fulfilled from "+string(o.Status))
+	}
+	o.Status = StatusFulfilled
+	return nil
+}

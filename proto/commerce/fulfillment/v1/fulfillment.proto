@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+// commerce.fulfillment.v1 — shipments for confirmed orders.
+//
+// A shipment is created when an order is confirmed (consumed from
+// commerce.order.confirmed). v1 ships a SANDBOX carrier: a background advancer
+// moves a shipment PENDING -> SHIPPED -> DELIVERED on a short delay. In
+// production the advancer is replaced by a signature-verified carrier webhook —
+// the emitted events are identical either way. The order service consumes
+// commerce.fulfillment.delivered and moves the order to FULFILLED.
+//
+// v1 simplification: exactly one shipment per order (no split shipments).
+package commerce.fulfillment.v1;
+
+import "commerce/common/v1/types.proto";
+
+service FulfillmentService {
+  // GetShipment returns one shipment the caller owns.
+  rpc GetShipment(GetShipmentRequest) returns (Shipment);
+
+  // ListShipments returns the caller's shipments, newest first; optionally
+  // filtered to a single order.
+  rpc ListShipments(ListShipmentsRequest) returns (ListShipmentsResponse);
+
+  // MarkShipped moves a PENDING shipment to SHIPPED with carrier + tracking.
+  // Admin only. Idempotent.
+  rpc MarkShipped(MarkShippedRequest) returns (Shipment);
+
+  // MarkDelivered moves a SHIPPED shipment to DELIVERED. Admin only. Idempotent.
+  rpc MarkDelivered(MarkDeliveredRequest) returns (Shipment);
+
+  // CancelShipment cancels a not-yet-delivered shipment. Admin only. Idempotent.
+  rpc CancelShipment(CancelShipmentRequest) returns (Shipment);
+}
+
+enum ShipmentStatus {
+  SHIPMENT_STATUS_UNSPECIFIED = 0;
+  SHIPMENT_STATUS_PENDING = 1; // created, awaiting carrier pickup
+  SHIPMENT_STATUS_SHIPPED = 2; // in transit, has a tracking number
+  SHIPMENT_STATUS_DELIVERED = 3;
+  SHIPMENT_STATUS_CANCELLED = 4;
+}
+
+message ShipmentItem {
+  string product_id = 1;
+  string title = 2;
+  int32 quantity = 3;
+}
+
+message Shipment {
+  string id = 1;
+  string order_id = 2;
+  string owner_id = 3; // Keycloak sub of the ordering customer
+  ShipmentStatus status = 4;
+  string carrier = 5;
+  string tracking_number = 6;
+  commerce.common.v1.Address ship_to = 7;
+  repeated ShipmentItem items = 8;
+  string created_at = 9;
+  string shipped_at = 10;
+  string delivered_at = 11;
+  string cancel_reason = 12;
+}
+
+message GetShipmentRequest {
+  string id = 1;
+}
+
+message ListShipmentsRequest {
+  string order_id = 1; // optional; empty => all of the caller's shipments
+  commerce.common.v1.PageRequest page = 2;
+}
+
+message ListShipmentsResponse {
+  repeated Shipment shipments = 1;
+  commerce.common.v1.PageResponse page = 2;
+}
+
+message MarkShippedRequest {
+  string id = 1;
+  string carrier = 2;
+  string tracking_number = 3;
+}
+
+message MarkDeliveredRequest {
+  string id = 1;
+}
+
+message CancelShipmentRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+// --- events (topic: commerce.fulfillment.<event>) ---
+
+message ShipmentCreated {
+  string shipment_id = 1;
+  string order_id = 2;
+  string owner_id = 3;
+  string occurred_at = 4;
+}
+
+message ShipmentShipped {
+  string shipment_id = 1;
+  string order_id = 2;
+  string owner_id = 3;
+  string carrier = 4;
+  string tracking_number = 5;
+  string occurred_at = 6;
+}
+
+message ShipmentDelivered {
+  string shipment_id = 1;
+  string order_id = 2;
+  string owner_id = 3;
+  string occurred_at = 4;
+}
+
+message ShipmentCancelled {
+  string shipment_id = 1;
+  string order_id = 2;
+  string owner_id = 3;
+  string reason = 4;
+  string occurred_at = 5;
+}

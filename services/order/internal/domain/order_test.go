@@ -36,6 +36,23 @@ func TestCancelTransitions(t *testing.T) {
 	}
 }
 
+func TestFulfillTransitions(t *testing.T) {
+	o := &Order{Status: StatusConfirmed}
+	if err := o.Fulfill(); err != nil || o.Status != StatusFulfilled {
+		t.Fatalf("fulfill: %v %s", err, o.Status)
+	}
+	if err := o.Fulfill(); err != nil {
+		t.Fatalf("fulfill is idempotent: %v", err)
+	}
+
+	for _, from := range []Status{StatusPendingPayment, StatusCancelled} {
+		bad := &Order{Status: from}
+		if err := bad.Fulfill(); !errs.Is(err, errs.KindFailedPrecondition) {
+			t.Fatalf("fulfill from %s => %v", from, err)
+		}
+	}
+}
+
 func TestMoneyRoundTrip(t *testing.T) {
 	m := FromUnitsNanos("USD", 43, 190000000)
 	if m.Cents != 4319 {
