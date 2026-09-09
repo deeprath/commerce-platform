@@ -1,0 +1,103 @@
+# SLO recording rules + multi-window multi-burn-rate alerts for the gRPC
+# services, following the Google SRE workbook pattern.
+#
+# Availability SLO: 99.5% of gRPC calls per service return a non-error status
+# over a rolling 30-day window (error budget = 0.5%).
+#
+# Every service emits rpc_server_call_duration_seconds_{count,bucket} with
+# labels: job (service), rpc_method, rpc_response_status_code.
+
+groups:
+  - name: slo_recording
+    interval: 30s
+    rules:
+      # Total request rate per service, per window.
+      - record: job:grpc_requests:rate5m
+        expr: sum by (job) (rate(rpc_server_call_duration_seconds_count[5m]))
+      - record: job:grpc_requests:rate30m
+        expr: sum by (job) (rate(rpc_server_call_duration_seconds_count[30m]))
+      - record: job:grpc_requests:rate1h
+        expr: sum by (job) (rate(rpc_server_call_duration_seconds_count[1h]))
+      - record: job:grpc_requests:rate6h
+        expr: sum by (job) (rate(rpc_server_call_duration_seconds_count[6h]))
+
+      # Error request rate per service (anything that isn't OK; UNAUTHENTICATED /
+      # NOT_FOUND / INVALID_ARGUMENT are client errors and excluded).
+      - record: job:grpc_errors:rate5m
+        expr: >
+          sum by (job) (rate(rpc_server_call_duration_seconds_count{
+            rpc_response_status_code!~"OK|NOT_FOUND|INVALID_ARGUMENT|UNAUTHENTICATED|PERMISSION_DENIED|ALREADY_EXISTS|FAILED_PRECONDITION"
+          }[5m]))
+      - record: job:grpc_errors:rate30m
+        expr: >
+          sum by (job) (rate(rpc_server_call_duration_seconds_count{
+            rpc_response_status_code!~"OK|NOT_FOUND|INVALID_ARGUMENT|UNAUTHENTICATED|PERMISSION_DENIED|ALREADY_EXISTS|FAILED_PRECONDITION"
+          }[30m]))
+      - record: job:grpc_errors:rate1h
+        expr: >
+          sum by (job) (rate(rpc_server_call_duration_seconds_count{
+            rpc_response_status_code!~"OK|NOT_FOUND|INVALID_ARGUMENT|UNAUTHENTICATED|PERMISSION_DENIED|ALREADY_EXISTS|FAILED_PRECONDITION"
+          }[1h]))
+      - record: job:grpc_errors:rate6h
+        expr: >
+          sum by (job) (rate(rpc_server_call_duration_seconds_count{
+            rpc_response_status_code!~"OK|NOT_FOUND|INVALID_ARGUMENT|UNAUTHENTICATED|PERMISSION_DENIED|ALREADY_EXISTS|FAILED_PRECONDITION"
+          }[6h]))
+
+      # Error ratio (burn rate is this / (1 - SLO) = this / 0.005).
+      - record: job:grpc_error_ratio:5m
+        expr: job:grpc_errors:rate5m / clamp_min(job:grpc_requests:rate5m, 1e-9)
+      - record: job:grpc_error_ratio:30m
+        expr: job:grpc_errors:rate30m / clamp_min(job:grpc_requests:rate30m, 1e-9)
+      - record: job:grpc_error_ratio:1h
+        expr: job:grpc_errors:rate1h / clamp_min(job:grpc_requests:rate1h, 1e-9)
+      - record: job:grpc_error_ratio:6h
+        expr: job:grpc_errors:rate6h / clamp_min(job:grpc_requests:rate6h, 1e-9)
+
+  - name: slo_burn_rate_alerts
+    rules:
+      # Fast burn: 14.4x over 1h + 5m confirmation window — 2% of the monthly
+      # budget in an hour. Page.
+      - alert: SLOErrorBudgetFastBurn
+        expr: >
+          job:grpc_error_ratio:1h > (14.4 * 0.005)
+          and
+          job:grpc_error_ratio:5m > (14.4 * 0.005)
+        for: 2m
+        labels: { severity: page, slo: availability }
+        annotations:
+          summary: "{{ $labels.job }}: burning the availability error budget fast"
+          description: >
+            {{ $labels.job }} error ratio is {{ $value | humanizePercentage }} over
+            1h (and still elevated over 5m) — at this rate the 30-day budget is
+            gone in ~2 days.
+
+      # Slow burn: 6x over 6h + 30m confirmation window — 5% of the budget in 6h.
+      # Ticket.
+      - alert: SLOErrorBudgetSlowBurn
+        expr: >
+          job:grpc_error_ratio:6h > (6 * 0.005)
+          and
+          job:grpc_error_ratio:30m > (6 * 0.005)
+        for: 15m
+        labels: { severity: ticket, slo: availability }
+        annotations:
+          summary: "{{ $labels.job }}: slow burn of the availability error budget"
+          description: >
+            {{ $labels.job }} error ratio is {{ $value | humanizePercentage }} over
+            6h — sustained, this exhausts the 30-day budget early.
+
+  - name: platform_alerts
+    rules:
+      - alert: ServiceServingNoTraffic
+        # A service that was serving suddenly goes quiet while the rest of the
+        # platform is active — a proxy for a crash-looping pod, a broken dial, or
+        # a stalled outbox relay on a producer service.
+        expr: >
+          (sum by (job) (rate(rpc_server_call_duration_seconds_count[10m])) == 0)
+          and on() (sum(rate(rpc_server_call_duration_seconds_count[10m])) > 0)
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.job }} is serving no gRPC traffic"
+          description: "{{ $labels.job }} has had no gRPC calls for 10m while the rest of the platform is active."

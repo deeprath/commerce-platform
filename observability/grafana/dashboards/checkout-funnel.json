@@ -1,0 +1,163 @@
+{
+  "uid": "checkout-funnel",
+  "title": "Checkout Funnel & Saga",
+  "tags": ["commerce", "checkout", "slo"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-3h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Funnel",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Checkouts started (CreateOrder OK, req/s)",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*OrderService/CreateOrder\", rpc_response_status_code=\"OK\"}[5m]))"
+        }
+      ],
+      "fieldConfig": { "defaults": { "decimals": 3, "unit": "reqps" } }
+    },
+    {
+      "type": "stat",
+      "title": "Checkout start failures (%)",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 * sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*OrderService/CreateOrder\", rpc_response_status_code!~\"OK|INVALID_ARGUMENT|FAILED_PRECONDITION|UNAUTHENTICATED\"}[15m])) / clamp_min(sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*OrderService/CreateOrder\"}[15m])), 1e-9)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Payments confirmed (ConfirmPayment OK, req/s)",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*PaymentService/ConfirmPayment\", rpc_response_status_code=\"OK\"}[5m]))"
+        }
+      ],
+      "fieldConfig": { "defaults": { "decimals": 3, "unit": "reqps" } }
+    },
+    {
+      "type": "stat",
+      "title": "Start → confirm conversion (1h)",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 * sum(increase(rpc_server_call_duration_seconds_count{rpc_method=~\".*PaymentService/ConfirmPayment\", rpc_response_status_code=\"OK\"}[1h])) / clamp_min(sum(increase(rpc_server_call_duration_seconds_count{rpc_method=~\".*OrderService/CreateOrder\", rpc_response_status_code=\"OK\"}[1h])), 1e-9)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 60 }, { "color": "green", "value": 85 }] }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Funnel rates",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*CartService/GetCart\"}[5m]))", "legendFormat": "cart views" },
+        { "expr": "sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*PricingService/QuotePrice\"}[5m]))", "legendFormat": "price quotes" },
+        { "expr": "sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*OrderService/CreateOrder\", rpc_response_status_code=\"OK\"}[5m]))", "legendFormat": "checkouts started" },
+        { "expr": "sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*PaymentService/ConfirmPayment\", rpc_response_status_code=\"OK\"}[5m]))", "legendFormat": "payments confirmed" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "type": "row",
+      "title": "Saga critical path (order.CreateOrder)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }
+    },
+    {
+      "type": "timeseries",
+      "title": "CreateOrder latency (p50 / p95 / p99)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(rpc_server_call_duration_seconds_bucket{rpc_method=~\".*OrderService/CreateOrder\"}[5m])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(rpc_server_call_duration_seconds_bucket{rpc_method=~\".*OrderService/CreateOrder\"}[5m])))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(rpc_server_call_duration_seconds_bucket{rpc_method=~\".*OrderService/CreateOrder\"}[5m])))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Saga dependency p95 (client calls from order)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, rpc_method) (rate(rpc_client_call_duration_seconds_bucket{job=\"order\"}[5m])))", "legendFormat": "{{rpc_method}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "type": "row",
+      "title": "SLO error budget (availability, 99.5%)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Error ratio by service (1h) vs SLO threshold",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "job:grpc_error_ratio:1h", "legendFormat": "{{job}}" },
+        { "expr": "vector(0.005)", "legendFormat": "SLO budget (0.5%)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Fast-burn factor by service (>1 = paging)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "job:grpc_error_ratio:1h / (14.4 * 0.005)", "legendFormat": "{{job}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Returns & refunds",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Return decisions & refunds (req/s)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*OrderService/RequestReturn\"}[15m]))", "legendFormat": "returns requested" },
+        { "expr": "sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*OrderService/DecideReturn\", rpc_response_status_code=\"OK\"}[15m]))", "legendFormat": "returns decided" },
+        { "expr": "sum(rate(rpc_server_call_duration_seconds_count{rpc_method=~\".*PaymentService/Refund\", rpc_response_status_code=\"OK\"}[15m]))", "legendFormat": "refunds issued" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    }
+  ]
+}

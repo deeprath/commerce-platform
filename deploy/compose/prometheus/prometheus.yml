@@ -2,6 +2,11 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# SLO recording rules + multi-window burn-rate alerts. In the cluster the same
+# rules ship as a PrometheusRule CR (deploy/k8s/observability/).
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
 # Metrics arrive two ways:
 #  - pushed via OTLP from the collector (--enable-feature=otlp-write-receiver)
 #  - scraped from infra components that expose /metrics

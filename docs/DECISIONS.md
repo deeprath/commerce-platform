@@ -740,3 +740,60 @@ browser, the returns queue, shipment actions.
 **Consequences:** A second frontend to build and deploy (added to the `web` CI matrix and
 `build-images` / trivy). The IP allow-list CIDRs in `authorization-policy.yaml` are
 placeholders that must be set per environment.
+
+---
+
+## ADR-024 — SLO alerting: multi-window multi-burn-rate on a request-availability SLO
+
+**Status:** Accepted (Phase 4).
+
+**Context:** The platform had dashboards but no alerting. We need pages that fire on
+*user-visible* failure fast enough to matter, without paging on every transient blip, and
+the same rules must work in both the compose stack and a real cluster.
+
+**Decision:**
+- **One SLO, per service: 99.5% of gRPC calls return a non-error status over a rolling
+  30-day window** (error budget = 0.5%). "Error" is server-fault only — `OK`, `NOT_FOUND`,
+  `INVALID_ARGUMENT`, `UNAUTHENTICATED`, `PERMISSION_DENIED`, `ALREADY_EXISTS`,
+  `FAILED_PRECONDITION` are the client's problem and are excluded from the numerator.
+  The signal is `rpc_server_call_duration_seconds_count` (already emitted by every service,
+  labelled `job` / `rpc_method` / `rpc_response_status_code`) — no new instrumentation.
+- **Recording rules** (`slo_recording`, 30s) precompute per-service request rate, error
+  rate and error ratio at 5m / 30m / 1h / 6h so the alert expressions and the dashboard
+  read cheap pre-aggregated series.
+- **Two alerts, following the Google SRE workbook** (`slo_burn_rate_alerts`):
+  - `SLOErrorBudgetFastBurn` — ratio > 14.4× budget over **1h AND 5m**, `for: 2m`,
+    `severity: page`. Burns ~2% of the month's budget in an hour.
+  - `SLOErrorBudgetSlowBurn` — ratio > 6× budget over **6h AND 30m**, `for: 15m`,
+    `severity: ticket`.
+  The long window sets sensitivity; the short window is the "still happening now"
+  confirmation so an alert clears quickly once the burn stops.
+- **`platform_alerts`** adds `ServiceServingNoTraffic` — a service that goes silent for
+  10m while the rest of the platform serves (crash-loop, broken dial, stalled outbox
+  relay on a producer).
+- **Shipped twice from one source of truth:** `deploy/compose/prometheus/rules/slo.yml`
+  for the compose stack (`rule_files:` + `--web.enable-lifecycle` reload), and
+  `deploy/k8s/observability/prometheus-rules.yaml` — a `PrometheusRule` CR
+  (`monitoring.coreos.com/v1`, `release: kube-prometheus-stack`) with the identical
+  groups — for the cluster.
+- **`checkout-funnel` Grafana dashboard** (the Phase 2 leftover): funnel rates
+  (cart → quote → `CreateOrder` → `ConfirmPayment`), start-failure %, saga critical-path
+  latency (`histogram_quantile` over `CreateOrder` buckets), saga dependency p95 from
+  `order`'s client metrics, per-service error ratio vs the SLO threshold and a fast-burn
+  factor, plus a returns/refunds panel.
+
+**Alternatives:**
+- *Alert on raw error rate / a static threshold* — pages on traffic spikes and on brief
+  blips; says nothing about whether the budget is actually at risk.
+- *Single-window burn-rate* — either slow to fire or slow to clear; the short
+  confirmation window is what makes multi-window resolve fast.
+- *Latency SLO too, now* — deferred; availability is the higher-signal first cut and the
+  histograms are already recorded for when we add it.
+- *Alertmanager routing / receivers* — out of scope here; the rules carry
+  `severity: page|ticket` labels for whatever routing a given environment wires up.
+
+**Consequences:** Two rule files to keep in sync (same group/rule names, checked by eye —
+a lint could enforce it later). The error-status exclusion list is a policy choice baked
+into the recording rules; revisit it if a service starts using one of those codes for a
+server-side fault. Burn-rate multipliers and windows are the standard 2%/1h and 5%/6h
+budget-spend figures for a 30-day window.
