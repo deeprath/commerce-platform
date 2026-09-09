@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+// commerce.review.v1 — product ratings and reviews.
+//
+// A customer may review a product only after an order containing it has been
+// confirmed (paid). The service learns which (customer, product) pairs are
+// eligible by consuming commerce.order.confirmed, which carries the line items.
+// One review per customer per product. Reviews are published on creation in v1;
+// ModerateReview can hide one after the fact.
+package commerce.review.v1;
+
+import "commerce/common/v1/types.proto";
+
+service ReviewService {
+  // CreateReview records the caller's review of a product. Fails with
+  // FAILED_PRECONDITION if the caller has no confirmed order for the product,
+  // and ALREADY_EXISTS if they have already reviewed it.
+  rpc CreateReview(CreateReviewRequest) returns (Review);
+
+  // ListReviews returns published reviews for a product, newest first. Public.
+  rpc ListReviews(ListReviewsRequest) returns (ListReviewsResponse);
+
+  // GetRatingSummary returns the aggregate rating for a product (for the PDP).
+  // Public.
+  rpc GetRatingSummary(GetRatingSummaryRequest) returns (RatingSummary);
+
+  // ModerateReview publishes or hides a review. Requires the catalog_manager
+  // role.
+  rpc ModerateReview(ModerateReviewRequest) returns (Review);
+}
+
+enum ReviewStatus {
+  REVIEW_STATUS_UNSPECIFIED = 0;
+  REVIEW_STATUS_PUBLISHED = 1;
+  REVIEW_STATUS_HIDDEN = 2;
+}
+
+message Review {
+  string id = 1;
+  string product_id = 2;
+  string author_id = 3; // Keycloak sub
+  string author_name = 4; // display name captured at write time
+  int32 rating = 5; // 1..5
+  string title = 6;
+  string body = 7;
+  ReviewStatus status = 8;
+  bool verified_purchase = 9; // always true in v1 (enforced on create)
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+message CreateReviewRequest {
+  string product_id = 1;
+  int32 rating = 2; // 1..5
+  string title = 3;
+  string body = 4;
+}
+
+message ListReviewsRequest {
+  string product_id = 1;
+  commerce.common.v1.PageRequest page = 2;
+}
+
+message ListReviewsResponse {
+  repeated Review reviews = 1;
+  commerce.common.v1.PageResponse page = 2;
+}
+
+message GetRatingSummaryRequest {
+  string product_id = 1;
+}
+
+message RatingSummary {
+  string product_id = 1;
+  double average = 2; // 0 when there are no reviews
+  int32 count = 3;
+  // Number of published reviews at each star level, index 0 => 1 star .. 4 => 5 stars.
+  repeated int32 histogram = 4;
+}
+
+message ModerateReviewRequest {
+  string id = 1;
+  ReviewStatus status = 2; // PUBLISHED or HIDDEN
+}
+
+// --- events (topic: commerce.review.<event>) ---
+
+message ReviewPublished {
+  string review_id = 1;
+  string product_id = 2;
+  string author_id = 3;
+  int32 rating = 4;
+  string occurred_at = 5;
+}
+
+message ReviewHidden {
+  string review_id = 1;
+  string product_id = 2;
+  string occurred_at = 3;
+}

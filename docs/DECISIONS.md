@@ -575,3 +575,47 @@ shipped, delivered, or fulfilled. Phase 3 adds a `notification` service.
 
 **Consequences:** No delivery guarantee in v1 (the sandbox always "succeeds"; a real channel
 failure is recorded, not retried by this service). One more service, DB, and consumer group.
+
+---
+
+## ADR-020 — Reviews: verified-purchase index from events, published-on-create
+
+**Status:** Accepted (Phase 3).
+
+**Context:** Product reviews need a "did this person actually buy it?" gate, aggregate
+ratings for the PDP, and a moderation lever.
+
+**Decision:**
+- **Verified purchase = a confirmed order, learned from events.** The `review` service
+  consumes `commerce.order.confirmed` (which carries the line items, per ADR-018) and keeps
+  a `purchases (owner_id, product_id)` index. `CreateReview` checks that index; no
+  synchronous call to `order`. "Confirmed" (paid), not "delivered", is the bar — matches the
+  common "Verified Purchase" meaning and avoids enriching `order.fulfilled` with line items.
+- **One review per `(product_id, author_id)`** — DB unique constraint → `ALREADY_EXISTS`.
+  Editing a review is a later feature; re-review is not silently allowed.
+- **Published on create.** v1 has no moderation queue: a review is `PUBLISHED` immediately
+  and `commerce.review.published` is emitted. `ModerateReview` (role `catalog_manager`) can
+  flip it to `HIDDEN` (emits `commerce.review.hidden`) or back. A pre-moderation queue is a
+  policy change, not a schema change.
+- **`GetRatingSummary` computes the aggregate on read** (`GROUP BY rating` over published
+  rows) rather than maintaining a denormalised counter. Review volume per product is low;
+  a materialised summary + its update path is not worth it yet.
+- **`ListReviews` / `GetRatingSummary` are public** (`WithOptionalAuthMethods`); `CreateReview`
+  needs auth; `ModerateReview` needs the role.
+- **`author_name` is captured at write time** from the token's `name` claim (or the email
+  local-part, or "Customer") — the service holds no user profile and does not call one.
+
+**Alternatives:**
+- *Call `order.ListOrders` to verify a purchase* — owner-scoped RPC, needs the caller's
+  token forwarded, and couples the review write path to `order` availability.
+- *Consume `order.fulfilled`* — stricter ("received it") but that event lacks line items;
+  enriching it is out of scope here.
+- *Maintain a denormalised rating counter* — premature; adds an update path and a
+  consistency question for no measured benefit at this volume.
+- *`search` consumes `review.published` to index `avg_rating`* — useful for "sort by
+  rating", but expands scope into the search service; deferred. `review.published` is
+  emitted so that wiring is a consumer-only change later.
+
+**Consequences:** The rating summary is an aggregate query per PDP load (cheap at current
+volume, revisit with a cache or a counter if it shows up in traces). No review editing in
+v1. One more service, DB, and consumer group.
