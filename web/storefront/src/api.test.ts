@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, ApiRequestError, mediaUrl } from "./api";
+import { api, ApiRequestError, mediaUrl, setUnauthorizedHandler } from "./api";
 import { formatMoney } from "./types";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  setUnauthorizedHandler(null);
+});
 
 function mockFetch(status: number, body: unknown) {
   // Fresh Response per call — a Response body can only be consumed once.
@@ -55,6 +58,22 @@ describe("api", () => {
     mockFetch(200, { id: "c_1", total_quantity: 0 });
     const cart = await api.getCart();
     expect(cart.items).toEqual([]);
+  });
+
+  it("fires the unauthorized handler on a 401, then still throws", async () => {
+    mockFetch(401, { code: "UNAUTHENTICATED", reason: "SIGN_IN_REQUIRED" });
+    const onUnauth = vi.fn();
+    setUnauthorizedHandler(onUnauth);
+    await expect(api.listOrders()).rejects.toBeInstanceOf(ApiRequestError);
+    expect(onUnauth).toHaveBeenCalledOnce();
+  });
+
+  it("does not fire the unauthorized handler on other errors", async () => {
+    mockFetch(404, { code: "NOT_FOUND", reason: "ORDER_NOT_FOUND" });
+    const onUnauth = vi.fn();
+    setUnauthorizedHandler(onUnauth);
+    await expect(api.getOrder("nope")).rejects.toBeInstanceOf(ApiRequestError);
+    expect(onUnauth).not.toHaveBeenCalled();
   });
 });
 
