@@ -7,9 +7,13 @@ package commerce.media.v1;
 
 service MediaService {
   // CreateUploadURL returns a presigned PUT scoped to one object key,
-  // size- and content-type-locked, valid for a short window.
-  // Requires the catalog_manager role.
+  // valid for a short window. Requires the catalog_manager role.
   rpc CreateUploadURL(CreateUploadURLRequest) returns (CreateUploadURLResponse);
+
+  // ConfirmUpload is called after the client's PUT succeeds. The service
+  // HEADs the object, validates size/type, marks the asset READY, and emits
+  // commerce.media.asset_ready. Requires the catalog_manager role.
+  rpc ConfirmUpload(ConfirmUploadRequest) returns (ConfirmUploadResponse);
 
   // GetAsset resolves an object key to a served URL (CDN or presigned GET)
   // plus any generated derivatives.
@@ -33,6 +37,14 @@ message CreateUploadURLResponse {
   // Presigned PUT URL. Expires; single use for this key/content-type/size.
   string upload_url = 2;
   string expires_at = 3;
+}
+
+message ConfirmUploadRequest {
+  string key = 1;
+}
+
+message ConfirmUploadResponse {
+  GetAssetResponse asset = 1;
 }
 
 message GetAssetRequest {

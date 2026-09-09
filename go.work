@@ -5,4 +5,5 @@ use (
 	./pkg
 	./services/catalog
 	./services/ext-authz
+	./services/media
 )

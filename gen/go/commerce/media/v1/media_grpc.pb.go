@@ -24,6 +24,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	MediaService_CreateUploadURL_FullMethodName = "/commerce.media.v1.MediaService/CreateUploadURL"
+	MediaService_ConfirmUpload_FullMethodName   = "/commerce.media.v1.MediaService/ConfirmUpload"
 	MediaService_GetAsset_FullMethodName        = "/commerce.media.v1.MediaService/GetAsset"
 )
 
@@ -32,9 +33,12 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MediaServiceClient interface {
 	// CreateUploadURL returns a presigned PUT scoped to one object key,
-	// size- and content-type-locked, valid for a short window.
-	// Requires the catalog_manager role.
+	// valid for a short window. Requires the catalog_manager role.
 	CreateUploadURL(ctx context.Context, in *CreateUploadURLRequest, opts ...grpc.CallOption) (*CreateUploadURLResponse, error)
+	// ConfirmUpload is called after the client's PUT succeeds. The service
+	// HEADs the object, validates size/type, marks the asset READY, and emits
+	// commerce.media.asset_ready. Requires the catalog_manager role.
+	ConfirmUpload(ctx context.Context, in *ConfirmUploadRequest, opts ...grpc.CallOption) (*ConfirmUploadResponse, error)
 	// GetAsset resolves an object key to a served URL (CDN or presigned GET)
 	// plus any generated derivatives.
 	GetAsset(ctx context.Context, in *GetAssetRequest, opts ...grpc.CallOption) (*GetAssetResponse, error)
@@ -58,6 +62,16 @@ func (c *mediaServiceClient) CreateUploadURL(ctx context.Context, in *CreateUplo
 	return out, nil
 }
 
+func (c *mediaServiceClient) ConfirmUpload(ctx context.Context, in *ConfirmUploadRequest, opts ...grpc.CallOption) (*ConfirmUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfirmUploadResponse)
+	err := c.cc.Invoke(ctx, MediaService_ConfirmUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *mediaServiceClient) GetAsset(ctx context.Context, in *GetAssetRequest, opts ...grpc.CallOption) (*GetAssetResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetAssetResponse)
@@ -73,9 +87,12 @@ func (c *mediaServiceClient) GetAsset(ctx context.Context, in *GetAssetRequest, 
 // for forward compatibility.
 type MediaServiceServer interface {
 	// CreateUploadURL returns a presigned PUT scoped to one object key,
-	// size- and content-type-locked, valid for a short window.
-	// Requires the catalog_manager role.
+	// valid for a short window. Requires the catalog_manager role.
 	CreateUploadURL(context.Context, *CreateUploadURLRequest) (*CreateUploadURLResponse, error)
+	// ConfirmUpload is called after the client's PUT succeeds. The service
+	// HEADs the object, validates size/type, marks the asset READY, and emits
+	// commerce.media.asset_ready. Requires the catalog_manager role.
+	ConfirmUpload(context.Context, *ConfirmUploadRequest) (*ConfirmUploadResponse, error)
 	// GetAsset resolves an object key to a served URL (CDN or presigned GET)
 	// plus any generated derivatives.
 	GetAsset(context.Context, *GetAssetRequest) (*GetAssetResponse, error)
@@ -91,6 +108,9 @@ type UnimplementedMediaServiceServer struct{}
 
 func (UnimplementedMediaServiceServer) CreateUploadURL(context.Context, *CreateUploadURLRequest) (*CreateUploadURLResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateUploadURL not implemented")
+}
+func (UnimplementedMediaServiceServer) ConfirmUpload(context.Context, *ConfirmUploadRequest) (*ConfirmUploadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConfirmUpload not implemented")
 }
 func (UnimplementedMediaServiceServer) GetAsset(context.Context, *GetAssetRequest) (*GetAssetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetAsset not implemented")
@@ -134,6 +154,24 @@ func _MediaService_CreateUploadURL_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MediaService_ConfirmUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MediaServiceServer).ConfirmUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MediaService_ConfirmUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MediaServiceServer).ConfirmUpload(ctx, req.(*ConfirmUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _MediaService_GetAsset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetAssetRequest)
 	if err := dec(in); err != nil {
@@ -162,6 +200,10 @@ var MediaService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateUploadURL",
 			Handler:    _MediaService_CreateUploadURL_Handler,
+		},
+		{
+			MethodName: "ConfirmUpload",
+			Handler:    _MediaService_ConfirmUpload_Handler,
 		},
 		{
 			MethodName: "GetAsset",

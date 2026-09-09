@@ -211,6 +211,94 @@ func (x *CreateUploadURLResponse) GetExpiresAt() string {
 	return ""
 }
 
+type ConfirmUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfirmUploadRequest) Reset() {
+	*x = ConfirmUploadRequest{}
+	mi := &file_commerce_media_v1_media_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfirmUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfirmUploadRequest) ProtoMessage() {}
+
+func (x *ConfirmUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_media_v1_media_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfirmUploadRequest.ProtoReflect.Descriptor instead.
+func (*ConfirmUploadRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_media_v1_media_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ConfirmUploadRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+type ConfirmUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Asset         *GetAssetResponse      `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfirmUploadResponse) Reset() {
+	*x = ConfirmUploadResponse{}
+	mi := &file_commerce_media_v1_media_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfirmUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfirmUploadResponse) ProtoMessage() {}
+
+func (x *ConfirmUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_media_v1_media_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfirmUploadResponse.ProtoReflect.Descriptor instead.
+func (*ConfirmUploadResponse) Descriptor() ([]byte, []int) {
+	return file_commerce_media_v1_media_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ConfirmUploadResponse) GetAsset() *GetAssetResponse {
+	if x != nil {
+		return x.Asset
+	}
+	return nil
+}
+
 type GetAssetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -220,7 +308,7 @@ type GetAssetRequest struct {
 
 func (x *GetAssetRequest) Reset() {
 	*x = GetAssetRequest{}
-	mi := &file_commerce_media_v1_media_proto_msgTypes[2]
+	mi := &file_commerce_media_v1_media_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -232,7 +320,7 @@ func (x *GetAssetRequest) String() string {
 func (*GetAssetRequest) ProtoMessage() {}
 
 func (x *GetAssetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_commerce_media_v1_media_proto_msgTypes[2]
+	mi := &file_commerce_media_v1_media_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -245,7 +333,7 @@ func (x *GetAssetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAssetRequest.ProtoReflect.Descriptor instead.
 func (*GetAssetRequest) Descriptor() ([]byte, []int) {
-	return file_commerce_media_v1_media_proto_rawDescGZIP(), []int{2}
+	return file_commerce_media_v1_media_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetAssetRequest) GetKey() string {
@@ -269,7 +357,7 @@ type GetAssetResponse struct {
 
 func (x *GetAssetResponse) Reset() {
 	*x = GetAssetResponse{}
-	mi := &file_commerce_media_v1_media_proto_msgTypes[3]
+	mi := &file_commerce_media_v1_media_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -281,7 +369,7 @@ func (x *GetAssetResponse) String() string {
 func (*GetAssetResponse) ProtoMessage() {}
 
 func (x *GetAssetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_commerce_media_v1_media_proto_msgTypes[3]
+	mi := &file_commerce_media_v1_media_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -294,7 +382,7 @@ func (x *GetAssetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAssetResponse.ProtoReflect.Descriptor instead.
 func (*GetAssetResponse) Descriptor() ([]byte, []int) {
-	return file_commerce_media_v1_media_proto_rawDescGZIP(), []int{3}
+	return file_commerce_media_v1_media_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *GetAssetResponse) GetKey() string {
@@ -353,7 +441,7 @@ type AssetReady struct {
 
 func (x *AssetReady) Reset() {
 	*x = AssetReady{}
-	mi := &file_commerce_media_v1_media_proto_msgTypes[4]
+	mi := &file_commerce_media_v1_media_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -365,7 +453,7 @@ func (x *AssetReady) String() string {
 func (*AssetReady) ProtoMessage() {}
 
 func (x *AssetReady) ProtoReflect() protoreflect.Message {
-	mi := &file_commerce_media_v1_media_proto_msgTypes[4]
+	mi := &file_commerce_media_v1_media_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -378,7 +466,7 @@ func (x *AssetReady) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetReady.ProtoReflect.Descriptor instead.
 func (*AssetReady) Descriptor() ([]byte, []int) {
-	return file_commerce_media_v1_media_proto_rawDescGZIP(), []int{4}
+	return file_commerce_media_v1_media_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *AssetReady) GetKey() string {
@@ -434,7 +522,7 @@ type AssetRejected struct {
 
 func (x *AssetRejected) Reset() {
 	*x = AssetRejected{}
-	mi := &file_commerce_media_v1_media_proto_msgTypes[5]
+	mi := &file_commerce_media_v1_media_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -446,7 +534,7 @@ func (x *AssetRejected) String() string {
 func (*AssetRejected) ProtoMessage() {}
 
 func (x *AssetRejected) ProtoReflect() protoreflect.Message {
-	mi := &file_commerce_media_v1_media_proto_msgTypes[5]
+	mi := &file_commerce_media_v1_media_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -459,7 +547,7 @@ func (x *AssetRejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssetRejected.ProtoReflect.Descriptor instead.
 func (*AssetRejected) Descriptor() ([]byte, []int) {
-	return file_commerce_media_v1_media_proto_rawDescGZIP(), []int{5}
+	return file_commerce_media_v1_media_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *AssetRejected) GetKey() string {
@@ -499,7 +587,11 @@ const file_commerce_media_v1_media_proto_rawDesc = "" +
 	"\n" +
 	"upload_url\x18\x02 \x01(\tR\tuploadUrl\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\tR\texpiresAt\"#\n" +
+	"expires_at\x18\x03 \x01(\tR\texpiresAt\"(\n" +
+	"\x14ConfirmUploadRequest\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\"R\n" +
+	"\x15ConfirmUploadResponse\x129\n" +
+	"\x05asset\x18\x01 \x01(\v2#.commerce.media.v1.GetAssetResponseR\x05asset\"#\n" +
 	"\x0fGetAssetRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\"\xc8\x02\n" +
 	"\x10GetAssetResponse\x12\x10\n" +
@@ -535,9 +627,10 @@ const file_commerce_media_v1_media_proto_rawDesc = "" +
 	"\x18ASSET_STATUS_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14ASSET_STATUS_PENDING\x10\x01\x12\x16\n" +
 	"\x12ASSET_STATUS_READY\x10\x02\x12\x19\n" +
-	"\x15ASSET_STATUS_REJECTED\x10\x032\xcd\x01\n" +
+	"\x15ASSET_STATUS_REJECTED\x10\x032\xb1\x02\n" +
 	"\fMediaService\x12h\n" +
-	"\x0fCreateUploadURL\x12).commerce.media.v1.CreateUploadURLRequest\x1a*.commerce.media.v1.CreateUploadURLResponse\x12S\n" +
+	"\x0fCreateUploadURL\x12).commerce.media.v1.CreateUploadURLRequest\x1a*.commerce.media.v1.CreateUploadURLResponse\x12b\n" +
+	"\rConfirmUpload\x12'.commerce.media.v1.ConfirmUploadRequest\x1a(.commerce.media.v1.ConfirmUploadResponse\x12S\n" +
 	"\bGetAsset\x12\".commerce.media.v1.GetAssetRequest\x1a#.commerce.media.v1.GetAssetResponseB\xd1\x01\n" +
 	"\x15com.commerce.media.v1B\n" +
 	"MediaProtoP\x01ZFgithub.com/deeprath/commerce-platform/gen/go/commerce/media/v1;mediav1\xa2\x02\x03CMX\xaa\x02\x11Commerce.Media.V1\xca\x02\x11Commerce\\Media\\V1\xe2\x02\x1dCommerce\\Media\\V1\\GPBMetadata\xea\x02\x13Commerce::Media::V1b\x06proto3"
@@ -555,31 +648,36 @@ func file_commerce_media_v1_media_proto_rawDescGZIP() []byte {
 }
 
 var file_commerce_media_v1_media_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_commerce_media_v1_media_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_commerce_media_v1_media_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_commerce_media_v1_media_proto_goTypes = []any{
 	(AssetStatus)(0),                // 0: commerce.media.v1.AssetStatus
 	(*CreateUploadURLRequest)(nil),  // 1: commerce.media.v1.CreateUploadURLRequest
 	(*CreateUploadURLResponse)(nil), // 2: commerce.media.v1.CreateUploadURLResponse
-	(*GetAssetRequest)(nil),         // 3: commerce.media.v1.GetAssetRequest
-	(*GetAssetResponse)(nil),        // 4: commerce.media.v1.GetAssetResponse
-	(*AssetReady)(nil),              // 5: commerce.media.v1.AssetReady
-	(*AssetRejected)(nil),           // 6: commerce.media.v1.AssetRejected
-	nil,                             // 7: commerce.media.v1.GetAssetResponse.DerivativesEntry
-	nil,                             // 8: commerce.media.v1.AssetReady.DerivativesEntry
+	(*ConfirmUploadRequest)(nil),    // 3: commerce.media.v1.ConfirmUploadRequest
+	(*ConfirmUploadResponse)(nil),   // 4: commerce.media.v1.ConfirmUploadResponse
+	(*GetAssetRequest)(nil),         // 5: commerce.media.v1.GetAssetRequest
+	(*GetAssetResponse)(nil),        // 6: commerce.media.v1.GetAssetResponse
+	(*AssetReady)(nil),              // 7: commerce.media.v1.AssetReady
+	(*AssetRejected)(nil),           // 8: commerce.media.v1.AssetRejected
+	nil,                             // 9: commerce.media.v1.GetAssetResponse.DerivativesEntry
+	nil,                             // 10: commerce.media.v1.AssetReady.DerivativesEntry
 }
 var file_commerce_media_v1_media_proto_depIdxs = []int32{
-	0, // 0: commerce.media.v1.GetAssetResponse.status:type_name -> commerce.media.v1.AssetStatus
-	7, // 1: commerce.media.v1.GetAssetResponse.derivatives:type_name -> commerce.media.v1.GetAssetResponse.DerivativesEntry
-	8, // 2: commerce.media.v1.AssetReady.derivatives:type_name -> commerce.media.v1.AssetReady.DerivativesEntry
-	1, // 3: commerce.media.v1.MediaService.CreateUploadURL:input_type -> commerce.media.v1.CreateUploadURLRequest
-	3, // 4: commerce.media.v1.MediaService.GetAsset:input_type -> commerce.media.v1.GetAssetRequest
-	2, // 5: commerce.media.v1.MediaService.CreateUploadURL:output_type -> commerce.media.v1.CreateUploadURLResponse
-	4, // 6: commerce.media.v1.MediaService.GetAsset:output_type -> commerce.media.v1.GetAssetResponse
-	5, // [5:7] is the sub-list for method output_type
-	3, // [3:5] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	6,  // 0: commerce.media.v1.ConfirmUploadResponse.asset:type_name -> commerce.media.v1.GetAssetResponse
+	0,  // 1: commerce.media.v1.GetAssetResponse.status:type_name -> commerce.media.v1.AssetStatus
+	9,  // 2: commerce.media.v1.GetAssetResponse.derivatives:type_name -> commerce.media.v1.GetAssetResponse.DerivativesEntry
+	10, // 3: commerce.media.v1.AssetReady.derivatives:type_name -> commerce.media.v1.AssetReady.DerivativesEntry
+	1,  // 4: commerce.media.v1.MediaService.CreateUploadURL:input_type -> commerce.media.v1.CreateUploadURLRequest
+	3,  // 5: commerce.media.v1.MediaService.ConfirmUpload:input_type -> commerce.media.v1.ConfirmUploadRequest
+	5,  // 6: commerce.media.v1.MediaService.GetAsset:input_type -> commerce.media.v1.GetAssetRequest
+	2,  // 7: commerce.media.v1.MediaService.CreateUploadURL:output_type -> commerce.media.v1.CreateUploadURLResponse
+	4,  // 8: commerce.media.v1.MediaService.ConfirmUpload:output_type -> commerce.media.v1.ConfirmUploadResponse
+	6,  // 9: commerce.media.v1.MediaService.GetAsset:output_type -> commerce.media.v1.GetAssetResponse
+	7,  // [7:10] is the sub-list for method output_type
+	4,  // [4:7] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_commerce_media_v1_media_proto_init() }
@@ -593,7 +691,7 @@ func file_commerce_media_v1_media_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_commerce_media_v1_media_proto_rawDesc), len(file_commerce_media_v1_media_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

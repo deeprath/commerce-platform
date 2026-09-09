@@ -285,6 +285,36 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  media:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/media.Dockerfile
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/media?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+      # Internal client (HEAD etc.) talks to minio:9000; upload URLs are signed
+      # for localhost:9000 so a browser on the host can PUT to them directly.
+      MINIO_INTERNAL_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MEDIA_PUBLIC_BASE_URL: http://localhost:9000
+    ports: ["50054:50051"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
   envoy:
     image: envoyproxy/envoy:${ENVOY_TAG}
     command: ["-c", "/etc/envoy/envoy.yaml", "-l", "info"]
