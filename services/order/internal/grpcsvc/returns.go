@@ -15,10 +15,19 @@ import (
 
 const roleOrderManager = "order_manager"
 
-func (s *Server) RequestReturn(ctx context.Context, req *orderv1.RequestReturnRequest) (*orderv1.Return, error) {
+// principal returns the authenticated caller or an Unauthenticated error.
+func principal(ctx context.Context) (*auth.Principal, error) {
 	p := auth.FromContext(ctx)
 	if p == nil {
 		return nil, errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
+	}
+	return p, nil
+}
+
+func (s *Server) RequestReturn(ctx context.Context, req *orderv1.RequestReturnRequest) (*orderv1.Return, error) {
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
 	}
 	lines := make([]saga.ReturnLineReq, 0, len(req.GetLines()))
 	for _, l := range req.GetLines() {
@@ -32,25 +41,25 @@ func (s *Server) RequestReturn(ctx context.Context, req *orderv1.RequestReturnRe
 }
 
 func (s *Server) GetReturn(ctx context.Context, req *orderv1.GetReturnRequest) (*orderv1.Return, error) {
-	p := auth.FromContext(ctx)
-	if p == nil {
-		return nil, errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
 	}
 	owner := p.Subject
 	if p.HasRole(roleOrderManager) {
 		owner = "" // operators may read any return
 	}
-	r, err := s.store.GetReturn(ctx, req.GetId(), owner)
+	rr, err := s.store.GetReturn(ctx, req.GetId(), owner)
 	if err != nil {
 		return nil, err
 	}
-	return returnToProto(r), nil
+	return returnToProto(rr), nil
 }
 
 func (s *Server) ListReturns(ctx context.Context, req *orderv1.ListReturnsRequest) (*orderv1.ListReturnsResponse, error) {
-	p := auth.FromContext(ctx)
-	if p == nil {
-		return nil, errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
 	}
 	items, next, err := s.store.ListReturns(ctx, p.Subject,
 		int(req.GetPage().GetPageSize()), req.GetPage().GetPageToken())

@@ -35,6 +35,55 @@ func (o *Orchestrator) RequestReturn(ctx context.Context, ownerID, orderID, reas
 		return nil, errs.New(errs.KindFailedPrecondition, "NOT_RETURNABLE", "order has no returnable value")
 	}
 
+	rl, err := o.resolveReturnLines(ctx, ord, reqLines)
+	if err != nil {
+		return nil, err
+	}
+	if len(rl) == 0 {
+		return nil, errs.New(errs.KindFailedPrecondition, "NOTHING_TO_RETURN",
+			"every requested line has already been fully returned")
+	}
+
+	// Refund the customer's share of what they actually paid (order total, net
+	// of any discount, incl. tax), proportioned by each line's pre-tax value.
+	// Allocate by running cumulative rounding so the parts sum exactly to the
+	// intended total (and to ord.Total for a whole-order return).
+	var lines []domain.ReturnLine
+	var totalCents, cumValue, cumRefund int64
+	for _, rline := range rl {
+		cumValue += rline.value
+		newCum := ord.Total.Cents * cumValue / ord.Subtotal.Cents
+		refund := newCum - cumRefund
+		cumRefund = newCum
+		lines = append(lines, domain.ReturnLine{
+			ProductID:    rline.productID,
+			Quantity:     rline.qty,
+			RefundAmount: domain.Money{Currency: ord.Total.Currency, Cents: refund},
+		})
+		totalCents += refund
+	}
+
+	r := &domain.Return{
+		ID: uuid.NewString(), OrderID: orderID, OwnerID: ownerID,
+		Status: domain.ReturnRequested, Reason: reason, Lines: lines,
+		RefundTotal: domain.Money{Currency: ord.Total.Currency, Cents: totalCents},
+	}
+	if err := o.store.InsertReturn(ctx, r); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// resolvedLine is a return line after quantity resolution and validation.
+type resolvedLine struct {
+	productID string
+	qty       int32
+	value     int64 // unit_price * qty (pre-tax)
+}
+
+// resolveReturnLines turns the requested lines (empty => every order line) into
+// validated resolvedLines, erroring on unknown products or over-quantity.
+func (o *Orchestrator) resolveReturnLines(ctx context.Context, ord *domain.Order, reqLines []ReturnLineReq) ([]resolvedLine, error) {
 	byProduct := map[string]domain.Line{}
 	for _, l := range ord.Lines {
 		byProduct[l.ProductID] = l
@@ -45,20 +94,14 @@ func (o *Orchestrator) RequestReturn(ctx context.Context, ownerID, orderID, reas
 		}
 	}
 
-	// First resolve the quantity for each line and its pre-tax value.
-	type resolved struct {
-		productID string
-		qty       int32
-		value     int64 // unit_price * qty
-	}
-	var rl []resolved
+	var out []resolvedLine
 	for _, req := range reqLines {
 		ol, ok := byProduct[req.ProductID]
 		if !ok {
 			return nil, errs.New(errs.KindInvalidArgument, "LINE_NOT_IN_ORDER",
 				"product "+req.ProductID+" is not on this order")
 		}
-		already, err := o.store.ReturnedQty(ctx, orderID, req.ProductID)
+		already, err := o.store.ReturnedQty(ctx, ord.ID, req.ProductID)
 		if err != nil {
 			return nil, err
 		}
@@ -74,41 +117,9 @@ func (o *Orchestrator) RequestReturn(ctx context.Context, ownerID, orderID, reas
 			return nil, errs.New(errs.KindFailedPrecondition, "QTY_EXCEEDS_RETURNABLE",
 				"requested quantity exceeds what is still returnable for "+req.ProductID)
 		}
-		rl = append(rl, resolved{req.ProductID, qty, ol.UnitPrice.Cents * int64(qty)})
+		out = append(out, resolvedLine{req.ProductID, qty, ol.UnitPrice.Cents * int64(qty)})
 	}
-	if len(rl) == 0 {
-		return nil, errs.New(errs.KindFailedPrecondition, "NOTHING_TO_RETURN",
-			"every requested line has already been fully returned")
-	}
-
-	// Refund the customer's share of what they actually paid (order total, net
-	// of any discount, incl. tax), proportioned by each line's pre-tax value.
-	// Allocate by running cumulative rounding so the parts sum exactly to the
-	// intended total (and to ord.Total for a whole-order return).
-	var lines []domain.ReturnLine
-	var totalCents, cumValue, cumRefund int64
-	for _, r := range rl {
-		cumValue += r.value
-		newCum := ord.Total.Cents * cumValue / ord.Subtotal.Cents
-		refund := newCum - cumRefund
-		cumRefund = newCum
-		lines = append(lines, domain.ReturnLine{
-			ProductID:    r.productID,
-			Quantity:     r.qty,
-			RefundAmount: domain.Money{Currency: ord.Total.Currency, Cents: refund},
-		})
-		totalCents += refund
-	}
-
-	r := &domain.Return{
-		ID: uuid.NewString(), OrderID: orderID, OwnerID: ownerID,
-		Status: domain.ReturnRequested, Reason: reason, Lines: lines,
-		RefundTotal: domain.Money{Currency: ord.Total.Currency, Cents: totalCents},
-	}
-	if err := o.store.InsertReturn(ctx, r); err != nil {
-		return nil, err
-	}
-	return r, nil
+	return out, nil
 }
 
 // DecideReturn applies an operator's decision. On approval it refunds the

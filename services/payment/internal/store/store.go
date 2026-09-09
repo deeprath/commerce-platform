@@ -44,6 +44,20 @@ func scanPayment(row pgx.Row, p *Payment) error {
 		&p.MethodToken, &p.ClientSecret, &p.CreatedAt, &p.RefundedCents)
 }
 
+func errNoPayment() error {
+	return pkgerrs.New(pkgerrs.KindNotFound, "PAYMENT_NOT_FOUND", "no such payment")
+}
+
+// loadForUpdate row-locks and scans a payment, mapping "not found".
+func loadForUpdate(ctx context.Context, tx pgx.Tx, id string) (Payment, error) {
+	var p Payment
+	err := scanPayment(tx.QueryRow(ctx, `SELECT `+cols+` FROM payments WHERE id = $1 FOR UPDATE`, id), &p)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, errNoPayment()
+	}
+	return p, wrap(err)
+}
+
 // Create opens a new intent in REQUIRES_CONFIRMATION.
 func (s *Store) Create(ctx context.Context, orderID string, amountCents int64, currency, methodToken string) (*Payment, error) {
 	secret := "pi_" + uuid.NewString()
@@ -63,7 +77,7 @@ func (s *Store) Get(ctx context.Context, id string) (*Payment, error) {
 	var p Payment
 	err := scanPayment(s.pool.QueryRow(ctx, `SELECT `+cols+` FROM payments WHERE id = $1`, id), &p)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, pkgerrs.New(pkgerrs.KindNotFound, "PAYMENT_NOT_FOUND", "no such payment")
+		return nil, errNoPayment()
 	}
 	if err != nil {
 		return nil, wrap(err)
@@ -80,13 +94,9 @@ func (s *Store) Transition(ctx context.Context, id, to, reason string) (*Payment
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var p Payment
-	err = scanPayment(tx.QueryRow(ctx, `SELECT `+cols+` FROM payments WHERE id = $1 FOR UPDATE`, id), &p)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, pkgerrs.New(pkgerrs.KindNotFound, "PAYMENT_NOT_FOUND", "no such payment")
-	}
+	p, err := loadForUpdate(ctx, tx, id)
 	if err != nil {
-		return nil, wrap(err)
+		return nil, err
 	}
 	if p.Status == to {
 		return &p, nil // idempotent
@@ -138,41 +148,25 @@ func (s *Store) Refund(ctx context.Context, id string, amountCents int64, idemKe
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var p Payment
-	err = scanPayment(tx.QueryRow(ctx, `SELECT `+cols+` FROM payments WHERE id = $1 FOR UPDATE`, id), &p)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, pkgerrs.New(pkgerrs.KindNotFound, "PAYMENT_NOT_FOUND", "no such payment")
-	}
+	p, err := loadForUpdate(ctx, tx, id)
 	if err != nil {
-		return nil, wrap(err)
+		return nil, err
 	}
 
-	if idemKey != "" {
-		var seen bool
-		if err := tx.QueryRow(ctx,
-			`SELECT EXISTS (SELECT 1 FROM refunds WHERE payment_id = $1 AND idempotency_key = $2)`,
-			p.ID, idemKey).Scan(&seen); err != nil {
-			return nil, wrap(err)
-		}
-		if seen {
-			return &p, nil // already applied
-		}
+	done, err := refundAlreadyApplied(ctx, tx, p.ID, idemKey)
+	if err != nil {
+		return nil, err
+	}
+	if done {
+		return &p, nil
 	}
 
-	if p.Status != "AUTHORIZED" && p.Status != "REFUNDED" {
-		return nil, pkgerrs.New(pkgerrs.KindFailedPrecondition, "NOT_REFUNDABLE",
-			"cannot refund a payment in "+p.Status)
+	amountCents, settled, err := resolveRefundAmount(&p, amountCents)
+	if err != nil {
+		return nil, err
 	}
-	remaining := p.AmountCents - p.RefundedCents
-	if amountCents <= 0 {
-		amountCents = remaining
-	}
-	if amountCents <= 0 {
+	if settled {
 		return &p, nil // nothing left to refund
-	}
-	if amountCents > remaining {
-		return nil, pkgerrs.New(pkgerrs.KindFailedPrecondition, "REFUND_EXCEEDS_BALANCE",
-			"refund exceeds the unrefunded balance")
 	}
 
 	if _, err := tx.Exec(ctx,
@@ -207,6 +201,40 @@ func (s *Store) Refund(ctx context.Context, id string, amountCents int64, idemKe
 		return nil, wrap(err)
 	}
 	return &p, nil
+}
+
+// refundAlreadyApplied reports whether a non-empty idemKey has been used for
+// this payment.
+func refundAlreadyApplied(ctx context.Context, tx pgx.Tx, paymentID, idemKey string) (bool, error) {
+	if idemKey == "" {
+		return false, nil
+	}
+	var seen bool
+	err := tx.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM refunds WHERE payment_id = $1 AND idempotency_key = $2)`,
+		paymentID, idemKey).Scan(&seen)
+	return seen, wrap(err)
+}
+
+// resolveRefundAmount validates a refund against the payment and returns the
+// effective amount. settled is true when there is nothing left to refund.
+func resolveRefundAmount(p *Payment, requested int64) (amount int64, settled bool, err error) {
+	if p.Status != "AUTHORIZED" && p.Status != "REFUNDED" {
+		return 0, false, pkgerrs.New(pkgerrs.KindFailedPrecondition, "NOT_REFUNDABLE",
+			"cannot refund a payment in "+p.Status)
+	}
+	remaining := p.AmountCents - p.RefundedCents
+	if requested <= 0 {
+		requested = remaining
+	}
+	if requested <= 0 {
+		return 0, true, nil
+	}
+	if requested > remaining {
+		return 0, false, pkgerrs.New(pkgerrs.KindFailedPrecondition, "REFUND_EXCEEDS_BALANCE",
+			"refund exceeds the unrefunded balance")
+	}
+	return requested, false, nil
 }
 
 func money(currency string, cents int64) *commonv1.Money {
