@@ -10,9 +10,9 @@ import (
 	"github.com/deeprath/commerce-platform/services/notification/internal/domain"
 )
 
-// Channel delivers one notification. A returned error marks the notification
-// FAILED; the caller still records it.
-type Channel interface {
+// Sender delivers one notification over a channel. A returned error marks the
+// notification FAILED; the caller still records it.
+type Sender interface {
 	Send(ctx context.Context, n domain.Notification) error
 }
 

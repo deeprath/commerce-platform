@@ -34,7 +34,7 @@ func Topics() []string {
 // Deps is what the handler needs.
 type Deps struct {
 	Store   *store.Store
-	Channel channel.Channel
+	Channel channel.Sender
 }
 
 // msg is the normalised notification input extracted from an event.

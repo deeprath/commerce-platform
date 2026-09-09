@@ -17,10 +17,10 @@ import (
 type Server struct {
 	notificationv1.UnimplementedNotificationServiceServer
 	store *store.Store
-	ch    channel.Channel
+	ch    channel.Sender
 }
 
-func New(s *store.Store, ch channel.Channel) *Server { return &Server{store: s, ch: ch} }
+func New(s *store.Store, ch channel.Sender) *Server { return &Server{store: s, ch: ch} }
 
 func (s *Server) ListNotifications(ctx context.Context, req *notificationv1.ListNotificationsRequest) (*notificationv1.ListNotificationsResponse, error) {
 	p := auth.FromContext(ctx)
