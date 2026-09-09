@@ -1,0 +1,7 @@
+go 1.26.8
+
+use (
+	./gen/go
+	./pkg
+	./services/ext-authz
+)

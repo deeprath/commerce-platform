@@ -1,0 +1,98 @@
+version: "3"
+
+# Task runner for the monorepo. `task --list` shows everything.
+# Install: go install github.com/go-task/task/v3/cmd/task@latest
+
+vars:
+  COMPOSE: docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env
+  # MODULES expands to "<dir>/... <dir>/..." for every module in go.work,
+  # so new service modules are picked up automatically.
+  MODULES:
+    sh: go list -m -f '{{`{{.Dir}}`}}/...' 2>/dev/null | tr '\n' ' '
+
+tasks:
+  default:
+    cmds: [task --list]
+
+  # ---- protobuf ----------------------------------------------------------
+  proto:
+    desc: Lint protos and regenerate Go stubs into gen/go
+    cmds:
+      - buf lint
+      - buf format -w
+      - buf generate
+
+  proto:breaking:
+    desc: Fail if proto changes break wire compatibility with main
+    cmds:
+      - buf breaking --against '.git#branch=main'
+
+  # ---- Go --------------------------------------------------------------
+  build:
+    desc: Build every module in the workspace
+    cmds:
+      - go build {{.MODULES}}
+
+  test:
+    desc: Unit + integration tests (integration uses testcontainers; needs Docker)
+    cmds:
+      - go test -race -shuffle=on {{.MODULES}}
+
+  test:unit:
+    desc: Fast tests only (no Docker)
+    cmds:
+      - go test -race -short {{.MODULES}}
+
+  vet:
+    desc: go vet across the workspace
+    cmds:
+      - go vet {{.MODULES}}
+
+  lint:
+    desc: golangci-lint across the workspace
+    cmds:
+      - golangci-lint run
+
+  tidy:
+    desc: go mod tidy in every module
+    cmds:
+      - for: [pkg, gen/go, services/ext-authz]
+        cmd: cd {{.ITEM}} && go mod tidy
+
+  # ---- local stack -----------------------------------------------------
+  up:
+    desc: Start the full local stack (infra + gateway + services)
+    cmds:
+      - "{{.COMPOSE}} up -d --build"
+      - echo "Storefront gateway  http://localhost:8080"
+      - echo "Keycloak            http://localhost:8081"
+      - echo "Grafana             http://localhost:3000  (admin/admin)"
+      - echo "MinIO console       http://localhost:9001  (minio/minio12345)"
+
+  down:
+    desc: Stop the stack, keep volumes
+    cmds: ["{{.COMPOSE}} down"]
+
+  down:v:
+    desc: Stop the stack and wipe all data volumes
+    cmds: ["{{.COMPOSE}} down -v"]
+
+  logs:
+    desc: Tail logs (task logs -- ext-authz)
+    cmds: ["{{.COMPOSE}} logs -f --tail=100 {{.CLI_ARGS}}"]
+
+  # ---- security ------------------------------------------------------
+  scan:secrets:
+    desc: Run gitleaks locally
+    cmds:
+      - gitleaks detect --source . --config infra/security/.gitleaks.toml --verbose
+
+  scan:deps:
+    desc: Run Trivy filesystem scan (our deps + IaC + secrets)
+    cmds:
+      - trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --ignorefile infra/security/.trivyignore .
+
+  scan:zap:
+    desc: Run OWASP ZAP baseline against the running local stack
+    cmds:
+      - infra/security/zap-scan.sh

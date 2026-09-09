@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+// Package commerce.catalog.v1 is the product catalog read/write contract.
+// Phase 0 ships the contract only — no server implementation yet (see Phase 1).
+package commerce.catalog.v1;
+
+import "commerce/common/v1/types.proto";
+
+// CatalogService owns products, variants, and categories.
+service CatalogService {
+  // GetProduct returns one product by id. NOT_FOUND if it does not exist or
+  // is not visible to the caller.
+  rpc GetProduct(GetProductRequest) returns (GetProductResponse);
+
+  // ListProducts returns a page of products, newest first, optionally filtered
+  // by category.
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+
+  // BatchGetProducts resolves many ids at once for list/cart rendering.
+  // Unknown ids are omitted from the response rather than erroring.
+  rpc BatchGetProducts(BatchGetProductsRequest) returns (BatchGetProductsResponse);
+}
+
+message Product {
+  string id = 1;
+  string slug = 2;
+  string title = 3;
+  string description = 4;
+  string category_id = 5;
+  // List price. Promotions/tax are applied by the pricing service, not here.
+  commerce.common.v1.Money list_price = 6;
+  // Object-storage keys for media, resolved to URLs by the BFF/CDN.
+  repeated string media_keys = 7;
+  ProductStatus status = 8;
+  // Free-form attributes (colour, size chart, material, ...). Stored as JSONB.
+  map<string, string> attributes = 9;
+}
+
+enum ProductStatus {
+  PRODUCT_STATUS_UNSPECIFIED = 0;
+  PRODUCT_STATUS_DRAFT = 1;
+  PRODUCT_STATUS_ACTIVE = 2;
+  PRODUCT_STATUS_ARCHIVED = 3;
+}
+
+message GetProductRequest {
+  string id = 1;
+}
+
+message GetProductResponse {
+  Product product = 1;
+}
+
+message ListProductsRequest {
+  // Optional category filter. Empty => all categories.
+  string category_id = 1;
+  commerce.common.v1.PageRequest page = 2;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+  commerce.common.v1.PageResponse page = 2;
+}
+
+message BatchGetProductsRequest {
+  repeated string ids = 1;
+}
+
+message BatchGetProductsResponse {
+  repeated Product products = 1;
+}
