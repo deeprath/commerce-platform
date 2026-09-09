@@ -359,6 +359,20 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  storefront:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/storefront.Dockerfile
+      args:
+        VITE_MEDIA_BASE_URL: http://localhost:9000
+    environment:
+      BFF_UPSTREAM: http://bff:8080
+      MEDIA_ORIGIN: http://localhost:9000
+    ports: ["5173:8080"]
+    depends_on: [bff]
+    networks: [commerce]
+    logging: *default-logging
+
   envoy:
     image: envoyproxy/envoy:${ENVOY_TAG}
     command: ["-c", "/etc/envoy/envoy.yaml", "-l", "info"]
