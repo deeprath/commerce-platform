@@ -10,7 +10,7 @@ replace (
 require (
 	github.com/deeprath/commerce-platform/gen/go v0.0.0-00010101000000-000000000000
 	github.com/deeprath/commerce-platform/pkg v0.0.0-00010101000000-000000000000
-	github.com/labstack/echo/v4 v4.13.3
+	github.com/labstack/echo/v4 v4.15.3
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
@@ -25,9 +25,9 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
-	github.com/labstack/gommon v0.4.2 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/labstack/gommon v0.5.0 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
