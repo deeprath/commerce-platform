@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+// commerce.order.v1 — the order aggregate and the checkout saga orchestrator.
+// CreateOrder runs: quote (pricing) -> reserve (inventory) -> open payment
+// intent; the order then advances on payment.* and inventory.* events.
+package commerce.order.v1;
+
+import "commerce/common/v1/types.proto";
+
+service OrderService {
+  // CreateOrder builds an order from a cart and returns its id plus the payment
+  // client secret. The order is PENDING_PAYMENT until payment is authorized.
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+
+  // GetOrder returns one order the caller owns.
+  rpc GetOrder(GetOrderRequest) returns (Order);
+
+  // ListOrders returns the caller's orders, newest first.
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+
+  // CancelOrder cancels a PENDING_PAYMENT order (releases the reservation,
+  // voids the payment intent).
+  rpc CancelOrder(CancelOrderRequest) returns (Order);
+}
+
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_PENDING_PAYMENT = 1;
+  ORDER_STATUS_CONFIRMED = 2;
+  ORDER_STATUS_CANCELLED = 3;
+  ORDER_STATUS_FULFILLED = 4;
+}
+
+message OrderLine {
+  string product_id = 1;
+  string title = 2;
+  int32 quantity = 3;
+  commerce.common.v1.Money unit_price = 4;
+  commerce.common.v1.Money line_total = 5;
+}
+
+message Order {
+  string id = 1;
+  string owner_id = 2; // Keycloak sub
+  OrderStatus status = 3;
+  repeated OrderLine lines = 4;
+  commerce.common.v1.Money subtotal = 5;
+  commerce.common.v1.Money discount = 6;
+  commerce.common.v1.Money tax = 7;
+  commerce.common.v1.Money total = 8;
+  commerce.common.v1.Address ship_to = 9;
+  string payment_id = 10;
+  string reservation_id = 11;
+  string cancel_reason = 12;
+  string created_at = 13;
+  string updated_at = 14;
+}
+
+message CreateOrderRequest {
+  string cart_id = 1;
+  commerce.common.v1.Address ship_to = 2;
+  string currency_code = 3;
+  string coupon_code = 4;
+  string payment_method_token = 5; // sandbox: "pm_card_ok" | "pm_card_declined"
+}
+
+message CreateOrderResponse {
+  string order_id = 1;
+  OrderStatus status = 2;
+  string payment_id = 3;
+  string payment_client_secret = 4;
+  commerce.common.v1.Money total = 5;
+}
+
+message GetOrderRequest {
+  string id = 1;
+}
+
+message ListOrdersRequest {
+  commerce.common.v1.PageRequest page = 1;
+}
+
+message ListOrdersResponse {
+  repeated Order orders = 1;
+  commerce.common.v1.PageResponse page = 2;
+}
+
+message CancelOrderRequest {
+  string id = 1;
+}
+
+// --- events (topic: commerce.order.<event>) ---
+
+message OrderCreated {
+  string order_id = 1;
+  string owner_id = 2;
+  string cart_id = 3;
+  commerce.common.v1.Money total = 4;
+  string occurred_at = 5;
+}
+
+message OrderConfirmed {
+  string order_id = 1;
+  string owner_id = 2;
+  string payment_id = 3;
+  string occurred_at = 4;
+}
+
+message OrderCancelled {
+  string order_id = 1;
+  string owner_id = 2;
+  string reason = 3;
+  string occurred_at = 4;
+}

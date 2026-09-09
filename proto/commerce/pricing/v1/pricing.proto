@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+// commerce.pricing.v1 — turns a set of cart lines into a priced quote:
+// unit prices (from the catalog), promotions/coupons, and tax. Stateless w.r.t.
+// carts and orders; it owns price lists, coupons and tax rules only.
+package commerce.pricing.v1;
+
+import "commerce/common/v1/types.proto";
+
+service PricingService {
+  // QuotePrice prices a set of lines. It is a pure read: no side effects.
+  rpc QuotePrice(QuoteRequest) returns (Quote);
+
+  // ValidateCoupon reports whether a coupon code is currently usable.
+  rpc ValidateCoupon(ValidateCouponRequest) returns (CouponInfo);
+}
+
+message QuoteLineInput {
+  string product_id = 1;
+  int32 quantity = 2;
+}
+
+message QuoteRequest {
+  repeated QuoteLineInput items = 1;
+  string currency_code = 2; // e.g. "USD"
+  string coupon_code = 3; // optional
+  // Destination country/region drives the tax rate; country_code is enough for v1.
+  commerce.common.v1.Address ship_to = 4;
+}
+
+message QuoteLine {
+  string product_id = 1;
+  string title = 2;
+  int32 quantity = 3;
+  commerce.common.v1.Money unit_price = 4;
+  commerce.common.v1.Money line_total = 5; // unit_price * quantity
+}
+
+message Quote {
+  repeated QuoteLine lines = 1;
+  commerce.common.v1.Money subtotal = 2; // sum of line_totals
+  commerce.common.v1.Money discount = 3; // >= 0, applied to subtotal
+  commerce.common.v1.Money tax = 4; // on (subtotal - discount)
+  commerce.common.v1.Money total = 5; // subtotal - discount + tax
+  string coupon_code = 6; // echoed if applied
+  // Opaque hash of the priced inputs; the order service stores it so a later
+  // re-quote can be detected as changed.
+  string pricing_signature = 7;
+}
+
+message ValidateCouponRequest {
+  string code = 1;
+}
+
+message CouponInfo {
+  string code = 1;
+  bool valid = 2;
+  // One of "PERCENT" or "AMOUNT".
+  string kind = 3;
+  int32 percent_off = 4; // when kind == PERCENT
+  commerce.common.v1.Money amount_off = 5; // when kind == AMOUNT
+  string expires_at = 6;
+  string reason = 7; // when !valid: EXPIRED | UNKNOWN | EXHAUSTED
+}

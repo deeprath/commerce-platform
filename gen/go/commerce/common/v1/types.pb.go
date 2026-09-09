@@ -264,6 +264,107 @@ func (x *ErrorInfo) GetMetadata() map[string]string {
 	return nil
 }
 
+// Address is a postal shipping/billing address.
+type Address struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FullName      string                 `protobuf:"bytes,1,opt,name=full_name,json=fullName,proto3" json:"full_name,omitempty"`
+	Line1         string                 `protobuf:"bytes,2,opt,name=line1,proto3" json:"line1,omitempty"`
+	Line2         string                 `protobuf:"bytes,3,opt,name=line2,proto3" json:"line2,omitempty"`
+	City          string                 `protobuf:"bytes,4,opt,name=city,proto3" json:"city,omitempty"`
+	Region        string                 `protobuf:"bytes,5,opt,name=region,proto3" json:"region,omitempty"` // state / province
+	PostalCode    string                 `protobuf:"bytes,6,opt,name=postal_code,json=postalCode,proto3" json:"postal_code,omitempty"`
+	CountryCode   string                 `protobuf:"bytes,7,opt,name=country_code,json=countryCode,proto3" json:"country_code,omitempty"` // ISO 3166-1 alpha-2
+	Phone         string                 `protobuf:"bytes,8,opt,name=phone,proto3" json:"phone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Address) Reset() {
+	*x = Address{}
+	mi := &file_commerce_common_v1_types_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Address) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Address) ProtoMessage() {}
+
+func (x *Address) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_common_v1_types_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Address.ProtoReflect.Descriptor instead.
+func (*Address) Descriptor() ([]byte, []int) {
+	return file_commerce_common_v1_types_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Address) GetFullName() string {
+	if x != nil {
+		return x.FullName
+	}
+	return ""
+}
+
+func (x *Address) GetLine1() string {
+	if x != nil {
+		return x.Line1
+	}
+	return ""
+}
+
+func (x *Address) GetLine2() string {
+	if x != nil {
+		return x.Line2
+	}
+	return ""
+}
+
+func (x *Address) GetCity() string {
+	if x != nil {
+		return x.City
+	}
+	return ""
+}
+
+func (x *Address) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *Address) GetPostalCode() string {
+	if x != nil {
+		return x.PostalCode
+	}
+	return ""
+}
+
+func (x *Address) GetCountryCode() string {
+	if x != nil {
+		return x.CountryCode
+	}
+	return ""
+}
+
+func (x *Address) GetPhone() string {
+	if x != nil {
+		return x.Phone
+	}
+	return ""
+}
+
 var File_commerce_common_v1_types_proto protoreflect.FileDescriptor
 
 const file_commerce_common_v1_types_proto_rawDesc = "" +
@@ -287,7 +388,17 @@ const file_commerce_common_v1_types_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x03(\v2+.commerce.common.v1.ErrorInfo.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\xd8\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd8\x01\n" +
+	"\aAddress\x12\x1b\n" +
+	"\tfull_name\x18\x01 \x01(\tR\bfullName\x12\x14\n" +
+	"\x05line1\x18\x02 \x01(\tR\x05line1\x12\x14\n" +
+	"\x05line2\x18\x03 \x01(\tR\x05line2\x12\x12\n" +
+	"\x04city\x18\x04 \x01(\tR\x04city\x12\x16\n" +
+	"\x06region\x18\x05 \x01(\tR\x06region\x12\x1f\n" +
+	"\vpostal_code\x18\x06 \x01(\tR\n" +
+	"postalCode\x12!\n" +
+	"\fcountry_code\x18\a \x01(\tR\vcountryCode\x12\x14\n" +
+	"\x05phone\x18\b \x01(\tR\x05phoneB\xd8\x01\n" +
 	"\x16com.commerce.common.v1B\n" +
 	"TypesProtoP\x01ZHgithub.com/deeprath/commerce-platform/gen/go/commerce/common/v1;commonv1\xa2\x02\x03CCX\xaa\x02\x12Commerce.Common.V1\xca\x02\x12Commerce\\Common\\V1\xe2\x02\x1eCommerce\\Common\\V1\\GPBMetadata\xea\x02\x14Commerce::Common::V1b\x06proto3"
 
@@ -303,16 +414,17 @@ func file_commerce_common_v1_types_proto_rawDescGZIP() []byte {
 	return file_commerce_common_v1_types_proto_rawDescData
 }
 
-var file_commerce_common_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_commerce_common_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_commerce_common_v1_types_proto_goTypes = []any{
 	(*Money)(nil),        // 0: commerce.common.v1.Money
 	(*PageRequest)(nil),  // 1: commerce.common.v1.PageRequest
 	(*PageResponse)(nil), // 2: commerce.common.v1.PageResponse
 	(*ErrorInfo)(nil),    // 3: commerce.common.v1.ErrorInfo
-	nil,                  // 4: commerce.common.v1.ErrorInfo.MetadataEntry
+	(*Address)(nil),      // 4: commerce.common.v1.Address
+	nil,                  // 5: commerce.common.v1.ErrorInfo.MetadataEntry
 }
 var file_commerce_common_v1_types_proto_depIdxs = []int32{
-	4, // 0: commerce.common.v1.ErrorInfo.metadata:type_name -> commerce.common.v1.ErrorInfo.MetadataEntry
+	5, // 0: commerce.common.v1.ErrorInfo.metadata:type_name -> commerce.common.v1.ErrorInfo.MetadataEntry
 	1, // [1:1] is the sub-list for method output_type
 	1, // [1:1] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
@@ -331,7 +443,7 @@ func file_commerce_common_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_commerce_common_v1_types_proto_rawDesc), len(file_commerce_common_v1_types_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

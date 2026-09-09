@@ -4,8 +4,13 @@ use (
 	./gen/go
 	./pkg
 	./services/bff
+	./services/cart
 	./services/catalog
 	./services/ext-authz
+	./services/inventory
 	./services/media
+	./services/order
+	./services/payment
+	./services/pricing
 	./services/search
 )

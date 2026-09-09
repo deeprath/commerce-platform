@@ -58,6 +58,19 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	v1.GET("/catalog/products/:slug", s.getProduct)
 	v1.GET("/search/autocomplete", s.autocomplete)
 
+	// --- cart (guest or signed-in; a cart_id cookie is minted on first use) ---
+	v1.GET("/cart", s.getCart)
+	v1.POST("/cart/items", s.addCartItem)
+	v1.PUT("/cart/items/:productId", s.setCartItem)
+	v1.DELETE("/cart/items/:productId", s.removeCartItem)
+	v1.POST("/cart/clear", s.clearCart)
+
+	// --- checkout & orders (require sign-in) ---
+	v1.POST("/checkout", s.checkout)
+	v1.POST("/checkout/confirm", s.confirmCheckout)
+	v1.GET("/orders", s.listOrders)
+	v1.GET("/orders/:id", s.getOrder)
+
 	// --- admin (bearer/cookie forwarded; services enforce the role) ---
 	adm := v1.Group("/admin")
 	adm.POST("/catalog/products", s.createProduct)

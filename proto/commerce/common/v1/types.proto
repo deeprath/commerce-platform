@@ -41,3 +41,15 @@ message ErrorInfo {
   // Arbitrary key/value context. Never put PII or secrets here.
   map<string, string> metadata = 3;
 }
+
+// Address is a postal shipping/billing address.
+message Address {
+  string full_name = 1;
+  string line1 = 2;
+  string line2 = 3;
+  string city = 4;
+  string region = 5; // state / province
+  string postal_code = 6;
+  string country_code = 7; // ISO 3166-1 alpha-2
+  string phone = 8;
+}
