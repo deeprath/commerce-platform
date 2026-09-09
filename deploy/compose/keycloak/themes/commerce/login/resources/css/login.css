@@ -1,0 +1,66 @@
+/* Commerce login re-skin. Overrides Keycloak's default login CSS only. */
+
+:root {
+  --brand: #4f46e5;
+  --brand-dark: #3730a3;
+  --ink: #0f172a;
+  --bg: #f1f5f9;
+}
+
+body.login-pf,
+.login-pf body {
+  background: linear-gradient(160deg, var(--bg) 0%, #e2e8f0 100%);
+}
+
+.login-pf-page {
+  padding-top: 8vh;
+}
+
+.login-pf-page .login-pf-header h1 {
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Brand mark above the card */
+.login-pf-page .login-pf-brand {
+  content: "";
+  height: 40px;
+  margin-bottom: 1rem;
+}
+.login-pf-page .login-pf-header::before {
+  content: "◆ Commerce";
+  display: block;
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--brand);
+  margin-bottom: 0.75rem;
+}
+
+.card-pf {
+  border: none;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+
+.form-control:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+}
+
+.btn-primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  font-weight: 600;
+}
+.btn-primary:hover,
+.btn-primary:focus {
+  background: var(--brand-dark);
+  border-color: var(--brand-dark);
+}
+
+a,
+a:hover {
+  color: var(--brand-dark);
+}

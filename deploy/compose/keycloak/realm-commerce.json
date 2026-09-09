@@ -1,0 +1,103 @@
+{
+  "realm": "commerce",
+  "enabled": true,
+  "displayName": "Commerce",
+  "loginTheme": "commerce",
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "resetPasswordAllowed": true,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "failureFactor": 5,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "passwordPolicy": "length(10) and notUsername(undefined) and passwordHistory(3)",
+  "roles": {
+    "realm": [
+      { "name": "customer", "description": "Shop; manage own cart/orders/addresses/reviews" },
+      { "name": "csr", "description": "Customer service: read any order, limited refunds" },
+      { "name": "catalog_manager", "description": "CRUD products/categories/media" },
+      { "name": "inventory_manager", "description": "Adjust stock, manage warehouses" },
+      { "name": "pricing_manager", "description": "Manage prices, promotions, coupons" },
+      { "name": "order_manager", "description": "Full order lifecycle actions" },
+      { "name": "finance", "description": "Payments/refunds reporting, reconciliation" },
+      {
+        "name": "admin",
+        "description": "All business operations",
+        "composite": true,
+        "composites": {
+          "realm": ["csr", "catalog_manager", "inventory_manager", "pricing_manager", "order_manager", "finance"]
+        }
+      },
+      { "name": "platform_admin", "description": "User/role administration, system config" }
+    ]
+  },
+  "groups": [
+    { "name": "customers", "realmRoles": ["customer"] },
+    { "name": "operators", "realmRoles": ["csr"] },
+    { "name": "administrators", "realmRoles": ["admin", "platform_admin", "customer"] }
+  ],
+  "defaultGroups": ["/customers"],
+  "clients": [
+    {
+      "clientId": "storefront-web",
+      "name": "Storefront (SPA)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173", "+"],
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "http://localhost:5173/*" }
+    },
+    {
+      "clientId": "admin-web",
+      "name": "Admin console (SPA)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5174/*"],
+      "webOrigins": ["http://localhost:5174", "+"],
+      "attributes": { "pkce.code.challenge.method": "S256" }
+    },
+    {
+      "clientId": "bff",
+      "name": "Backend-for-frontend (confidential)",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "local-dev-bff-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "redirectUris": ["http://localhost:8080/*"],
+      "webOrigins": ["http://localhost:8080"]
+    }
+  ],
+  "users": [
+    {
+      "username": "testuser",
+      "email": "testuser@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Test",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "testuser123", "temporary": false }],
+      "groups": ["/customers"]
+    },
+    {
+      "username": "adminuser",
+      "email": "adminuser@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "adminuser123", "temporary": false }],
+      "groups": ["/administrators"]
+    }
+  ]
+}

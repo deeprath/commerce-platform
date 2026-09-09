@@ -1,0 +1,154 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC — full-history + ZAP
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---- secret scanning --------------------------------------------------
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # full history on schedule; diff-only otherwise
+          fetch-depth: ${{ github.event_name == 'schedule' && 0 || 1 }}
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: infra/security/.gitleaks.toml
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
+
+  # ---- dependency / image / IaC scanning ------------------------------
+  trivy-fs:
+    # BLOCKS the build: vulnerabilities in our own dependencies, and stray secrets.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: "true"
+          trivyignores: infra/security/.trivyignore
+
+  trivy-config:
+    # INFORMATIONAL: IaC / Dockerfile / manifest misconfig. Promote to blocking
+    # once the baseline is clean (docs/SECURITY.md §5.2).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: config
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+          trivyignores: infra/security/.trivyignore
+
+  trivy-image:
+    # BLOCKS on library packages baked into the image; base-OS CVEs are reported
+    # but do not fail (separate step, exit-code 0).
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [ext-authz]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/${{ matrix.service }}.Dockerfile
+          load: true
+          tags: commerce/${{ matrix.service }}:scan
+      - name: trivy (our libraries — blocking)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: image
+          image-ref: commerce/${{ matrix.service }}:scan
+          pkg-types: library
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: "true"
+          trivyignores: infra/security/.trivyignore
+      - name: trivy (full image incl. base OS — informational)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          scan-type: image
+          image-ref: commerce/${{ matrix.service }}:scan
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+  # ---- static analysis (SonarCloud — repo is public) -------------------
+  sonarcloud:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version-file: pkg/go.mod }
+      - name: coverage
+        run: |
+          go test -coverprofile=coverage.out $(go list -m -f '{{.Dir}}/...') || true
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        # No-op with a clear log line until SONAR_TOKEN is added (docs/SECURITY.md §5.3).
+        if: ${{ env.SONAR_TOKEN != '' }}
+
+  # ---- dynamic scanning (live stack) ---------------------------------
+  zap-baseline:
+    # Needs the whole stack up, so: schedule + manual only.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: pkg/go.mod }
+      - name: bring up the stack
+        run: |
+          cp deploy/compose/.env.example deploy/compose/.env
+          docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env up -d --build
+          # wait for the edge to answer
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:8080/api/v1/catalog/ping && break || sleep 5
+          done
+      - name: ZAP baseline
+        run: ./infra/security/zap-scan.sh
+      - name: fail on HIGH alerts
+        run: |
+          python3 - <<'PY'
+          import json, sys, glob
+          highs = 0
+          for f in glob.glob("reports/*-report.json"):
+              data = json.load(open(f))
+              for site in data.get("site", []):
+                  for a in site.get("alerts", []):
+                      if a.get("riskcode") == "3":
+                          highs += 1
+                          print(f"HIGH: {a.get('alert')} ({f})")
+          sys.exit(1 if highs else 0)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-reports
+          path: reports/
+      - name: tear down
+        if: always()
+        run: docker compose -f deploy/compose/docker-compose.yml down -v

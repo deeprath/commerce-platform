@@ -36,7 +36,7 @@ Format per entry: **Status · Context · Decision · Alternatives · Consequence
 **Context:** Need one backend language for ~13 services built by two people. Candidates:
 Go, Java/Kotlin (Spring), Node/TypeScript, Rust.
 
-**Decision:** Go 1.24 for every service.
+**Decision:** Go (1.25+ toolchain, `GOTOOLCHAIN=auto`) for every service.
 
 **Alternatives:**
 - *Java/Spring* — richest e-commerce ecosystem, but heavy memory footprint per pod (bad for

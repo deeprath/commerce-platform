@@ -1,0 +1,43 @@
+# Storefront + admin API traffic -> the BFF. The BFF is added in Phase 1; until
+# then this route resolves to a Service with no endpoints and returns 503.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: bff-storefront
+  namespace: commerce
+spec:
+  parentRefs:
+    - name: commerce-gateway
+  hostnames: ["store.commerce.example.com"]
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /api/v1 }
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            add:
+              - name: x-edge
+                value: istio-gateway
+      backendRefs:
+        - name: bff
+          port: 8080
+      timeouts:
+        request: 15s
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: bff-admin
+  namespace: commerce
+spec:
+  parentRefs:
+    - name: commerce-gateway
+  hostnames: ["admin.commerce.example.com"]
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /api/v1 }
+      backendRefs:
+        - name: bff-admin
+          port: 8080
+      timeouts:
+        request: 15s

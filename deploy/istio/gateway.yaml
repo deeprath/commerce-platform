@@ -1,0 +1,29 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: commerce-gateway
+  namespace: commerce
+  annotations:
+    # Istio provisions a dedicated gateway Deployment+Service for this Gateway.
+    networking.istio.io/service-type: LoadBalancer
+spec:
+  gatewayClassName: istio
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: "*.commerce.example.com"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: commerce-tls # provisioned by cert-manager
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same

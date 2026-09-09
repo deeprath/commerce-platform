@@ -1,0 +1,112 @@
+# Default (dev) values. Override per environment with values-<env>.yaml.
+
+spec:
+  # Argo CD project + destination for every generated Application.
+  project: default
+  destinationServer: https://kubernetes.default.svc
+  repoURL: https://github.com/deeprath/commerce-platform.git
+  targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+
+# Istio meshConfig extension providers, passed to the istiod Application's Helm
+# values. These names are referenced by deploy/istio/*.yaml.
+istio:
+  profile: ambient
+  meshConfig:
+    extensionProviders:
+      - name: otel
+        opentelemetry:
+          service: otel-collector.observability.svc.cluster.local
+          port: 4317
+      - name: ext-authz-grpc
+        envoyExtAuthzGrpc:
+          service: ext-authz.commerce.svc.cluster.local
+          port: 50051
+      - name: edge-ratelimit
+        envoyRateLimit:
+          service: ratelimit.commerce.svc.cluster.local
+          port: 8081
+
+# Each entry becomes one Argo CD Application. Charts are pinned by version.
+applications:
+  - name: gateway-api-crds
+    repoURL: https://github.com/kubernetes-sigs/gateway-api.git
+    targetRevision: v1.2.0
+    path: config/crd/standard
+    namespace: default
+
+  - name: istio-base
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: base
+    targetRevision: 1.24.1
+    namespace: istio-system
+
+  - name: istiod
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: istiod
+    targetRevision: 1.24.1
+    namespace: istio-system
+    valuesFromKey: istio
+
+  - name: istio-cni
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: cni
+    targetRevision: 1.24.1
+    namespace: istio-system
+
+  - name: ztunnel
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: ztunnel
+    targetRevision: 1.24.1
+    namespace: istio-system
+
+  - name: cert-manager
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.16.2
+    namespace: cert-manager
+    helmValues: |
+      crds:
+        enabled: true
+
+  - name: external-secrets
+    repoURL: https://charts.external-secrets.io
+    chart: external-secrets
+    targetRevision: 0.10.7
+    namespace: external-secrets
+
+  - name: keda
+    repoURL: https://kedacore.github.io/charts
+    chart: keda
+    targetRevision: 2.16.0
+    namespace: keda
+
+  - name: kube-prometheus-stack
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 66.3.1
+    namespace: observability
+
+  - name: loki
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 6.24.0
+    namespace: observability
+
+  - name: tempo
+    repoURL: https://grafana.github.io/helm-charts
+    chart: tempo
+    targetRevision: 1.14.0
+    namespace: observability
+
+  - name: opentelemetry-collector
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.108.0
+    namespace: observability

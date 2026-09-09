@@ -1,0 +1,67 @@
+# Phase 0 baseline. Phase 4 tightens this to a per-service default-deny keyed on
+# SPIFFE identity + method (docs/ARCHITECTURE.md §14).
+
+# 1) Shallow edge pre-check: the gateway calls the ext-authz service (registered
+#    as the `ext-authz-grpc` extensionProvider in istiod's meshConfig).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: gateway-ext-authz
+  namespace: commerce
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: commerce-gateway
+  action: CUSTOM
+  provider:
+    name: ext-authz-grpc
+  rules:
+    - {} # apply to every request reaching the gateway
+---
+# 2) Namespace default-deny. Every allow below is additive.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: commerce
+spec:
+  {} # empty spec = deny all
+---
+# 3) Allow the gateway to reach the BFF.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-gateway-to-bff
+  namespace: commerce
+spec:
+  selector:
+    matchLabels: { app: bff }
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/commerce/sa/commerce-gateway
+---
+# 4) Allow the BFF to reach the domain services (Phase 1+ workloads).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-bff-to-domain
+  namespace: commerce
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/commerce/sa/bff"]
+      to:
+        - operation:
+            notPaths: ["/grpc.reflection/*"]
+  # Applies to all workloads in the namespace that are NOT the gateway/bff.
+  selector:
+    matchExpressions:
+      - key: app
+        operator: NotIn
+        values: ["bff", "commerce-gateway"]

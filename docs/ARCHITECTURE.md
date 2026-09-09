@@ -504,7 +504,7 @@ These were weighed against Kong and accepted — see [`DECISIONS.md` ADR-011](DE
 
 ### 9.1 Images
 
-- Multi-stage: `golang:1.24` build stage → **distroless** (`gcr.io/distroless/static`) or
+- Multi-stage: `golang:1.26` build stage → **distroless** (`gcr.io/distroless/static`) or
   Chainguard runtime. Final image is a single static binary, non-root `USER 65532`,
   read-only root filesystem, no shell.
 - One Dockerfile per service under `deploy/docker/`, sharing a common base.

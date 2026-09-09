@@ -63,6 +63,7 @@ tasks:
   up:
     desc: Start the full local stack (infra + gateway + services)
     cmds:
+      - test -f deploy/compose/.env || cp deploy/compose/.env.example deploy/compose/.env
       - "{{.COMPOSE}} up -d --build"
       - echo "Storefront gateway  http://localhost:8080"
       - echo "Keycloak            http://localhost:8081"
