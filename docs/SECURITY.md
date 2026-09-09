@@ -135,8 +135,11 @@ dispatched once against the live stack. Re-check these rows whenever the pipelin
 
 ### 5.2 Trivy — dependency / image / IaC scanning
 
-Run via the **official install script + the raw `trivy` CLI** (pinned `v0.74.0`), not a
-wrapper action — every flag is explicit and behaviour doesn't drift. Four invocations,
+Run the **raw `trivy` CLI** (pinned `v0.74.0`), installed from the pinned GitHub
+release tarball — not a wrapper action, and not the upstream `install.sh` (its
+unauthenticated "check for latest tag" API call gets rate-limited when the whole
+`trivy-image` matrix runs at once). Every flag is explicit and behaviour doesn't
+drift. Four invocations,
 **different policies on purpose** (per the skill's guidance):
 
 | Scan | What | Policy | First run (2026-09-09) |
