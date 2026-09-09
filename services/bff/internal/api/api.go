@@ -259,3 +259,5 @@ func readBody(c echo.Context) ([]byte, error) {
 	defer func() { _ = c.Request().Body.Close() }()
 	return io.ReadAll(io.LimitReader(c.Request().Body, 1<<20))
 }
+
+func itoa64(n int64) string { return strconv.FormatInt(n, 10) }

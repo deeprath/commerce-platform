@@ -55,6 +55,57 @@ export interface ApiError {
   reason: string;
 }
 
+export interface CartLine {
+  product_id: string;
+  slug: string;
+  title: string;
+  quantity: number;
+  unit_price?: Money;
+  line_total?: Money;
+  primary_media_key: string;
+}
+
+export interface CartView {
+  id: string;
+  items: CartLine[];
+  total_quantity: number;
+  subtotal?: Money;
+  discount?: Money;
+  tax?: Money;
+  total?: Money;
+  coupon_code?: string;
+  coupon_error?: string;
+}
+
+export interface OrderLine {
+  product_id: string;
+  title: string;
+  quantity: number;
+  unit_price: Money;
+  line_total: Money;
+}
+
+export interface Order {
+  id: string;
+  status: string;
+  lines: OrderLine[];
+  subtotal: Money;
+  discount: Money;
+  tax: Money;
+  total: Money;
+  payment_id: string;
+  cancel_reason: string;
+  created_at: string;
+}
+
+export interface CheckoutResponse {
+  order_id: string;
+  status: string;
+  payment_id: string;
+  payment_client_secret: string;
+  total: Money;
+}
+
 export function formatMoney(m: Money | undefined): string {
   if (!m) return "";
   const units = Number(m.units ?? 0);

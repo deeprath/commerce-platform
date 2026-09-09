@@ -1,4 +1,22 @@
-import type { Product, SearchResponse, ApiError } from "./types";
+import type {
+  Product,
+  SearchResponse,
+  ApiError,
+  CartView,
+  Order,
+  CheckoutResponse,
+} from "./types";
+
+export interface Address {
+  full_name: string;
+  line1: string;
+  line2?: string;
+  city: string;
+  region: string;
+  postal_code: string;
+  country_code: string;
+  phone?: string;
+}
 
 // Same-origin: dev proxies /api to the BFF, prod serves the SPA and proxies
 // /api from the same nginx. Cookies (httpOnly auth) ride along automatically.
@@ -28,6 +46,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+// An empty cart may come back with items omitted/null depending on the caller;
+// normalise so the UI can always treat it as an array.
+function normCart(c: CartView): CartView {
+  return { ...c, items: c.items ?? [] };
 }
 
 export interface BrowseParams {
@@ -63,6 +87,55 @@ export const api = {
 
   logout(): Promise<void> {
     return req(`/auth/logout`, { method: "POST" });
+  },
+
+  // --- cart ---
+  getCart(coupon?: string): Promise<CartView> {
+    return req<CartView>(`/cart${coupon ? `?coupon=${encodeURIComponent(coupon)}` : ""}`).then(
+      normCart,
+    );
+  },
+  addToCart(productId: string, quantity = 1): Promise<CartView> {
+    return req<CartView>(`/cart/items`, {
+      method: "POST",
+      body: JSON.stringify({ product_id: productId, quantity }),
+    }).then(normCart);
+  },
+  setCartQuantity(productId: string, quantity: number): Promise<CartView> {
+    return req<CartView>(`/cart/items/${encodeURIComponent(productId)}`, {
+      method: "PUT",
+      body: JSON.stringify({ quantity }),
+    }).then(normCart);
+  },
+  removeFromCart(productId: string): Promise<CartView> {
+    return req<CartView>(`/cart/items/${encodeURIComponent(productId)}`, { method: "DELETE" }).then(
+      normCart,
+    );
+  },
+  clearCart(): Promise<CartView> {
+    return req<CartView>(`/cart/clear`, { method: "POST" }).then(normCart);
+  },
+
+  // --- checkout & orders ---
+  checkout(body: {
+    ship_to: Address;
+    coupon_code?: string;
+    currency_code?: string;
+    payment_method_token: string;
+  }): Promise<CheckoutResponse> {
+    return req(`/checkout`, { method: "POST", body: JSON.stringify(body) });
+  },
+  confirmCheckout(paymentId: string, outcome: "authorize" | "fail"): Promise<{ status: string }> {
+    return req(`/checkout/confirm`, {
+      method: "POST",
+      body: JSON.stringify({ payment_id: paymentId, outcome }),
+    });
+  },
+  listOrders(): Promise<{ orders: Order[] }> {
+    return req(`/orders`);
+  },
+  getOrder(id: string): Promise<Order> {
+    return req(`/orders/${encodeURIComponent(id)}`);
   },
 };
 

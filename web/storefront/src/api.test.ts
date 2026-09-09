@@ -49,6 +49,13 @@ describe("api", () => {
     mockFetch(204, null);
     await expect(api.logout()).resolves.toBeUndefined();
   });
+
+  it("normalises an empty cart so items is always an array", async () => {
+    // The BFF omits/nulls `items` for an empty cart; the UI must never see null.
+    mockFetch(200, { id: "c_1", total_quantity: 0 });
+    const cart = await api.getCart();
+    expect(cart.items).toEqual([]);
+  });
 });
 
 describe("formatMoney", () => {
