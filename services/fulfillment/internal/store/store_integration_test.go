@@ -136,30 +136,9 @@ func TestTransition_StateMachineAndEvents(t *testing.T) {
 		t.Fatalf("cancel after delivery should fail")
 	}
 
-	// Events: shipped + delivered on the outbox, decodable, keyed by order id.
-	rows, err := pool.Query(ctx, `SELECT topic, key, payload FROM outbox WHERE topic LIKE 'commerce.fulfillment.%' ORDER BY id`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var topics []string
-	for rows.Next() {
-		var topic string
-		var key, payload []byte
-		if err := rows.Scan(&topic, &key, &payload); err != nil {
-			t.Fatal(err)
-		}
-		topics = append(topics, topic)
-		if string(key) != "order-2" {
-			t.Fatalf("event %s keyed by %q, want order-2", topic, key)
-		}
-		if topic == "commerce.fulfillment.delivered" {
-			var e fulfillmentv1.ShipmentDelivered
-			if err := proto.Unmarshal(payload, &e); err != nil || e.GetOrderId() != "order-2" {
-				t.Fatalf("delivered payload bad: %v %+v", err, &e)
-			}
-		}
-	}
+	// The outbox carries the whole lifecycle, in order, keyed by the order id,
+	// and the delivered payload decodes.
+	topics := outboxTopics(t, pool, "order-2")
 	want := []string{"commerce.fulfillment.shipment_created", "commerce.fulfillment.shipped", "commerce.fulfillment.delivered"}
 	if len(topics) != len(want) {
 		t.Fatalf("outbox topics = %v, want %v", topics, want)
@@ -169,6 +148,38 @@ func TestTransition_StateMachineAndEvents(t *testing.T) {
 			t.Fatalf("outbox topics = %v, want %v", topics, want)
 		}
 	}
+}
+
+// outboxTopics returns the fulfillment.* outbox topics in id order, asserting
+// each row is keyed by orderKey and that a delivered event decodes.
+func outboxTopics(t *testing.T, pool *pgxpool.Pool, orderKey string) []string {
+	t.Helper()
+	rows, err := pool.Query(context.Background(),
+		`SELECT topic, key, payload FROM outbox WHERE topic LIKE 'commerce.fulfillment.%' ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+
+	var topics []string
+	for rows.Next() {
+		var topic string
+		var key, payload []byte
+		if err := rows.Scan(&topic, &key, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if string(key) != orderKey {
+			t.Fatalf("event %s keyed by %q, want %q", topic, key, orderKey)
+		}
+		if topic == "commerce.fulfillment.delivered" {
+			var e fulfillmentv1.ShipmentDelivered
+			if err := proto.Unmarshal(payload, &e); err != nil || e.GetOrderId() != orderKey {
+				t.Fatalf("delivered payload bad: %v %+v", err, &e)
+			}
+		}
+		topics = append(topics, topic)
+	}
+	return topics
 }
 
 func TestDueForAdvance(t *testing.T) {
