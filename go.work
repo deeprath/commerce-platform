@@ -10,6 +10,7 @@ use (
 	./services/fulfillment
 	./services/inventory
 	./services/media
+	./services/notification
 	./services/order
 	./services/payment
 	./services/pricing
