@@ -197,6 +197,22 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  # Tails all container stdout into Loki with a service_name label (the job a
+  # Grafana Alloy / Promtail DaemonSet does in Kubernetes).
+  alloy:
+    image: grafana/alloy:${ALLOY_TAG}
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+    networks: [commerce]
+    logging: *default-logging
+
   tempo:
     image: grafana/tempo:${TEMPO_TAG}
     command: ["-config.file=/etc/tempo/config.yaml"]
