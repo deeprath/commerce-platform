@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, mediaUrl } from "../api";
 import { formatMoney } from "../types";
 import type { Product as P } from "../types";
+import { useCart } from "../cart-context";
 
 export function Product() {
   const { slug = "" } = useParams();
+  const nav = useNavigate();
+  const { add } = useCart();
   const [product, setProduct] = useState<P | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -17,7 +21,11 @@ export function Product() {
     api
       .product(slug)
       .then((r) => !cancelled && setProduct(r.product))
-      .catch((e) => !cancelled && setErr(e.info?.reason === "PRODUCT_NOT_FOUND" ? "notfound" : String(e.message ?? e)))
+      .catch(
+        (e) =>
+          !cancelled &&
+          setErr(e.info?.reason === "PRODUCT_NOT_FOUND" ? "notfound" : String(e.message ?? e)),
+      )
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -34,6 +42,17 @@ export function Product() {
     );
   if (err) return <p className="error">Couldn’t load this product: {err}</p>;
   if (!product) return null;
+
+  async function addToCart() {
+    if (!product) return;
+    setAdding(true);
+    try {
+      await add(product.id, 1);
+      nav("/cart");
+    } finally {
+      setAdding(false);
+    }
+  }
 
   return (
     <div className="pdp">
@@ -62,8 +81,8 @@ export function Product() {
               ))}
             </dl>
           )}
-          <button className="buy" disabled title="Cart arrives in Phase 2">
-            Add to cart
+          <button className="buy" onClick={addToCart} disabled={adding}>
+            {adding ? "Adding…" : "Add to cart"}
           </button>
         </div>
       </div>
