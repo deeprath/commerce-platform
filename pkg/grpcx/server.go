@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/deeprath/commerce-platform/pkg/auth"
 )
@@ -110,4 +111,25 @@ func Dial(target string, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	}
 	return grpc.NewClient(target, append(base, opts...)...)
+}
+
+// ForwardAuth is a DialOption that copies the caller's "authorization" metadata
+// from the current handler's incoming context onto every outgoing call on this
+// connection. Use it for a service that fans out to downstream RPCs which are
+// themselves role-gated (e.g. the order saga calling inventory.AdjustStock on a
+// return). Calls made outside a handler (no incoming metadata) are unaffected.
+func ForwardAuth() grpc.DialOption {
+	return grpc.WithChainUnaryInterceptor(forwardAuthInterceptor)
+}
+
+func forwardAuthInterceptor(
+	ctx context.Context, method string, req, reply any,
+	cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+) error {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if v := md.Get("authorization"); len(v) > 0 {
+			ctx = metadata.AppendToOutgoingContext(ctx, "authorization", v[0])
+		}
+	}
+	return invoker(ctx, method, req, reply, cc, opts...)
 }

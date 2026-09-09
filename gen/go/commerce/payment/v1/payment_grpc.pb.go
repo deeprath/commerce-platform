@@ -42,7 +42,8 @@ type PaymentServiceClient interface {
 	// ConfirmPayment (SANDBOX) drives the intent to AUTHORIZED or FAILED and
 	// emits the matching event. Idempotent on payment_id.
 	ConfirmPayment(ctx context.Context, in *ConfirmPaymentRequest, opts ...grpc.CallOption) (*Payment, error)
-	// Refund reverses a captured/authorized payment. Idempotent.
+	// Refund reverses part or all of an authorized payment. Repeatable: partial
+	// refunds accumulate; the payment moves to REFUNDED only once fully refunded.
 	Refund(ctx context.Context, in *RefundRequest, opts ...grpc.CallOption) (*Payment, error)
 	// Void cancels an authorized-but-not-captured intent (used by the saga when a
 	// reservation expires before payment). Idempotent.
@@ -107,7 +108,8 @@ type PaymentServiceServer interface {
 	// ConfirmPayment (SANDBOX) drives the intent to AUTHORIZED or FAILED and
 	// emits the matching event. Idempotent on payment_id.
 	ConfirmPayment(context.Context, *ConfirmPaymentRequest) (*Payment, error)
-	// Refund reverses a captured/authorized payment. Idempotent.
+	// Refund reverses part or all of an authorized payment. Repeatable: partial
+	// refunds accumulate; the payment moves to REFUNDED only once fully refunded.
 	Refund(context.Context, *RefundRequest) (*Payment, error)
 	// Void cancels an authorized-but-not-captured intent (used by the saga when a
 	// reservation expires before payment). Idempotent.

@@ -144,6 +144,7 @@ type Payment struct {
 	Status        PaymentStatus          `protobuf:"varint,4,opt,name=status,proto3,enum=commerce.payment.v1.PaymentStatus" json:"status,omitempty"`
 	ClientSecret  string                 `protobuf:"bytes,5,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"` // only on CreatePayment
 	CreatedAt     string                 `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Refunded      *v1.Money              `protobuf:"bytes,7,opt,name=refunded,proto3" json:"refunded,omitempty"` // cumulative amount refunded so far
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -218,6 +219,13 @@ func (x *Payment) GetCreatedAt() string {
 		return x.CreatedAt
 	}
 	return ""
+}
+
+func (x *Payment) GetRefunded() *v1.Money {
+	if x != nil {
+		return x.Refunded
+	}
+	return nil
 }
 
 type CreatePaymentRequest struct {
@@ -334,10 +342,14 @@ func (x *ConfirmPaymentRequest) GetOutcome() ConfirmPaymentRequest_Outcome {
 }
 
 type RefundRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PaymentId     string                 `protobuf:"bytes,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	PaymentId string                 `protobuf:"bytes,1,opt,name=payment_id,json=paymentId,proto3" json:"payment_id,omitempty"`
+	// Amount to refund. Omit / zero => refund the full remaining balance.
+	Amount *v1.Money `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	// Idempotency key so a retried refund is not double-applied. Optional.
+	IdempotencyKey string `protobuf:"bytes,3,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RefundRequest) Reset() {
@@ -373,6 +385,20 @@ func (*RefundRequest) Descriptor() ([]byte, []int) {
 func (x *RefundRequest) GetPaymentId() string {
 	if x != nil {
 		return x.PaymentId
+	}
+	return ""
+}
+
+func (x *RefundRequest) GetAmount() *v1.Money {
+	if x != nil {
+		return x.Amount
+	}
+	return nil
+}
+
+func (x *RefundRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
 	}
 	return ""
 }
@@ -629,7 +655,7 @@ var File_commerce_payment_v1_payment_proto protoreflect.FileDescriptor
 
 const file_commerce_payment_v1_payment_proto_rawDesc = "" +
 	"\n" +
-	"!commerce/payment/v1/payment.proto\x12\x13commerce.payment.v1\x1a\x1ecommerce/common/v1/types.proto\"\xf6\x01\n" +
+	"!commerce/payment/v1/payment.proto\x12\x13commerce.payment.v1\x1a\x1ecommerce/common/v1/types.proto\"\xad\x02\n" +
 	"\aPayment\x12\x1d\n" +
 	"\n" +
 	"payment_id\x18\x01 \x01(\tR\tpaymentId\x12\x19\n" +
@@ -638,7 +664,8 @@ const file_commerce_payment_v1_payment_proto_rawDesc = "" +
 	"\x06status\x18\x04 \x01(\x0e2\".commerce.payment.v1.PaymentStatusR\x06status\x12#\n" +
 	"\rclient_secret\x18\x05 \x01(\tR\fclientSecret\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\tR\tcreatedAt\"\x87\x01\n" +
+	"created_at\x18\x06 \x01(\tR\tcreatedAt\x125\n" +
+	"\brefunded\x18\a \x01(\v2\x19.commerce.common.v1.MoneyR\brefunded\"\x87\x01\n" +
 	"\x14CreatePaymentRequest\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x121\n" +
 	"\x06amount\x18\x02 \x01(\v2\x19.commerce.common.v1.MoneyR\x06amount\x12!\n" +
@@ -650,10 +677,12 @@ const file_commerce_payment_v1_payment_proto_rawDesc = "" +
 	"\aOutcome\x12\x17\n" +
 	"\x13OUTCOME_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11OUTCOME_AUTHORIZE\x10\x01\x12\x10\n" +
-	"\fOUTCOME_FAIL\x10\x02\".\n" +
+	"\fOUTCOME_FAIL\x10\x02\"\x8a\x01\n" +
 	"\rRefundRequest\x12\x1d\n" +
 	"\n" +
-	"payment_id\x18\x01 \x01(\tR\tpaymentId\",\n" +
+	"payment_id\x18\x01 \x01(\tR\tpaymentId\x121\n" +
+	"\x06amount\x18\x02 \x01(\v2\x19.commerce.common.v1.MoneyR\x06amount\x12'\n" +
+	"\x0fidempotency_key\x18\x03 \x01(\tR\x0eidempotencyKey\",\n" +
 	"\vVoidRequest\x12\x1d\n" +
 	"\n" +
 	"payment_id\x18\x01 \x01(\tR\tpaymentId\"\xa1\x01\n" +
@@ -722,23 +751,25 @@ var file_commerce_payment_v1_payment_proto_goTypes = []any{
 var file_commerce_payment_v1_payment_proto_depIdxs = []int32{
 	10, // 0: commerce.payment.v1.Payment.amount:type_name -> commerce.common.v1.Money
 	0,  // 1: commerce.payment.v1.Payment.status:type_name -> commerce.payment.v1.PaymentStatus
-	10, // 2: commerce.payment.v1.CreatePaymentRequest.amount:type_name -> commerce.common.v1.Money
-	1,  // 3: commerce.payment.v1.ConfirmPaymentRequest.outcome:type_name -> commerce.payment.v1.ConfirmPaymentRequest.Outcome
-	10, // 4: commerce.payment.v1.PaymentAuthorized.amount:type_name -> commerce.common.v1.Money
-	10, // 5: commerce.payment.v1.PaymentRefunded.amount:type_name -> commerce.common.v1.Money
-	3,  // 6: commerce.payment.v1.PaymentService.CreatePayment:input_type -> commerce.payment.v1.CreatePaymentRequest
-	4,  // 7: commerce.payment.v1.PaymentService.ConfirmPayment:input_type -> commerce.payment.v1.ConfirmPaymentRequest
-	5,  // 8: commerce.payment.v1.PaymentService.Refund:input_type -> commerce.payment.v1.RefundRequest
-	6,  // 9: commerce.payment.v1.PaymentService.Void:input_type -> commerce.payment.v1.VoidRequest
-	2,  // 10: commerce.payment.v1.PaymentService.CreatePayment:output_type -> commerce.payment.v1.Payment
-	2,  // 11: commerce.payment.v1.PaymentService.ConfirmPayment:output_type -> commerce.payment.v1.Payment
-	2,  // 12: commerce.payment.v1.PaymentService.Refund:output_type -> commerce.payment.v1.Payment
-	2,  // 13: commerce.payment.v1.PaymentService.Void:output_type -> commerce.payment.v1.Payment
-	10, // [10:14] is the sub-list for method output_type
-	6,  // [6:10] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	10, // 2: commerce.payment.v1.Payment.refunded:type_name -> commerce.common.v1.Money
+	10, // 3: commerce.payment.v1.CreatePaymentRequest.amount:type_name -> commerce.common.v1.Money
+	1,  // 4: commerce.payment.v1.ConfirmPaymentRequest.outcome:type_name -> commerce.payment.v1.ConfirmPaymentRequest.Outcome
+	10, // 5: commerce.payment.v1.RefundRequest.amount:type_name -> commerce.common.v1.Money
+	10, // 6: commerce.payment.v1.PaymentAuthorized.amount:type_name -> commerce.common.v1.Money
+	10, // 7: commerce.payment.v1.PaymentRefunded.amount:type_name -> commerce.common.v1.Money
+	3,  // 8: commerce.payment.v1.PaymentService.CreatePayment:input_type -> commerce.payment.v1.CreatePaymentRequest
+	4,  // 9: commerce.payment.v1.PaymentService.ConfirmPayment:input_type -> commerce.payment.v1.ConfirmPaymentRequest
+	5,  // 10: commerce.payment.v1.PaymentService.Refund:input_type -> commerce.payment.v1.RefundRequest
+	6,  // 11: commerce.payment.v1.PaymentService.Void:input_type -> commerce.payment.v1.VoidRequest
+	2,  // 12: commerce.payment.v1.PaymentService.CreatePayment:output_type -> commerce.payment.v1.Payment
+	2,  // 13: commerce.payment.v1.PaymentService.ConfirmPayment:output_type -> commerce.payment.v1.Payment
+	2,  // 14: commerce.payment.v1.PaymentService.Refund:output_type -> commerce.payment.v1.Payment
+	2,  // 15: commerce.payment.v1.PaymentService.Void:output_type -> commerce.payment.v1.Payment
+	12, // [12:16] is the sub-list for method output_type
+	8,  // [8:12] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_commerce_payment_v1_payment_proto_init() }

@@ -72,7 +72,9 @@ func run() error {
 	}
 	dialed := map[string]*grpc.ClientConn{}
 	for name, addr := range conns {
-		cc, derr := grpcx.Dial(addr)
+		// Forward the caller's token so role-gated downstream RPCs (e.g.
+		// inventory.AdjustStock when a return is approved) see the operator.
+		cc, derr := grpcx.Dial(addr, grpcx.ForwardAuth())
 		if derr != nil {
 			return derr
 		}

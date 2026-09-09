@@ -26,28 +26,33 @@ type Store struct{ pool *pgxpool.Pool }
 func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
 type Payment struct {
-	ID           string
-	OrderID      string
-	AmountCents  int64
-	Currency     string
-	Status       string
-	MethodToken  string
-	ClientSecret string
-	CreatedAt    time.Time
+	ID            string
+	OrderID       string
+	AmountCents   int64
+	Currency      string
+	Status        string
+	MethodToken   string
+	ClientSecret  string
+	CreatedAt     time.Time
+	RefundedCents int64
 }
 
-const cols = `id, order_id, amount_cents, currency, status, method_token, client_secret, created_at`
+const cols = `id, order_id, amount_cents, currency, status, method_token, client_secret, created_at, refunded_cents`
+
+func scanPayment(row pgx.Row, p *Payment) error {
+	return row.Scan(&p.ID, &p.OrderID, &p.AmountCents, &p.Currency, &p.Status,
+		&p.MethodToken, &p.ClientSecret, &p.CreatedAt, &p.RefundedCents)
+}
 
 // Create opens a new intent in REQUIRES_CONFIRMATION.
 func (s *Store) Create(ctx context.Context, orderID string, amountCents int64, currency, methodToken string) (*Payment, error) {
 	secret := "pi_" + uuid.NewString()
 	var p Payment
-	err := s.pool.QueryRow(ctx, `
+	err := scanPayment(s.pool.QueryRow(ctx, `
 		INSERT INTO payments (order_id, amount_cents, currency, method_token, client_secret)
 		VALUES ($1,$2,$3,$4,$5)
 		RETURNING `+cols,
-		orderID, amountCents, currency, methodToken, secret).
-		Scan(&p.ID, &p.OrderID, &p.AmountCents, &p.Currency, &p.Status, &p.MethodToken, &p.ClientSecret, &p.CreatedAt)
+		orderID, amountCents, currency, methodToken, secret), &p)
 	if err != nil {
 		return nil, wrap(err)
 	}
@@ -56,8 +61,7 @@ func (s *Store) Create(ctx context.Context, orderID string, amountCents int64, c
 
 func (s *Store) Get(ctx context.Context, id string) (*Payment, error) {
 	var p Payment
-	err := s.pool.QueryRow(ctx, `SELECT `+cols+` FROM payments WHERE id = $1`, id).
-		Scan(&p.ID, &p.OrderID, &p.AmountCents, &p.Currency, &p.Status, &p.MethodToken, &p.ClientSecret, &p.CreatedAt)
+	err := scanPayment(s.pool.QueryRow(ctx, `SELECT `+cols+` FROM payments WHERE id = $1`, id), &p)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, pkgerrs.New(pkgerrs.KindNotFound, "PAYMENT_NOT_FOUND", "no such payment")
 	}
@@ -77,8 +81,7 @@ func (s *Store) Transition(ctx context.Context, id, to, reason string) (*Payment
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var p Payment
-	err = tx.QueryRow(ctx, `SELECT `+cols+` FROM payments WHERE id = $1 FOR UPDATE`, id).
-		Scan(&p.ID, &p.OrderID, &p.AmountCents, &p.Currency, &p.Status, &p.MethodToken, &p.ClientSecret, &p.CreatedAt)
+	err = scanPayment(tx.QueryRow(ctx, `SELECT `+cols+` FROM payments WHERE id = $1 FOR UPDATE`, id), &p)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, pkgerrs.New(pkgerrs.KindNotFound, "PAYMENT_NOT_FOUND", "no such payment")
 	}
@@ -117,9 +120,100 @@ func canTransition(from, to string) bool {
 	case "REQUIRES_CONFIRMATION":
 		return to == "AUTHORIZED" || to == "FAILED" || to == "VOIDED"
 	case "AUTHORIZED":
-		return to == "REFUNDED" || to == "VOIDED"
+		return to == "VOIDED" // refunds go through Refund(), not Transition()
 	default:
 		return false
+	}
+}
+
+// Refund records a refund of amountCents (0 => the full remaining balance)
+// against an authorized payment. Partial refunds accumulate; the payment moves
+// to REFUNDED only once fully refunded. Repeatable safely: a non-empty
+// idemKey that has already been used returns the current payment unchanged.
+// Each refund emits one commerce.payment.refunded event for its own amount.
+func (s *Store) Refund(ctx context.Context, id string, amountCents int64, idemKey string) (*Payment, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, wrap(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var p Payment
+	err = scanPayment(tx.QueryRow(ctx, `SELECT `+cols+` FROM payments WHERE id = $1 FOR UPDATE`, id), &p)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, pkgerrs.New(pkgerrs.KindNotFound, "PAYMENT_NOT_FOUND", "no such payment")
+	}
+	if err != nil {
+		return nil, wrap(err)
+	}
+
+	if idemKey != "" {
+		var seen bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS (SELECT 1 FROM refunds WHERE payment_id = $1 AND idempotency_key = $2)`,
+			p.ID, idemKey).Scan(&seen); err != nil {
+			return nil, wrap(err)
+		}
+		if seen {
+			return &p, nil // already applied
+		}
+	}
+
+	if p.Status != "AUTHORIZED" && p.Status != "REFUNDED" {
+		return nil, pkgerrs.New(pkgerrs.KindFailedPrecondition, "NOT_REFUNDABLE",
+			"cannot refund a payment in "+p.Status)
+	}
+	remaining := p.AmountCents - p.RefundedCents
+	if amountCents <= 0 {
+		amountCents = remaining
+	}
+	if amountCents <= 0 {
+		return &p, nil // nothing left to refund
+	}
+	if amountCents > remaining {
+		return nil, pkgerrs.New(pkgerrs.KindFailedPrecondition, "REFUND_EXCEEDS_BALANCE",
+			"refund exceeds the unrefunded balance")
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO refunds (payment_id, amount_cents, idempotency_key) VALUES ($1,$2,$3)`,
+		p.ID, amountCents, idemKey); err != nil {
+		return nil, wrap(err)
+	}
+	p.RefundedCents += amountCents
+	newStatus := p.Status
+	if p.RefundedCents >= p.AmountCents {
+		newStatus = "REFUNDED"
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE payments SET refunded_cents = $2, status = $3, updated_at = now() WHERE id = $1`,
+		p.ID, p.RefundedCents, newStatus); err != nil {
+		return nil, wrap(err)
+	}
+	p.Status = newStatus
+
+	b, _ := proto.Marshal(&paymentv1.PaymentRefunded{
+		PaymentId: p.ID, OrderId: p.OrderID,
+		Amount:     money(p.Currency, amountCents),
+		OccurredAt: time.Now().UTC().Format(time.RFC3339Nano),
+	})
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO outbox (topic, key, payload) VALUES ($1,$2,$3)`,
+		"commerce.payment.refunded", []byte(p.OrderID), b); err != nil {
+		return nil, wrap(err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrap(err)
+	}
+	return &p, nil
+}
+
+func money(currency string, cents int64) *commonv1.Money {
+	return &commonv1.Money{
+		CurrencyCode: currency,
+		Units:        cents / 100,
+		Nanos:        int32(cents%100) * 10_000_000,
 	}
 }
 
@@ -141,11 +235,6 @@ func eventFor(p *Payment, to, reason string) (string, []byte, bool) {
 			PaymentId: p.ID, OrderId: p.OrderID, Reason: reason, OccurredAt: now,
 		})
 		return "commerce.payment.failed", b, true
-	case "REFUNDED":
-		b, _ := proto.Marshal(&paymentv1.PaymentRefunded{
-			PaymentId: p.ID, OrderId: p.OrderID, Amount: amount, OccurredAt: now,
-		})
-		return "commerce.payment.refunded", b, true
 	default:
 		return "", nil, false
 	}

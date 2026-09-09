@@ -81,6 +81,58 @@ func (OrderStatus) EnumDescriptor() ([]byte, []int) {
 	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{0}
 }
 
+type ReturnStatus int32
+
+const (
+	ReturnStatus_RETURN_STATUS_UNSPECIFIED ReturnStatus = 0
+	ReturnStatus_RETURN_STATUS_REQUESTED   ReturnStatus = 1
+	ReturnStatus_RETURN_STATUS_APPROVED    ReturnStatus = 2 // refund + restock done
+	ReturnStatus_RETURN_STATUS_REJECTED    ReturnStatus = 3
+)
+
+// Enum value maps for ReturnStatus.
+var (
+	ReturnStatus_name = map[int32]string{
+		0: "RETURN_STATUS_UNSPECIFIED",
+		1: "RETURN_STATUS_REQUESTED",
+		2: "RETURN_STATUS_APPROVED",
+		3: "RETURN_STATUS_REJECTED",
+	}
+	ReturnStatus_value = map[string]int32{
+		"RETURN_STATUS_UNSPECIFIED": 0,
+		"RETURN_STATUS_REQUESTED":   1,
+		"RETURN_STATUS_APPROVED":    2,
+		"RETURN_STATUS_REJECTED":    3,
+	}
+)
+
+func (x ReturnStatus) Enum() *ReturnStatus {
+	p := new(ReturnStatus)
+	*p = x
+	return p
+}
+
+func (x ReturnStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ReturnStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_commerce_order_v1_order_proto_enumTypes[1].Descriptor()
+}
+
+func (ReturnStatus) Type() protoreflect.EnumType {
+	return &file_commerce_order_v1_order_proto_enumTypes[1]
+}
+
+func (x ReturnStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ReturnStatus.Descriptor instead.
+func (ReturnStatus) EnumDescriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{1}
+}
+
 type OrderLine struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
@@ -930,6 +982,714 @@ func (x *OrderFulfilled) GetOccurredAt() string {
 	return ""
 }
 
+type ReturnLine struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
+	Quantity      int32                  `protobuf:"varint,2,opt,name=quantity,proto3" json:"quantity,omitempty"`                            // units being returned, 1..(ordered quantity)
+	RefundAmount  *v1.Money              `protobuf:"bytes,3,opt,name=refund_amount,json=refundAmount,proto3" json:"refund_amount,omitempty"` // line refund incl. its share of tax
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReturnLine) Reset() {
+	*x = ReturnLine{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReturnLine) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReturnLine) ProtoMessage() {}
+
+func (x *ReturnLine) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReturnLine.ProtoReflect.Descriptor instead.
+func (*ReturnLine) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ReturnLine) GetProductId() string {
+	if x != nil {
+		return x.ProductId
+	}
+	return ""
+}
+
+func (x *ReturnLine) GetQuantity() int32 {
+	if x != nil {
+		return x.Quantity
+	}
+	return 0
+}
+
+func (x *ReturnLine) GetRefundAmount() *v1.Money {
+	if x != nil {
+		return x.RefundAmount
+	}
+	return nil
+}
+
+type Return struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	Status        ReturnStatus           `protobuf:"varint,4,opt,name=status,proto3,enum=commerce.order.v1.ReturnStatus" json:"status,omitempty"`
+	Reason        string                 `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	Lines         []*ReturnLine          `protobuf:"bytes,6,rep,name=lines,proto3" json:"lines,omitempty"`
+	RefundTotal   *v1.Money              `protobuf:"bytes,7,opt,name=refund_total,json=refundTotal,proto3" json:"refund_total,omitempty"`
+	DecidedBy     string                 `protobuf:"bytes,8,opt,name=decided_by,json=decidedBy,proto3" json:"decided_by,omitempty"` // operator sub, once decided
+	DecisionNote  string                 `protobuf:"bytes,9,opt,name=decision_note,json=decisionNote,proto3" json:"decision_note,omitempty"`
+	CreatedAt     string                 `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     string                 `protobuf:"bytes,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Return) Reset() {
+	*x = Return{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Return) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Return) ProtoMessage() {}
+
+func (x *Return) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Return.ProtoReflect.Descriptor instead.
+func (*Return) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *Return) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Return) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *Return) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *Return) GetStatus() ReturnStatus {
+	if x != nil {
+		return x.Status
+	}
+	return ReturnStatus_RETURN_STATUS_UNSPECIFIED
+}
+
+func (x *Return) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *Return) GetLines() []*ReturnLine {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
+}
+
+func (x *Return) GetRefundTotal() *v1.Money {
+	if x != nil {
+		return x.RefundTotal
+	}
+	return nil
+}
+
+func (x *Return) GetDecidedBy() string {
+	if x != nil {
+		return x.DecidedBy
+	}
+	return ""
+}
+
+func (x *Return) GetDecisionNote() string {
+	if x != nil {
+		return x.DecisionNote
+	}
+	return ""
+}
+
+func (x *Return) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *Return) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+type RequestReturnRequest struct {
+	state         protoimpl.MessageState       `protogen:"open.v1"`
+	OrderId       string                       `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	Reason        string                       `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	Lines         []*RequestReturnRequest_Line `protobuf:"bytes,3,rep,name=lines,proto3" json:"lines,omitempty"` // empty => every line, full quantity
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestReturnRequest) Reset() {
+	*x = RequestReturnRequest{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestReturnRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestReturnRequest) ProtoMessage() {}
+
+func (x *RequestReturnRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestReturnRequest.ProtoReflect.Descriptor instead.
+func (*RequestReturnRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *RequestReturnRequest) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *RequestReturnRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *RequestReturnRequest) GetLines() []*RequestReturnRequest_Line {
+	if x != nil {
+		return x.Lines
+	}
+	return nil
+}
+
+type GetReturnRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetReturnRequest) Reset() {
+	*x = GetReturnRequest{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetReturnRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetReturnRequest) ProtoMessage() {}
+
+func (x *GetReturnRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetReturnRequest.ProtoReflect.Descriptor instead.
+func (*GetReturnRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetReturnRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type ListReturnsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Page          *v1.PageRequest        `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReturnsRequest) Reset() {
+	*x = ListReturnsRequest{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReturnsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReturnsRequest) ProtoMessage() {}
+
+func (x *ListReturnsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReturnsRequest.ProtoReflect.Descriptor instead.
+func (*ListReturnsRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ListReturnsRequest) GetPage() *v1.PageRequest {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListReturnsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Returns       []*Return              `protobuf:"bytes,1,rep,name=returns,proto3" json:"returns,omitempty"`
+	Page          *v1.PageResponse       `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReturnsResponse) Reset() {
+	*x = ListReturnsResponse{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReturnsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReturnsResponse) ProtoMessage() {}
+
+func (x *ListReturnsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReturnsResponse.ProtoReflect.Descriptor instead.
+func (*ListReturnsResponse) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ListReturnsResponse) GetReturns() []*Return {
+	if x != nil {
+		return x.Returns
+	}
+	return nil
+}
+
+func (x *ListReturnsResponse) GetPage() *v1.PageResponse {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type DecideReturnRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Approve       bool                   `protobuf:"varint,2,opt,name=approve,proto3" json:"approve,omitempty"`
+	Note          string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DecideReturnRequest) Reset() {
+	*x = DecideReturnRequest{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DecideReturnRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DecideReturnRequest) ProtoMessage() {}
+
+func (x *DecideReturnRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DecideReturnRequest.ProtoReflect.Descriptor instead.
+func (*DecideReturnRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *DecideReturnRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DecideReturnRequest) GetApprove() bool {
+	if x != nil {
+		return x.Approve
+	}
+	return false
+}
+
+func (x *DecideReturnRequest) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type ReturnRequested struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ReturnId      string                 `protobuf:"bytes,1,opt,name=return_id,json=returnId,proto3" json:"return_id,omitempty"`
+	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	OccurredAt    string                 `protobuf:"bytes,4,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReturnRequested) Reset() {
+	*x = ReturnRequested{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReturnRequested) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReturnRequested) ProtoMessage() {}
+
+func (x *ReturnRequested) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReturnRequested.ProtoReflect.Descriptor instead.
+func (*ReturnRequested) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ReturnRequested) GetReturnId() string {
+	if x != nil {
+		return x.ReturnId
+	}
+	return ""
+}
+
+func (x *ReturnRequested) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *ReturnRequested) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *ReturnRequested) GetOccurredAt() string {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return ""
+}
+
+type ReturnApproved struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ReturnId      string                 `protobuf:"bytes,1,opt,name=return_id,json=returnId,proto3" json:"return_id,omitempty"`
+	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	RefundTotal   *v1.Money              `protobuf:"bytes,4,opt,name=refund_total,json=refundTotal,proto3" json:"refund_total,omitempty"`
+	OccurredAt    string                 `protobuf:"bytes,5,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReturnApproved) Reset() {
+	*x = ReturnApproved{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReturnApproved) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReturnApproved) ProtoMessage() {}
+
+func (x *ReturnApproved) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReturnApproved.ProtoReflect.Descriptor instead.
+func (*ReturnApproved) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ReturnApproved) GetReturnId() string {
+	if x != nil {
+		return x.ReturnId
+	}
+	return ""
+}
+
+func (x *ReturnApproved) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *ReturnApproved) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *ReturnApproved) GetRefundTotal() *v1.Money {
+	if x != nil {
+		return x.RefundTotal
+	}
+	return nil
+}
+
+func (x *ReturnApproved) GetOccurredAt() string {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return ""
+}
+
+type ReturnRejected struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ReturnId      string                 `protobuf:"bytes,1,opt,name=return_id,json=returnId,proto3" json:"return_id,omitempty"`
+	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	OccurredAt    string                 `protobuf:"bytes,4,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReturnRejected) Reset() {
+	*x = ReturnRejected{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReturnRejected) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReturnRejected) ProtoMessage() {}
+
+func (x *ReturnRejected) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReturnRejected.ProtoReflect.Descriptor instead.
+func (*ReturnRejected) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ReturnRejected) GetReturnId() string {
+	if x != nil {
+		return x.ReturnId
+	}
+	return ""
+}
+
+func (x *ReturnRejected) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *ReturnRejected) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *ReturnRejected) GetOccurredAt() string {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return ""
+}
+
+type RequestReturnRequest_Line struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
+	Quantity      int32                  `protobuf:"varint,2,opt,name=quantity,proto3" json:"quantity,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestReturnRequest_Line) Reset() {
+	*x = RequestReturnRequest_Line{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestReturnRequest_Line) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestReturnRequest_Line) ProtoMessage() {}
+
+func (x *RequestReturnRequest_Line) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestReturnRequest_Line.ProtoReflect.Descriptor instead.
+func (*RequestReturnRequest_Line) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{14, 0}
+}
+
+func (x *RequestReturnRequest_Line) GetProductId() string {
+	if x != nil {
+		return x.ProductId
+	}
+	return ""
+}
+
+func (x *RequestReturnRequest_Line) GetQuantity() int32 {
+	if x != nil {
+		return x.Quantity
+	}
+	return 0
+}
+
 var File_commerce_order_v1_order_proto protoreflect.FileDescriptor
 
 const file_commerce_order_v1_order_proto_rawDesc = "" +
@@ -1012,19 +1772,88 @@ const file_commerce_order_v1_order_proto_rawDesc = "" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x1f\n" +
 	"\voccurred_at\x18\x03 \x01(\tR\n" +
+	"occurredAt\"\x87\x01\n" +
+	"\n" +
+	"ReturnLine\x12\x1d\n" +
+	"\n" +
+	"product_id\x18\x01 \x01(\tR\tproductId\x12\x1a\n" +
+	"\bquantity\x18\x02 \x01(\x05R\bquantity\x12>\n" +
+	"\rrefund_amount\x18\x03 \x01(\v2\x19.commerce.common.v1.MoneyR\frefundAmount\"\x94\x03\n" +
+	"\x06Return\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x19\n" +
+	"\bowner_id\x18\x03 \x01(\tR\aownerId\x127\n" +
+	"\x06status\x18\x04 \x01(\x0e2\x1f.commerce.order.v1.ReturnStatusR\x06status\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\x123\n" +
+	"\x05lines\x18\x06 \x03(\v2\x1d.commerce.order.v1.ReturnLineR\x05lines\x12<\n" +
+	"\frefund_total\x18\a \x01(\v2\x19.commerce.common.v1.MoneyR\vrefundTotal\x12\x1d\n" +
+	"\n" +
+	"decided_by\x18\b \x01(\tR\tdecidedBy\x12#\n" +
+	"\rdecision_note\x18\t \x01(\tR\fdecisionNote\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\n" +
+	" \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\v \x01(\tR\tupdatedAt\"\xd0\x01\n" +
+	"\x14RequestReturnRequest\x12\x19\n" +
+	"\border_id\x18\x01 \x01(\tR\aorderId\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12B\n" +
+	"\x05lines\x18\x03 \x03(\v2,.commerce.order.v1.RequestReturnRequest.LineR\x05lines\x1aA\n" +
+	"\x04Line\x12\x1d\n" +
+	"\n" +
+	"product_id\x18\x01 \x01(\tR\tproductId\x12\x1a\n" +
+	"\bquantity\x18\x02 \x01(\x05R\bquantity\"\"\n" +
+	"\x10GetReturnRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"I\n" +
+	"\x12ListReturnsRequest\x123\n" +
+	"\x04page\x18\x01 \x01(\v2\x1f.commerce.common.v1.PageRequestR\x04page\"\x80\x01\n" +
+	"\x13ListReturnsResponse\x123\n" +
+	"\areturns\x18\x01 \x03(\v2\x19.commerce.order.v1.ReturnR\areturns\x124\n" +
+	"\x04page\x18\x02 \x01(\v2 .commerce.common.v1.PageResponseR\x04page\"S\n" +
+	"\x13DecideReturnRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
+	"\aapprove\x18\x02 \x01(\bR\aapprove\x12\x12\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"\x85\x01\n" +
+	"\x0fReturnRequested\x12\x1b\n" +
+	"\treturn_id\x18\x01 \x01(\tR\breturnId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x19\n" +
+	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12\x1f\n" +
+	"\voccurred_at\x18\x04 \x01(\tR\n" +
+	"occurredAt\"\xc2\x01\n" +
+	"\x0eReturnApproved\x12\x1b\n" +
+	"\treturn_id\x18\x01 \x01(\tR\breturnId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x19\n" +
+	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12<\n" +
+	"\frefund_total\x18\x04 \x01(\v2\x19.commerce.common.v1.MoneyR\vrefundTotal\x12\x1f\n" +
+	"\voccurred_at\x18\x05 \x01(\tR\n" +
+	"occurredAt\"\x84\x01\n" +
+	"\x0eReturnRejected\x12\x1b\n" +
+	"\treturn_id\x18\x01 \x01(\tR\breturnId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x19\n" +
+	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12\x1f\n" +
+	"\voccurred_at\x18\x04 \x01(\tR\n" +
 	"occurredAt*\xa1\x01\n" +
 	"\vOrderStatus\x12\x1c\n" +
 	"\x18ORDER_STATUS_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cORDER_STATUS_PENDING_PAYMENT\x10\x01\x12\x1a\n" +
 	"\x16ORDER_STATUS_CONFIRMED\x10\x02\x12\x1a\n" +
 	"\x16ORDER_STATUS_CANCELLED\x10\x03\x12\x1a\n" +
-	"\x16ORDER_STATUS_FULFILLED\x10\x042\xe1\x02\n" +
+	"\x16ORDER_STATUS_FULFILLED\x10\x04*\x82\x01\n" +
+	"\fReturnStatus\x12\x1d\n" +
+	"\x19RETURN_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17RETURN_STATUS_REQUESTED\x10\x01\x12\x1a\n" +
+	"\x16RETURN_STATUS_APPROVED\x10\x02\x12\x1a\n" +
+	"\x16RETURN_STATUS_REJECTED\x10\x032\xb4\x05\n" +
 	"\fOrderService\x12\\\n" +
 	"\vCreateOrder\x12%.commerce.order.v1.CreateOrderRequest\x1a&.commerce.order.v1.CreateOrderResponse\x12H\n" +
 	"\bGetOrder\x12\".commerce.order.v1.GetOrderRequest\x1a\x18.commerce.order.v1.Order\x12Y\n" +
 	"\n" +
 	"ListOrders\x12$.commerce.order.v1.ListOrdersRequest\x1a%.commerce.order.v1.ListOrdersResponse\x12N\n" +
-	"\vCancelOrder\x12%.commerce.order.v1.CancelOrderRequest\x1a\x18.commerce.order.v1.OrderB\xd1\x01\n" +
+	"\vCancelOrder\x12%.commerce.order.v1.CancelOrderRequest\x1a\x18.commerce.order.v1.Order\x12S\n" +
+	"\rRequestReturn\x12'.commerce.order.v1.RequestReturnRequest\x1a\x19.commerce.order.v1.Return\x12K\n" +
+	"\tGetReturn\x12#.commerce.order.v1.GetReturnRequest\x1a\x19.commerce.order.v1.Return\x12\\\n" +
+	"\vListReturns\x12%.commerce.order.v1.ListReturnsRequest\x1a&.commerce.order.v1.ListReturnsResponse\x12Q\n" +
+	"\fDecideReturn\x12&.commerce.order.v1.DecideReturnRequest\x1a\x19.commerce.order.v1.ReturnB\xd1\x01\n" +
 	"\x15com.commerce.order.v1B\n" +
 	"OrderProtoP\x01ZFgithub.com/deeprath/commerce-platform/gen/go/commerce/order/v1;orderv1\xa2\x02\x03COX\xaa\x02\x11Commerce.Order.V1\xca\x02\x11Commerce\\Order\\V1\xe2\x02\x1dCommerce\\Order\\V1\\GPBMetadata\xea\x02\x13Commerce::Order::V1b\x06proto3"
 
@@ -1040,59 +1869,88 @@ func file_commerce_order_v1_order_proto_rawDescGZIP() []byte {
 	return file_commerce_order_v1_order_proto_rawDescData
 }
 
-var file_commerce_order_v1_order_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_commerce_order_v1_order_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_commerce_order_v1_order_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_commerce_order_v1_order_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_commerce_order_v1_order_proto_goTypes = []any{
-	(OrderStatus)(0),            // 0: commerce.order.v1.OrderStatus
-	(*OrderLine)(nil),           // 1: commerce.order.v1.OrderLine
-	(*Order)(nil),               // 2: commerce.order.v1.Order
-	(*CreateOrderRequest)(nil),  // 3: commerce.order.v1.CreateOrderRequest
-	(*CreateOrderResponse)(nil), // 4: commerce.order.v1.CreateOrderResponse
-	(*GetOrderRequest)(nil),     // 5: commerce.order.v1.GetOrderRequest
-	(*ListOrdersRequest)(nil),   // 6: commerce.order.v1.ListOrdersRequest
-	(*ListOrdersResponse)(nil),  // 7: commerce.order.v1.ListOrdersResponse
-	(*CancelOrderRequest)(nil),  // 8: commerce.order.v1.CancelOrderRequest
-	(*OrderCreated)(nil),        // 9: commerce.order.v1.OrderCreated
-	(*OrderConfirmed)(nil),      // 10: commerce.order.v1.OrderConfirmed
-	(*OrderCancelled)(nil),      // 11: commerce.order.v1.OrderCancelled
-	(*OrderFulfilled)(nil),      // 12: commerce.order.v1.OrderFulfilled
-	(*v1.Money)(nil),            // 13: commerce.common.v1.Money
-	(*v1.Address)(nil),          // 14: commerce.common.v1.Address
-	(*v1.PageRequest)(nil),      // 15: commerce.common.v1.PageRequest
-	(*v1.PageResponse)(nil),     // 16: commerce.common.v1.PageResponse
+	(OrderStatus)(0),                  // 0: commerce.order.v1.OrderStatus
+	(ReturnStatus)(0),                 // 1: commerce.order.v1.ReturnStatus
+	(*OrderLine)(nil),                 // 2: commerce.order.v1.OrderLine
+	(*Order)(nil),                     // 3: commerce.order.v1.Order
+	(*CreateOrderRequest)(nil),        // 4: commerce.order.v1.CreateOrderRequest
+	(*CreateOrderResponse)(nil),       // 5: commerce.order.v1.CreateOrderResponse
+	(*GetOrderRequest)(nil),           // 6: commerce.order.v1.GetOrderRequest
+	(*ListOrdersRequest)(nil),         // 7: commerce.order.v1.ListOrdersRequest
+	(*ListOrdersResponse)(nil),        // 8: commerce.order.v1.ListOrdersResponse
+	(*CancelOrderRequest)(nil),        // 9: commerce.order.v1.CancelOrderRequest
+	(*OrderCreated)(nil),              // 10: commerce.order.v1.OrderCreated
+	(*OrderConfirmed)(nil),            // 11: commerce.order.v1.OrderConfirmed
+	(*OrderCancelled)(nil),            // 12: commerce.order.v1.OrderCancelled
+	(*OrderFulfilled)(nil),            // 13: commerce.order.v1.OrderFulfilled
+	(*ReturnLine)(nil),                // 14: commerce.order.v1.ReturnLine
+	(*Return)(nil),                    // 15: commerce.order.v1.Return
+	(*RequestReturnRequest)(nil),      // 16: commerce.order.v1.RequestReturnRequest
+	(*GetReturnRequest)(nil),          // 17: commerce.order.v1.GetReturnRequest
+	(*ListReturnsRequest)(nil),        // 18: commerce.order.v1.ListReturnsRequest
+	(*ListReturnsResponse)(nil),       // 19: commerce.order.v1.ListReturnsResponse
+	(*DecideReturnRequest)(nil),       // 20: commerce.order.v1.DecideReturnRequest
+	(*ReturnRequested)(nil),           // 21: commerce.order.v1.ReturnRequested
+	(*ReturnApproved)(nil),            // 22: commerce.order.v1.ReturnApproved
+	(*ReturnRejected)(nil),            // 23: commerce.order.v1.ReturnRejected
+	(*RequestReturnRequest_Line)(nil), // 24: commerce.order.v1.RequestReturnRequest.Line
+	(*v1.Money)(nil),                  // 25: commerce.common.v1.Money
+	(*v1.Address)(nil),                // 26: commerce.common.v1.Address
+	(*v1.PageRequest)(nil),            // 27: commerce.common.v1.PageRequest
+	(*v1.PageResponse)(nil),           // 28: commerce.common.v1.PageResponse
 }
 var file_commerce_order_v1_order_proto_depIdxs = []int32{
-	13, // 0: commerce.order.v1.OrderLine.unit_price:type_name -> commerce.common.v1.Money
-	13, // 1: commerce.order.v1.OrderLine.line_total:type_name -> commerce.common.v1.Money
+	25, // 0: commerce.order.v1.OrderLine.unit_price:type_name -> commerce.common.v1.Money
+	25, // 1: commerce.order.v1.OrderLine.line_total:type_name -> commerce.common.v1.Money
 	0,  // 2: commerce.order.v1.Order.status:type_name -> commerce.order.v1.OrderStatus
-	1,  // 3: commerce.order.v1.Order.lines:type_name -> commerce.order.v1.OrderLine
-	13, // 4: commerce.order.v1.Order.subtotal:type_name -> commerce.common.v1.Money
-	13, // 5: commerce.order.v1.Order.discount:type_name -> commerce.common.v1.Money
-	13, // 6: commerce.order.v1.Order.tax:type_name -> commerce.common.v1.Money
-	13, // 7: commerce.order.v1.Order.total:type_name -> commerce.common.v1.Money
-	14, // 8: commerce.order.v1.Order.ship_to:type_name -> commerce.common.v1.Address
-	14, // 9: commerce.order.v1.CreateOrderRequest.ship_to:type_name -> commerce.common.v1.Address
+	2,  // 3: commerce.order.v1.Order.lines:type_name -> commerce.order.v1.OrderLine
+	25, // 4: commerce.order.v1.Order.subtotal:type_name -> commerce.common.v1.Money
+	25, // 5: commerce.order.v1.Order.discount:type_name -> commerce.common.v1.Money
+	25, // 6: commerce.order.v1.Order.tax:type_name -> commerce.common.v1.Money
+	25, // 7: commerce.order.v1.Order.total:type_name -> commerce.common.v1.Money
+	26, // 8: commerce.order.v1.Order.ship_to:type_name -> commerce.common.v1.Address
+	26, // 9: commerce.order.v1.CreateOrderRequest.ship_to:type_name -> commerce.common.v1.Address
 	0,  // 10: commerce.order.v1.CreateOrderResponse.status:type_name -> commerce.order.v1.OrderStatus
-	13, // 11: commerce.order.v1.CreateOrderResponse.total:type_name -> commerce.common.v1.Money
-	15, // 12: commerce.order.v1.ListOrdersRequest.page:type_name -> commerce.common.v1.PageRequest
-	2,  // 13: commerce.order.v1.ListOrdersResponse.orders:type_name -> commerce.order.v1.Order
-	16, // 14: commerce.order.v1.ListOrdersResponse.page:type_name -> commerce.common.v1.PageResponse
-	13, // 15: commerce.order.v1.OrderCreated.total:type_name -> commerce.common.v1.Money
-	14, // 16: commerce.order.v1.OrderConfirmed.ship_to:type_name -> commerce.common.v1.Address
-	1,  // 17: commerce.order.v1.OrderConfirmed.lines:type_name -> commerce.order.v1.OrderLine
-	3,  // 18: commerce.order.v1.OrderService.CreateOrder:input_type -> commerce.order.v1.CreateOrderRequest
-	5,  // 19: commerce.order.v1.OrderService.GetOrder:input_type -> commerce.order.v1.GetOrderRequest
-	6,  // 20: commerce.order.v1.OrderService.ListOrders:input_type -> commerce.order.v1.ListOrdersRequest
-	8,  // 21: commerce.order.v1.OrderService.CancelOrder:input_type -> commerce.order.v1.CancelOrderRequest
-	4,  // 22: commerce.order.v1.OrderService.CreateOrder:output_type -> commerce.order.v1.CreateOrderResponse
-	2,  // 23: commerce.order.v1.OrderService.GetOrder:output_type -> commerce.order.v1.Order
-	7,  // 24: commerce.order.v1.OrderService.ListOrders:output_type -> commerce.order.v1.ListOrdersResponse
-	2,  // 25: commerce.order.v1.OrderService.CancelOrder:output_type -> commerce.order.v1.Order
-	22, // [22:26] is the sub-list for method output_type
-	18, // [18:22] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	25, // 11: commerce.order.v1.CreateOrderResponse.total:type_name -> commerce.common.v1.Money
+	27, // 12: commerce.order.v1.ListOrdersRequest.page:type_name -> commerce.common.v1.PageRequest
+	3,  // 13: commerce.order.v1.ListOrdersResponse.orders:type_name -> commerce.order.v1.Order
+	28, // 14: commerce.order.v1.ListOrdersResponse.page:type_name -> commerce.common.v1.PageResponse
+	25, // 15: commerce.order.v1.OrderCreated.total:type_name -> commerce.common.v1.Money
+	26, // 16: commerce.order.v1.OrderConfirmed.ship_to:type_name -> commerce.common.v1.Address
+	2,  // 17: commerce.order.v1.OrderConfirmed.lines:type_name -> commerce.order.v1.OrderLine
+	25, // 18: commerce.order.v1.ReturnLine.refund_amount:type_name -> commerce.common.v1.Money
+	1,  // 19: commerce.order.v1.Return.status:type_name -> commerce.order.v1.ReturnStatus
+	14, // 20: commerce.order.v1.Return.lines:type_name -> commerce.order.v1.ReturnLine
+	25, // 21: commerce.order.v1.Return.refund_total:type_name -> commerce.common.v1.Money
+	24, // 22: commerce.order.v1.RequestReturnRequest.lines:type_name -> commerce.order.v1.RequestReturnRequest.Line
+	27, // 23: commerce.order.v1.ListReturnsRequest.page:type_name -> commerce.common.v1.PageRequest
+	15, // 24: commerce.order.v1.ListReturnsResponse.returns:type_name -> commerce.order.v1.Return
+	28, // 25: commerce.order.v1.ListReturnsResponse.page:type_name -> commerce.common.v1.PageResponse
+	25, // 26: commerce.order.v1.ReturnApproved.refund_total:type_name -> commerce.common.v1.Money
+	4,  // 27: commerce.order.v1.OrderService.CreateOrder:input_type -> commerce.order.v1.CreateOrderRequest
+	6,  // 28: commerce.order.v1.OrderService.GetOrder:input_type -> commerce.order.v1.GetOrderRequest
+	7,  // 29: commerce.order.v1.OrderService.ListOrders:input_type -> commerce.order.v1.ListOrdersRequest
+	9,  // 30: commerce.order.v1.OrderService.CancelOrder:input_type -> commerce.order.v1.CancelOrderRequest
+	16, // 31: commerce.order.v1.OrderService.RequestReturn:input_type -> commerce.order.v1.RequestReturnRequest
+	17, // 32: commerce.order.v1.OrderService.GetReturn:input_type -> commerce.order.v1.GetReturnRequest
+	18, // 33: commerce.order.v1.OrderService.ListReturns:input_type -> commerce.order.v1.ListReturnsRequest
+	20, // 34: commerce.order.v1.OrderService.DecideReturn:input_type -> commerce.order.v1.DecideReturnRequest
+	5,  // 35: commerce.order.v1.OrderService.CreateOrder:output_type -> commerce.order.v1.CreateOrderResponse
+	3,  // 36: commerce.order.v1.OrderService.GetOrder:output_type -> commerce.order.v1.Order
+	8,  // 37: commerce.order.v1.OrderService.ListOrders:output_type -> commerce.order.v1.ListOrdersResponse
+	3,  // 38: commerce.order.v1.OrderService.CancelOrder:output_type -> commerce.order.v1.Order
+	15, // 39: commerce.order.v1.OrderService.RequestReturn:output_type -> commerce.order.v1.Return
+	15, // 40: commerce.order.v1.OrderService.GetReturn:output_type -> commerce.order.v1.Return
+	19, // 41: commerce.order.v1.OrderService.ListReturns:output_type -> commerce.order.v1.ListReturnsResponse
+	15, // 42: commerce.order.v1.OrderService.DecideReturn:output_type -> commerce.order.v1.Return
+	35, // [35:43] is the sub-list for method output_type
+	27, // [27:35] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_commerce_order_v1_order_proto_init() }
@@ -1105,8 +1963,8 @@ func file_commerce_order_v1_order_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_commerce_order_v1_order_proto_rawDesc), len(file_commerce_order_v1_order_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   12,
+			NumEnums:      2,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
