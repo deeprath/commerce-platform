@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 import { Browse } from "./pages/Browse";
 import { Product } from "./pages/Product";
@@ -6,7 +6,7 @@ import { Login } from "./pages/Login";
 import { Cart } from "./pages/Cart";
 import { Checkout } from "./pages/Checkout";
 import { Orders, OrderDetail } from "./pages/Orders";
-import { api } from "./api";
+import { api, setUnauthorizedHandler } from "./api";
 import { CartProvider } from "./cart";
 import { useCart } from "./cart-context";
 
@@ -38,6 +38,16 @@ function Header({ authed, onSignOut }: { authed: boolean; onSignOut: () => void 
 
 export function App() {
   const [authed, setAuthed] = useState<boolean>(() => localStorage.getItem("signed_in") === "1");
+
+  // If any request 401s, the session cookie is gone — drop the cached flag so
+  // protected pages render their sign-in prompt instead of a raw error.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      localStorage.removeItem("signed_in");
+      setAuthed(false);
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   function onAuthed() {
     localStorage.setItem("signed_in", "1");

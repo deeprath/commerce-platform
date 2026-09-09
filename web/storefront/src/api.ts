@@ -29,6 +29,15 @@ export class ApiRequestError extends Error {
   }
 }
 
+// Called whenever a request comes back 401. The app registers a handler that
+// drops its cached "signed in" flag, so protected views fall back to a sign-in
+// prompt instead of surfacing a raw UNAUTHENTICATED error when the httpOnly
+// session cookie has expired out from under the client.
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     credentials: "include",
@@ -42,6 +51,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* body was not JSON */
     }
+    if (res.status === 401) onUnauthorized?.();
     throw new ApiRequestError(info);
   }
   if (res.status === 204) return undefined as T;
