@@ -17,6 +17,9 @@ linters:
     gosec:
       excludes:
         - G115 # integer overflow conversion — noisy on proto int32<->int
+        - G124 # http.Cookie Secure flag — deliberately env-driven (COOKIE_SECURE);
+               # true in staging/prod, false only for local http. Policy is
+               # centralised in services/bff/internal/auth.Broker.
     revive:
       rules:
         # We rely on package-level doc comments + self-explanatory names rather

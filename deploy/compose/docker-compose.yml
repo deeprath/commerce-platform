@@ -90,10 +90,8 @@ services:
     networks: [commerce]
     logging: *default-logging
 
-  # Large image; the search service arrives in Phase 1. `task up:full` to include it.
   opensearch:
     image: opensearchproject/opensearch:${OPENSEARCH_TAG}
-    profiles: ["full"]
     environment:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"
@@ -310,6 +308,52 @@ services:
       postgres: { condition: service_healthy }
       minio: { condition: service_healthy }
       kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
+  search:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/search.Dockerfile
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      OPENSEARCH_ADDRESSES: http://opensearch:9200
+      KAFKA_BROKERS: kafka:9092
+    ports: ["50055:50051"]
+    depends_on:
+      opensearch: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
+  bff:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/bff.Dockerfile
+    environment:
+      HTTP_ADDR: ":8080"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      CATALOG_ADDR: catalog:50051
+      MEDIA_ADDR: media:50051
+      SEARCH_ADDR: search:50051
+      KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/token
+      KEYCLOAK_CLIENT_ID: bff
+      KEYCLOAK_CLIENT_SECRET: local-dev-bff-secret
+      COOKIE_SECURE: "false"
+      CORS_ORIGINS: http://localhost:5173,http://localhost:5174
+    ports: ["8088:8080"] # direct BFF access for dev; prod goes via the gateway
+    depends_on:
+      catalog: { condition: service_started }
+      media: { condition: service_started }
+      search: { condition: service_started }
       keycloak: { condition: service_healthy }
       otel-collector: { condition: service_started }
     networks: [commerce]
