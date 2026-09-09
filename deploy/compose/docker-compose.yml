@@ -75,8 +75,11 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  # Heavy, and only needed once services publish Protobuf events (Phase 2+).
+  # Start with:  docker compose --profile full up -d   (or `task up:full`)
   schema-registry:
     image: confluentinc/cp-schema-registry:${SCHEMA_REGISTRY_TAG}
+    profiles: ["full"]
     depends_on:
       kafka: { condition: service_healthy }
     environment:
@@ -87,8 +90,10 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  # Large image; the search service arrives in Phase 1. `task up:full` to include it.
   opensearch:
     image: opensearchproject/opensearch:${OPENSEARCH_TAG}
+    profiles: ["full"]
     environment:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"

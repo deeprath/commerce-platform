@@ -61,14 +61,20 @@ tasks:
 
   # ---- local stack -----------------------------------------------------
   up:
-    desc: Start the full local stack (infra + gateway + services)
+    desc: Start the local stack (core — omits the heavy search/schema-registry images)
     cmds:
       - test -f deploy/compose/.env || cp deploy/compose/.env.example deploy/compose/.env
       - "{{.COMPOSE}} up -d --build"
-      - echo "Storefront gateway  http://localhost:8080"
-      - echo "Keycloak            http://localhost:8081"
+      - echo "Edge gateway        http://localhost:8080"
+      - echo "Keycloak            http://localhost:8081  (admin/admin)"
       - echo "Grafana             http://localhost:3000  (admin/admin)"
       - echo "MinIO console       http://localhost:9001  (minio/minio12345)"
+
+  up:full:
+    desc: Start everything including OpenSearch + Schema Registry (large pulls)
+    cmds:
+      - test -f deploy/compose/.env || cp deploy/compose/.env.example deploy/compose/.env
+      - "{{.COMPOSE}} --profile full up -d --build"
 
   down:
     desc: Stop the stack, keep volumes
