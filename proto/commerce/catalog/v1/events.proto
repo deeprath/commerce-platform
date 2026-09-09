@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+// Kafka event payloads published by the catalog service.
+// Topic: commerce.catalog.<event>. Keyed by product/category id.
+package commerce.catalog.v1;
+
+import "commerce/catalog/v1/catalog.proto";
+
+// ProductChanged is emitted on every create/update/archive of a product.
+// Compacted topic — the latest message per product id is the current state.
+message ProductChanged {
+  string product_id = 1;
+  ChangeType change = 2;
+  // Full product snapshot after the change. Absent when change == DELETED.
+  Product product = 3;
+  // RFC3339 nanos; the moment the change was committed.
+  string occurred_at = 4;
+}
+
+// CategoryChanged is emitted on category create/update/delete.
+message CategoryChanged {
+  string category_id = 1;
+  ChangeType change = 2;
+  string name = 3;
+  string parent_id = 4;
+  string occurred_at = 5;
+}
+
+enum ChangeType {
+  CHANGE_TYPE_UNSPECIFIED = 0;
+  CHANGE_TYPE_CREATED = 1;
+  CHANGE_TYPE_UPDATED = 2;
+  CHANGE_TYPE_ARCHIVED = 3;
+  CHANGE_TYPE_DELETED = 4;
+}

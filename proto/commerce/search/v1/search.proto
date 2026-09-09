@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+// commerce.search.v1 — the read model for product browse. The index is built
+// only from Kafka events (catalog.*, inventory.*, pricing.*); this service is
+// never written to directly.
+package commerce.search.v1;
+
+import "commerce/common/v1/types.proto";
+
+service SearchService {
+  // Search runs a full-text + filtered query and returns a page of hits,
+  // newest/most-relevant first, with facet counts for the current result set.
+  rpc Search(SearchRequest) returns (SearchResponse);
+
+  // Autocomplete returns short title/category suggestions for a prefix.
+  rpc Autocomplete(AutocompleteRequest) returns (AutocompleteResponse);
+}
+
+message SearchRequest {
+  string query = 1; // free text; empty = match all
+  string category_id = 2; // optional filter
+  // Attribute filters, e.g. {"color": "red", "size": "M"}.
+  map<string, string> attributes = 3;
+  int64 min_price_units = 4;
+  int64 max_price_units = 5;
+  SortOrder sort = 6;
+  commerce.common.v1.PageRequest page = 7;
+}
+
+enum SortOrder {
+  SORT_ORDER_UNSPECIFIED = 0; // treated as RELEVANCE
+  SORT_ORDER_RELEVANCE = 1;
+  SORT_ORDER_NEWEST = 2;
+  SORT_ORDER_PRICE_ASC = 3;
+  SORT_ORDER_PRICE_DESC = 4;
+}
+
+message Hit {
+  string product_id = 1;
+  string slug = 2;
+  string title = 3;
+  string category_id = 4;
+  commerce.common.v1.Money list_price = 5;
+  string primary_media_key = 6;
+  double score = 7;
+}
+
+message Facet {
+  string field = 1; // e.g. "category_id", "attributes.color"
+  repeated FacetValue values = 2;
+}
+
+message FacetValue {
+  string value = 1;
+  int64 count = 2;
+}
+
+message SearchResponse {
+  repeated Hit hits = 1;
+  repeated Facet facets = 2;
+  commerce.common.v1.PageResponse page = 3;
+}
+
+message AutocompleteRequest {
+  string prefix = 1;
+  int32 limit = 2;
+}
+
+message AutocompleteResponse {
+  repeated string suggestions = 1;
+}

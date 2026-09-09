@@ -19,6 +19,18 @@ service CatalogService {
   // BatchGetProducts resolves many ids at once for list/cart rendering.
   // Unknown ids are omitted from the response rather than erroring.
   rpc BatchGetProducts(BatchGetProductsRequest) returns (BatchGetProductsResponse);
+
+  // --- write side (requires the catalog_manager role) ---
+
+  // CreateProduct adds a product in DRAFT status and returns it with its id.
+  rpc CreateProduct(CreateProductRequest) returns (CreateProductResponse);
+
+  // UpdateProduct replaces the mutable fields of an existing product.
+  rpc UpdateProduct(UpdateProductRequest) returns (UpdateProductResponse);
+
+  // ArchiveProduct moves a product to ARCHIVED (soft delete); it stops
+  // appearing in ListProducts/search but existing orders still resolve it.
+  rpc ArchiveProduct(ArchiveProductRequest) returns (ArchiveProductResponse);
 }
 
 message Product {
@@ -44,7 +56,9 @@ enum ProductStatus {
 }
 
 message GetProductRequest {
+  // Provide exactly one of id or slug.
   string id = 1;
+  string slug = 2;
 }
 
 message GetProductResponse {
@@ -68,4 +82,41 @@ message BatchGetProductsRequest {
 
 message BatchGetProductsResponse {
   repeated Product products = 1;
+}
+
+message CreateProductRequest {
+  string slug = 1;
+  string title = 2;
+  string description = 3;
+  string category_id = 4;
+  commerce.common.v1.Money list_price = 5;
+  repeated string media_keys = 6;
+  map<string, string> attributes = 7;
+}
+
+message UpdateProductRequest {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string category_id = 4;
+  commerce.common.v1.Money list_price = 5;
+  repeated string media_keys = 6;
+  map<string, string> attributes = 7;
+  ProductStatus status = 8; // DRAFT <-> ACTIVE
+}
+
+message ArchiveProductRequest {
+  string id = 1;
+}
+
+message CreateProductResponse {
+  Product product = 1;
+}
+
+message UpdateProductResponse {
+  Product product = 1;
+}
+
+message ArchiveProductResponse {
+  Product product = 1;
 }

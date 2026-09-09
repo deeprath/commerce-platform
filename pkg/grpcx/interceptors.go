@@ -55,12 +55,14 @@ func loggingUnary() grpc.UnaryServerInterceptor {
 		start := time.Now()
 		resp, err := handler(ctx, req)
 		if err != nil {
+			origMsg := err.Error() // full detail: logged, never returned
 			st := errs.ToStatus(err)
 			err = st.Err()
 			slog.ErrorContext(ctx, "rpc",
 				slog.String("method", info.FullMethod),
 				slog.String("code", st.Code().String()),
 				slog.String("reason", st.Message()),
+				slog.String("detail", origMsg),
 				slog.Duration("took", time.Since(start)),
 			)
 			return resp, err
@@ -75,8 +77,11 @@ func loggingUnary() grpc.UnaryServerInterceptor {
 }
 
 // authUnary verifies the bearer token in the "authorization" metadata header
-// and injects the Principal into the context. Methods in skip bypass auth.
-func authUnary(v *auth.Verifier, skip map[string]bool) grpc.UnaryServerInterceptor {
+// and injects the Principal into the context.
+//   - methods in skip bypass auth entirely (no token read)
+//   - methods in optional verify+inject a token if present, but allow anonymous
+//   - everything else requires a valid token
+func authUnary(v *auth.Verifier, skip, optional map[string]bool) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if skip[info.FullMethod] {
 			return handler(ctx, req)
@@ -89,6 +94,9 @@ func authUnary(v *auth.Verifier, skip map[string]bool) grpc.UnaryServerIntercept
 			}
 		}
 		if raw == "" {
+			if optional[info.FullMethod] {
+				return handler(ctx, req) // anonymous is allowed here
+			}
 			return nil, status.Error(codes.Unauthenticated, "NO_BEARER_TOKEN")
 		}
 		p, err := v.Verify(ctx, raw)

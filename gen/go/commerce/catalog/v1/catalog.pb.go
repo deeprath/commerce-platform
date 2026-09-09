@@ -189,8 +189,10 @@ func (x *Product) GetAttributes() map[string]string {
 }
 
 type GetProductRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Provide exactly one of id or slug.
+	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Slug          string `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -228,6 +230,13 @@ func (*GetProductRequest) Descriptor() ([]byte, []int) {
 func (x *GetProductRequest) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *GetProductRequest) GetSlug() string {
+	if x != nil {
+		return x.Slug
 	}
 	return ""
 }
@@ -469,6 +478,374 @@ func (x *BatchGetProductsResponse) GetProducts() []*Product {
 	return nil
 }
 
+type CreateProductRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	CategoryId    string                 `protobuf:"bytes,4,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
+	ListPrice     *v1.Money              `protobuf:"bytes,5,opt,name=list_price,json=listPrice,proto3" json:"list_price,omitempty"`
+	MediaKeys     []string               `protobuf:"bytes,6,rep,name=media_keys,json=mediaKeys,proto3" json:"media_keys,omitempty"`
+	Attributes    map[string]string      `protobuf:"bytes,7,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateProductRequest) Reset() {
+	*x = CreateProductRequest{}
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateProductRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateProductRequest) ProtoMessage() {}
+
+func (x *CreateProductRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateProductRequest.ProtoReflect.Descriptor instead.
+func (*CreateProductRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_catalog_v1_catalog_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CreateProductRequest) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
+}
+
+func (x *CreateProductRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *CreateProductRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *CreateProductRequest) GetCategoryId() string {
+	if x != nil {
+		return x.CategoryId
+	}
+	return ""
+}
+
+func (x *CreateProductRequest) GetListPrice() *v1.Money {
+	if x != nil {
+		return x.ListPrice
+	}
+	return nil
+}
+
+func (x *CreateProductRequest) GetMediaKeys() []string {
+	if x != nil {
+		return x.MediaKeys
+	}
+	return nil
+}
+
+func (x *CreateProductRequest) GetAttributes() map[string]string {
+	if x != nil {
+		return x.Attributes
+	}
+	return nil
+}
+
+type UpdateProductRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	CategoryId    string                 `protobuf:"bytes,4,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
+	ListPrice     *v1.Money              `protobuf:"bytes,5,opt,name=list_price,json=listPrice,proto3" json:"list_price,omitempty"`
+	MediaKeys     []string               `protobuf:"bytes,6,rep,name=media_keys,json=mediaKeys,proto3" json:"media_keys,omitempty"`
+	Attributes    map[string]string      `protobuf:"bytes,7,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Status        ProductStatus          `protobuf:"varint,8,opt,name=status,proto3,enum=commerce.catalog.v1.ProductStatus" json:"status,omitempty"` // DRAFT <-> ACTIVE
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateProductRequest) Reset() {
+	*x = UpdateProductRequest{}
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateProductRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateProductRequest) ProtoMessage() {}
+
+func (x *UpdateProductRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateProductRequest.ProtoReflect.Descriptor instead.
+func (*UpdateProductRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_catalog_v1_catalog_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *UpdateProductRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdateProductRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *UpdateProductRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *UpdateProductRequest) GetCategoryId() string {
+	if x != nil {
+		return x.CategoryId
+	}
+	return ""
+}
+
+func (x *UpdateProductRequest) GetListPrice() *v1.Money {
+	if x != nil {
+		return x.ListPrice
+	}
+	return nil
+}
+
+func (x *UpdateProductRequest) GetMediaKeys() []string {
+	if x != nil {
+		return x.MediaKeys
+	}
+	return nil
+}
+
+func (x *UpdateProductRequest) GetAttributes() map[string]string {
+	if x != nil {
+		return x.Attributes
+	}
+	return nil
+}
+
+func (x *UpdateProductRequest) GetStatus() ProductStatus {
+	if x != nil {
+		return x.Status
+	}
+	return ProductStatus_PRODUCT_STATUS_UNSPECIFIED
+}
+
+type ArchiveProductRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArchiveProductRequest) Reset() {
+	*x = ArchiveProductRequest{}
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArchiveProductRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArchiveProductRequest) ProtoMessage() {}
+
+func (x *ArchiveProductRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArchiveProductRequest.ProtoReflect.Descriptor instead.
+func (*ArchiveProductRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_catalog_v1_catalog_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ArchiveProductRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type CreateProductResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Product       *Product               `protobuf:"bytes,1,opt,name=product,proto3" json:"product,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateProductResponse) Reset() {
+	*x = CreateProductResponse{}
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateProductResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateProductResponse) ProtoMessage() {}
+
+func (x *CreateProductResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateProductResponse.ProtoReflect.Descriptor instead.
+func (*CreateProductResponse) Descriptor() ([]byte, []int) {
+	return file_commerce_catalog_v1_catalog_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CreateProductResponse) GetProduct() *Product {
+	if x != nil {
+		return x.Product
+	}
+	return nil
+}
+
+type UpdateProductResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Product       *Product               `protobuf:"bytes,1,opt,name=product,proto3" json:"product,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateProductResponse) Reset() {
+	*x = UpdateProductResponse{}
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateProductResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateProductResponse) ProtoMessage() {}
+
+func (x *UpdateProductResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateProductResponse.ProtoReflect.Descriptor instead.
+func (*UpdateProductResponse) Descriptor() ([]byte, []int) {
+	return file_commerce_catalog_v1_catalog_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UpdateProductResponse) GetProduct() *Product {
+	if x != nil {
+		return x.Product
+	}
+	return nil
+}
+
+type ArchiveProductResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Product       *Product               `protobuf:"bytes,1,opt,name=product,proto3" json:"product,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArchiveProductResponse) Reset() {
+	*x = ArchiveProductResponse{}
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArchiveProductResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArchiveProductResponse) ProtoMessage() {}
+
+func (x *ArchiveProductResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArchiveProductResponse.ProtoReflect.Descriptor instead.
+func (*ArchiveProductResponse) Descriptor() ([]byte, []int) {
+	return file_commerce_catalog_v1_catalog_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ArchiveProductResponse) GetProduct() *Product {
+	if x != nil {
+		return x.Product
+	}
+	return nil
+}
+
 var File_commerce_catalog_v1_catalog_proto protoreflect.FileDescriptor
 
 const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
@@ -491,9 +868,10 @@ const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
 	"attributes\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"#\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
 	"\x11GetProductRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"L\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04slug\x18\x02 \x01(\tR\x04slug\"L\n" +
 	"\x12GetProductResponse\x126\n" +
 	"\aproduct\x18\x01 \x01(\v2\x1c.commerce.catalog.v1.ProductR\aproduct\"k\n" +
 	"\x13ListProductsRequest\x12\x1f\n" +
@@ -506,17 +884,61 @@ const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x17BatchGetProductsRequest\x12\x10\n" +
 	"\x03ids\x18\x01 \x03(\tR\x03ids\"T\n" +
 	"\x18BatchGetProductsResponse\x128\n" +
-	"\bproducts\x18\x01 \x03(\v2\x1c.commerce.catalog.v1.ProductR\bproducts*\x81\x01\n" +
+	"\bproducts\x18\x01 \x03(\v2\x1c.commerce.catalog.v1.ProductR\bproducts\"\xf6\x02\n" +
+	"\x14CreateProductRequest\x12\x12\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1f\n" +
+	"\vcategory_id\x18\x04 \x01(\tR\n" +
+	"categoryId\x128\n" +
+	"\n" +
+	"list_price\x18\x05 \x01(\v2\x19.commerce.common.v1.MoneyR\tlistPrice\x12\x1d\n" +
+	"\n" +
+	"media_keys\x18\x06 \x03(\tR\tmediaKeys\x12Y\n" +
+	"\n" +
+	"attributes\x18\a \x03(\v29.commerce.catalog.v1.CreateProductRequest.AttributesEntryR\n" +
+	"attributes\x1a=\n" +
+	"\x0fAttributesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xae\x03\n" +
+	"\x14UpdateProductRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1f\n" +
+	"\vcategory_id\x18\x04 \x01(\tR\n" +
+	"categoryId\x128\n" +
+	"\n" +
+	"list_price\x18\x05 \x01(\v2\x19.commerce.common.v1.MoneyR\tlistPrice\x12\x1d\n" +
+	"\n" +
+	"media_keys\x18\x06 \x03(\tR\tmediaKeys\x12Y\n" +
+	"\n" +
+	"attributes\x18\a \x03(\v29.commerce.catalog.v1.UpdateProductRequest.AttributesEntryR\n" +
+	"attributes\x12:\n" +
+	"\x06status\x18\b \x01(\x0e2\".commerce.catalog.v1.ProductStatusR\x06status\x1a=\n" +
+	"\x0fAttributesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"'\n" +
+	"\x15ArchiveProductRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"O\n" +
+	"\x15CreateProductResponse\x126\n" +
+	"\aproduct\x18\x01 \x01(\v2\x1c.commerce.catalog.v1.ProductR\aproduct\"O\n" +
+	"\x15UpdateProductResponse\x126\n" +
+	"\aproduct\x18\x01 \x01(\v2\x1c.commerce.catalog.v1.ProductR\aproduct\"P\n" +
+	"\x16ArchiveProductResponse\x126\n" +
+	"\aproduct\x18\x01 \x01(\v2\x1c.commerce.catalog.v1.ProductR\aproduct*\x81\x01\n" +
 	"\rProductStatus\x12\x1e\n" +
 	"\x1aPRODUCT_STATUS_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14PRODUCT_STATUS_DRAFT\x10\x01\x12\x19\n" +
 	"\x15PRODUCT_STATUS_ACTIVE\x10\x02\x12\x1b\n" +
-	"\x17PRODUCT_STATUS_ARCHIVED\x10\x032\xc5\x02\n" +
+	"\x17PRODUCT_STATUS_ARCHIVED\x10\x032\x80\x05\n" +
 	"\x0eCatalogService\x12]\n" +
 	"\n" +
 	"GetProduct\x12&.commerce.catalog.v1.GetProductRequest\x1a'.commerce.catalog.v1.GetProductResponse\x12c\n" +
 	"\fListProducts\x12(.commerce.catalog.v1.ListProductsRequest\x1a).commerce.catalog.v1.ListProductsResponse\x12o\n" +
-	"\x10BatchGetProducts\x12,.commerce.catalog.v1.BatchGetProductsRequest\x1a-.commerce.catalog.v1.BatchGetProductsResponseB\xe1\x01\n" +
+	"\x10BatchGetProducts\x12,.commerce.catalog.v1.BatchGetProductsRequest\x1a-.commerce.catalog.v1.BatchGetProductsResponse\x12f\n" +
+	"\rCreateProduct\x12).commerce.catalog.v1.CreateProductRequest\x1a*.commerce.catalog.v1.CreateProductResponse\x12f\n" +
+	"\rUpdateProduct\x12).commerce.catalog.v1.UpdateProductRequest\x1a*.commerce.catalog.v1.UpdateProductResponse\x12i\n" +
+	"\x0eArchiveProduct\x12*.commerce.catalog.v1.ArchiveProductRequest\x1a+.commerce.catalog.v1.ArchiveProductResponseB\xe1\x01\n" +
 	"\x17com.commerce.catalog.v1B\fCatalogProtoP\x01ZJgithub.com/deeprath/commerce-platform/gen/go/commerce/catalog/v1;catalogv1\xa2\x02\x03CCX\xaa\x02\x13Commerce.Catalog.V1\xca\x02\x13Commerce\\Catalog\\V1\xe2\x02\x1fCommerce\\Catalog\\V1\\GPBMetadata\xea\x02\x15Commerce::Catalog::V1b\x06proto3"
 
 var (
@@ -532,7 +954,7 @@ func file_commerce_catalog_v1_catalog_proto_rawDescGZIP() []byte {
 }
 
 var file_commerce_catalog_v1_catalog_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_commerce_catalog_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_commerce_catalog_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_commerce_catalog_v1_catalog_proto_goTypes = []any{
 	(ProductStatus)(0),               // 0: commerce.catalog.v1.ProductStatus
 	(*Product)(nil),                  // 1: commerce.catalog.v1.Product
@@ -542,31 +964,53 @@ var file_commerce_catalog_v1_catalog_proto_goTypes = []any{
 	(*ListProductsResponse)(nil),     // 5: commerce.catalog.v1.ListProductsResponse
 	(*BatchGetProductsRequest)(nil),  // 6: commerce.catalog.v1.BatchGetProductsRequest
 	(*BatchGetProductsResponse)(nil), // 7: commerce.catalog.v1.BatchGetProductsResponse
-	nil,                              // 8: commerce.catalog.v1.Product.AttributesEntry
-	(*v1.Money)(nil),                 // 9: commerce.common.v1.Money
-	(*v1.PageRequest)(nil),           // 10: commerce.common.v1.PageRequest
-	(*v1.PageResponse)(nil),          // 11: commerce.common.v1.PageResponse
+	(*CreateProductRequest)(nil),     // 8: commerce.catalog.v1.CreateProductRequest
+	(*UpdateProductRequest)(nil),     // 9: commerce.catalog.v1.UpdateProductRequest
+	(*ArchiveProductRequest)(nil),    // 10: commerce.catalog.v1.ArchiveProductRequest
+	(*CreateProductResponse)(nil),    // 11: commerce.catalog.v1.CreateProductResponse
+	(*UpdateProductResponse)(nil),    // 12: commerce.catalog.v1.UpdateProductResponse
+	(*ArchiveProductResponse)(nil),   // 13: commerce.catalog.v1.ArchiveProductResponse
+	nil,                              // 14: commerce.catalog.v1.Product.AttributesEntry
+	nil,                              // 15: commerce.catalog.v1.CreateProductRequest.AttributesEntry
+	nil,                              // 16: commerce.catalog.v1.UpdateProductRequest.AttributesEntry
+	(*v1.Money)(nil),                 // 17: commerce.common.v1.Money
+	(*v1.PageRequest)(nil),           // 18: commerce.common.v1.PageRequest
+	(*v1.PageResponse)(nil),          // 19: commerce.common.v1.PageResponse
 }
 var file_commerce_catalog_v1_catalog_proto_depIdxs = []int32{
-	9,  // 0: commerce.catalog.v1.Product.list_price:type_name -> commerce.common.v1.Money
+	17, // 0: commerce.catalog.v1.Product.list_price:type_name -> commerce.common.v1.Money
 	0,  // 1: commerce.catalog.v1.Product.status:type_name -> commerce.catalog.v1.ProductStatus
-	8,  // 2: commerce.catalog.v1.Product.attributes:type_name -> commerce.catalog.v1.Product.AttributesEntry
+	14, // 2: commerce.catalog.v1.Product.attributes:type_name -> commerce.catalog.v1.Product.AttributesEntry
 	1,  // 3: commerce.catalog.v1.GetProductResponse.product:type_name -> commerce.catalog.v1.Product
-	10, // 4: commerce.catalog.v1.ListProductsRequest.page:type_name -> commerce.common.v1.PageRequest
+	18, // 4: commerce.catalog.v1.ListProductsRequest.page:type_name -> commerce.common.v1.PageRequest
 	1,  // 5: commerce.catalog.v1.ListProductsResponse.products:type_name -> commerce.catalog.v1.Product
-	11, // 6: commerce.catalog.v1.ListProductsResponse.page:type_name -> commerce.common.v1.PageResponse
+	19, // 6: commerce.catalog.v1.ListProductsResponse.page:type_name -> commerce.common.v1.PageResponse
 	1,  // 7: commerce.catalog.v1.BatchGetProductsResponse.products:type_name -> commerce.catalog.v1.Product
-	2,  // 8: commerce.catalog.v1.CatalogService.GetProduct:input_type -> commerce.catalog.v1.GetProductRequest
-	4,  // 9: commerce.catalog.v1.CatalogService.ListProducts:input_type -> commerce.catalog.v1.ListProductsRequest
-	6,  // 10: commerce.catalog.v1.CatalogService.BatchGetProducts:input_type -> commerce.catalog.v1.BatchGetProductsRequest
-	3,  // 11: commerce.catalog.v1.CatalogService.GetProduct:output_type -> commerce.catalog.v1.GetProductResponse
-	5,  // 12: commerce.catalog.v1.CatalogService.ListProducts:output_type -> commerce.catalog.v1.ListProductsResponse
-	7,  // 13: commerce.catalog.v1.CatalogService.BatchGetProducts:output_type -> commerce.catalog.v1.BatchGetProductsResponse
-	11, // [11:14] is the sub-list for method output_type
-	8,  // [8:11] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	17, // 8: commerce.catalog.v1.CreateProductRequest.list_price:type_name -> commerce.common.v1.Money
+	15, // 9: commerce.catalog.v1.CreateProductRequest.attributes:type_name -> commerce.catalog.v1.CreateProductRequest.AttributesEntry
+	17, // 10: commerce.catalog.v1.UpdateProductRequest.list_price:type_name -> commerce.common.v1.Money
+	16, // 11: commerce.catalog.v1.UpdateProductRequest.attributes:type_name -> commerce.catalog.v1.UpdateProductRequest.AttributesEntry
+	0,  // 12: commerce.catalog.v1.UpdateProductRequest.status:type_name -> commerce.catalog.v1.ProductStatus
+	1,  // 13: commerce.catalog.v1.CreateProductResponse.product:type_name -> commerce.catalog.v1.Product
+	1,  // 14: commerce.catalog.v1.UpdateProductResponse.product:type_name -> commerce.catalog.v1.Product
+	1,  // 15: commerce.catalog.v1.ArchiveProductResponse.product:type_name -> commerce.catalog.v1.Product
+	2,  // 16: commerce.catalog.v1.CatalogService.GetProduct:input_type -> commerce.catalog.v1.GetProductRequest
+	4,  // 17: commerce.catalog.v1.CatalogService.ListProducts:input_type -> commerce.catalog.v1.ListProductsRequest
+	6,  // 18: commerce.catalog.v1.CatalogService.BatchGetProducts:input_type -> commerce.catalog.v1.BatchGetProductsRequest
+	8,  // 19: commerce.catalog.v1.CatalogService.CreateProduct:input_type -> commerce.catalog.v1.CreateProductRequest
+	9,  // 20: commerce.catalog.v1.CatalogService.UpdateProduct:input_type -> commerce.catalog.v1.UpdateProductRequest
+	10, // 21: commerce.catalog.v1.CatalogService.ArchiveProduct:input_type -> commerce.catalog.v1.ArchiveProductRequest
+	3,  // 22: commerce.catalog.v1.CatalogService.GetProduct:output_type -> commerce.catalog.v1.GetProductResponse
+	5,  // 23: commerce.catalog.v1.CatalogService.ListProducts:output_type -> commerce.catalog.v1.ListProductsResponse
+	7,  // 24: commerce.catalog.v1.CatalogService.BatchGetProducts:output_type -> commerce.catalog.v1.BatchGetProductsResponse
+	11, // 25: commerce.catalog.v1.CatalogService.CreateProduct:output_type -> commerce.catalog.v1.CreateProductResponse
+	12, // 26: commerce.catalog.v1.CatalogService.UpdateProduct:output_type -> commerce.catalog.v1.UpdateProductResponse
+	13, // 27: commerce.catalog.v1.CatalogService.ArchiveProduct:output_type -> commerce.catalog.v1.ArchiveProductResponse
+	22, // [22:28] is the sub-list for method output_type
+	16, // [16:22] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_commerce_catalog_v1_catalog_proto_init() }
@@ -580,7 +1024,7 @@ func file_commerce_catalog_v1_catalog_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_commerce_catalog_v1_catalog_proto_rawDesc), len(file_commerce_catalog_v1_catalog_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

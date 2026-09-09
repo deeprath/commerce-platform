@@ -3,5 +3,6 @@ go 1.26.0
 use (
 	./gen/go
 	./pkg
+	./services/catalog
 	./services/ext-authz
 )

@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+// commerce.media.v1 — object-storage intake. The service issues presigned
+// upload URLs and, after the client uploads, publishes commerce.media.asset_ready.
+// Bytes never pass through gRPC.
+package commerce.media.v1;
+
+service MediaService {
+  // CreateUploadURL returns a presigned PUT scoped to one object key,
+  // size- and content-type-locked, valid for a short window.
+  // Requires the catalog_manager role.
+  rpc CreateUploadURL(CreateUploadURLRequest) returns (CreateUploadURLResponse);
+
+  // GetAsset resolves an object key to a served URL (CDN or presigned GET)
+  // plus any generated derivatives.
+  rpc GetAsset(GetAssetRequest) returns (GetAssetResponse);
+}
+
+message CreateUploadURLRequest {
+  // Logical bucket: "product-media" | "invoices" | "exports".
+  string bucket = 1;
+  // Original filename; the service derives a safe, unique key from it.
+  string filename = 2;
+  // MIME type the client will send; the presigned URL enforces it.
+  string content_type = 3;
+  // Declared size in bytes; the presigned URL enforces an upper bound.
+  int64 size_bytes = 4;
+}
+
+message CreateUploadURLResponse {
+  // Canonical object key the client references afterwards.
+  string key = 1;
+  // Presigned PUT URL. Expires; single use for this key/content-type/size.
+  string upload_url = 2;
+  string expires_at = 3;
+}
+
+message GetAssetRequest {
+  string key = 1;
+}
+
+message GetAssetResponse {
+  string key = 1;
+  string url = 2; // canonical served URL
+  AssetStatus status = 3;
+  map<string, string> derivatives = 4; // name -> URL (e.g. "thumb" -> "...")
+  string content_type = 5;
+  int64 size_bytes = 6;
+}
+
+enum AssetStatus {
+  ASSET_STATUS_UNSPECIFIED = 0;
+  ASSET_STATUS_PENDING = 1; // upload URL issued, bytes not confirmed
+  ASSET_STATUS_READY = 2; // uploaded, scanned, derivatives generated
+  ASSET_STATUS_REJECTED = 3; // failed AV scan or validation
+}
+
+// --- events (topic: commerce.media.<event>) ---
+
+message AssetReady {
+  string key = 1;
+  string url = 2;
+  string content_type = 3;
+  int64 size_bytes = 4;
+  map<string, string> derivatives = 5;
+  string occurred_at = 6;
+}
+
+message AssetRejected {
+  string key = 1;
+  string reason = 2;
+  string occurred_at = 3;
+}

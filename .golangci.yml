@@ -17,6 +17,14 @@ linters:
     gosec:
       excludes:
         - G115 # integer overflow conversion — noisy on proto int32<->int
+    revive:
+      rules:
+        # We rely on package-level doc comments + self-explanatory names rather
+        # than a doc comment on every exported symbol. Keep the rest of revive.
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
   exclusions:
     generated: lax
     rules:
