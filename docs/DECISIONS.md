@@ -619,3 +619,51 @@ ratings for the PDP, and a moderation lever.
 **Consequences:** The rating summary is an aggregate query per PDP load (cheap at current
 volume, revisit with a cache or a counter if it shows up in traces). No review editing in
 v1. One more service, DB, and consumer group.
+
+---
+
+## ADR-021 — Returns (RMA) live in the order service; partial refunds in payment
+
+**Status:** Accepted (Phase 3).
+
+**Context:** A delivered order needs a return path: request → operator decision →
+refund + restock. This spans `order`, `payment` and `inventory`.
+
+**Decision:**
+- **Returns are an order-service concern, not a new service.** A return is an aggregate
+  hanging off an order (which order, which lines, how much to refund) and the decision
+  orchestrates `payment.Refund` + `inventory.AdjustStock` — exactly the shape of the
+  checkout saga, which already lives in `order` and already dials both. A separate
+  `returns` service would re-dial the same two and re-fetch order data.
+- **`RequestReturn`** loads the caller's order, requires `FULFILLED`, and for each line
+  checks the requested quantity against `ordered − already-returned` (returns that are not
+  `REJECTED` count). Per-line refund = the customer's share of what they actually paid
+  (`order.total`, net of discount, incl. tax), allocated by running cumulative rounding so
+  the parts sum exactly to the intended total — and to `order.total` for a whole-order
+  return.
+- **`DecideReturn`** (role `order_manager`) flips `REQUESTED → APPROVED|REJECTED` and emits
+  the event in one transaction, then — on approval — calls `payment.Refund` (idempotency
+  key = return id) and `inventory.AdjustStock(+qty)` per line. Restock is **not** idempotent
+  on its own, so each `return_lines` row carries a `restocked` flag; a retry after a partial
+  failure only re-attempts the unmarked lines. A refund/restock error is returned to the
+  operator (the return is already `APPROVED`); calling `DecideReturn` again re-drives the
+  unfinished side effects.
+- **Payment gains partial, cumulative refunds.** `RefundRequest` takes an optional `amount`
+  (0 ⇒ full remaining balance) and an `idempotency_key`. A `refunds` table records each one;
+  `payments.refunded_cents` accumulates; status becomes `REFUNDED` only when fully refunded,
+  otherwise stays `AUTHORIZED`. Each refund emits one `payment.refunded` for its own amount.
+  `Transition()` no longer handles `REFUNDED` — refunds go through `Refund()`.
+
+**Alternatives:**
+- *A dedicated `returns` service* — duplicates the payment+inventory client wiring and needs
+  a read path back into `order`; no ownership benefit while returns are simple.
+- *Refund the whole payment on any return* — wrong for a partial return (1 of 3 items).
+- *Do refund+restock inside the status-flip transaction* — impossible; they are external
+  gRPC calls. The flag-per-line + operator-retry model is the pragmatic substitute for a
+  distributed transaction, consistent with the rest of the saga.
+- *Track "settled" on the return instead of per-line* — a mid-restock failure would then
+  re-add already-restocked lines on retry.
+
+**Consequences:** `order` now also exposes 4 return RPCs and emits 3 return events (on the
+`commerce.order.*` topic namespace). Payment refunds are repeatable and no longer a single
+state flip. No return UI yet — the RPCs are ready for the storefront/admin work.

@@ -19,7 +19,8 @@ service PaymentService {
   // emits the matching event. Idempotent on payment_id.
   rpc ConfirmPayment(ConfirmPaymentRequest) returns (Payment);
 
-  // Refund reverses a captured/authorized payment. Idempotent.
+  // Refund reverses part or all of an authorized payment. Repeatable: partial
+  // refunds accumulate; the payment moves to REFUNDED only once fully refunded.
   rpc Refund(RefundRequest) returns (Payment);
 
   // Void cancels an authorized-but-not-captured intent (used by the saga when a
@@ -43,6 +44,7 @@ message Payment {
   PaymentStatus status = 4;
   string client_secret = 5; // only on CreatePayment
   string created_at = 6;
+  commerce.common.v1.Money refunded = 7; // cumulative amount refunded so far
 }
 
 message CreatePaymentRequest {
@@ -65,6 +67,10 @@ message ConfirmPaymentRequest {
 
 message RefundRequest {
   string payment_id = 1;
+  // Amount to refund. Omit / zero => refund the full remaining balance.
+  commerce.common.v1.Money amount = 2;
+  // Idempotency key so a retried refund is not double-applied. Optional.
+  string idempotency_key = 3;
 }
 
 message VoidRequest {

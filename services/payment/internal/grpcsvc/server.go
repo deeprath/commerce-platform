@@ -66,7 +66,12 @@ func (s *Server) ConfirmPayment(ctx context.Context, req *paymentv1.ConfirmPayme
 }
 
 func (s *Server) Refund(ctx context.Context, req *paymentv1.RefundRequest) (*paymentv1.Payment, error) {
-	p, err := s.store.Transition(ctx, req.GetPaymentId(), "REFUNDED", "")
+	amt := req.GetAmount()
+	cents := amt.GetUnits()*100 + int64(amt.GetNanos())/10_000_000
+	if cents < 0 {
+		return nil, errs.New(errs.KindInvalidArgument, "BAD_AMOUNT", "amount cannot be negative")
+	}
+	p, err := s.store.Refund(ctx, req.GetPaymentId(), cents, req.GetIdempotencyKey())
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +96,13 @@ func toProto(p *store.Payment, withSecret bool) *paymentv1.Payment {
 		},
 		Status:    statusToProto(p.Status),
 		CreatedAt: p.CreatedAt.Format(time.RFC3339),
+	}
+	if p.RefundedCents > 0 {
+		out.Refunded = &commonv1.Money{
+			CurrencyCode: p.Currency,
+			Units:        p.RefundedCents / 100,
+			Nanos:        int32(p.RefundedCents%100) * 10_000_000,
+		}
 	}
 	if withSecret {
 		out.ClientSecret = p.ClientSecret

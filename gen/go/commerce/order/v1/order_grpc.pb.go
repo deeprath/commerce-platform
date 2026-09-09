@@ -23,10 +23,14 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OrderService_CreateOrder_FullMethodName = "/commerce.order.v1.OrderService/CreateOrder"
-	OrderService_GetOrder_FullMethodName    = "/commerce.order.v1.OrderService/GetOrder"
-	OrderService_ListOrders_FullMethodName  = "/commerce.order.v1.OrderService/ListOrders"
-	OrderService_CancelOrder_FullMethodName = "/commerce.order.v1.OrderService/CancelOrder"
+	OrderService_CreateOrder_FullMethodName   = "/commerce.order.v1.OrderService/CreateOrder"
+	OrderService_GetOrder_FullMethodName      = "/commerce.order.v1.OrderService/GetOrder"
+	OrderService_ListOrders_FullMethodName    = "/commerce.order.v1.OrderService/ListOrders"
+	OrderService_CancelOrder_FullMethodName   = "/commerce.order.v1.OrderService/CancelOrder"
+	OrderService_RequestReturn_FullMethodName = "/commerce.order.v1.OrderService/RequestReturn"
+	OrderService_GetReturn_FullMethodName     = "/commerce.order.v1.OrderService/GetReturn"
+	OrderService_ListReturns_FullMethodName   = "/commerce.order.v1.OrderService/ListReturns"
+	OrderService_DecideReturn_FullMethodName  = "/commerce.order.v1.OrderService/DecideReturn"
 )
 
 // OrderServiceClient is the client API for OrderService service.
@@ -43,6 +47,19 @@ type OrderServiceClient interface {
 	// CancelOrder cancels a PENDING_PAYMENT order (releases the reservation,
 	// voids the payment intent).
 	CancelOrder(ctx context.Context, in *CancelOrderRequest, opts ...grpc.CallOption) (*Order, error)
+	// RequestReturn opens a return (RMA) for one or more lines of a delivered
+	// order the caller owns. The return starts REQUESTED, pending an operator
+	// decision.
+	RequestReturn(ctx context.Context, in *RequestReturnRequest, opts ...grpc.CallOption) (*Return, error)
+	// GetReturn returns one return the caller owns (or any return for an
+	// order_manager).
+	GetReturn(ctx context.Context, in *GetReturnRequest, opts ...grpc.CallOption) (*Return, error)
+	// ListReturns lists the caller's returns, newest first.
+	ListReturns(ctx context.Context, in *ListReturnsRequest, opts ...grpc.CallOption) (*ListReturnsResponse, error)
+	// DecideReturn approves or rejects a REQUESTED return. Requires the
+	// order_manager role. On approval the order service refunds the returned
+	// amount and restocks the returned units.
+	DecideReturn(ctx context.Context, in *DecideReturnRequest, opts ...grpc.CallOption) (*Return, error)
 }
 
 type orderServiceClient struct {
@@ -93,6 +110,46 @@ func (c *orderServiceClient) CancelOrder(ctx context.Context, in *CancelOrderReq
 	return out, nil
 }
 
+func (c *orderServiceClient) RequestReturn(ctx context.Context, in *RequestReturnRequest, opts ...grpc.CallOption) (*Return, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Return)
+	err := c.cc.Invoke(ctx, OrderService_RequestReturn_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) GetReturn(ctx context.Context, in *GetReturnRequest, opts ...grpc.CallOption) (*Return, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Return)
+	err := c.cc.Invoke(ctx, OrderService_GetReturn_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) ListReturns(ctx context.Context, in *ListReturnsRequest, opts ...grpc.CallOption) (*ListReturnsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReturnsResponse)
+	err := c.cc.Invoke(ctx, OrderService_ListReturns_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) DecideReturn(ctx context.Context, in *DecideReturnRequest, opts ...grpc.CallOption) (*Return, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Return)
+	err := c.cc.Invoke(ctx, OrderService_DecideReturn_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrderServiceServer is the server API for OrderService service.
 // All implementations must embed UnimplementedOrderServiceServer
 // for forward compatibility.
@@ -107,6 +164,19 @@ type OrderServiceServer interface {
 	// CancelOrder cancels a PENDING_PAYMENT order (releases the reservation,
 	// voids the payment intent).
 	CancelOrder(context.Context, *CancelOrderRequest) (*Order, error)
+	// RequestReturn opens a return (RMA) for one or more lines of a delivered
+	// order the caller owns. The return starts REQUESTED, pending an operator
+	// decision.
+	RequestReturn(context.Context, *RequestReturnRequest) (*Return, error)
+	// GetReturn returns one return the caller owns (or any return for an
+	// order_manager).
+	GetReturn(context.Context, *GetReturnRequest) (*Return, error)
+	// ListReturns lists the caller's returns, newest first.
+	ListReturns(context.Context, *ListReturnsRequest) (*ListReturnsResponse, error)
+	// DecideReturn approves or rejects a REQUESTED return. Requires the
+	// order_manager role. On approval the order service refunds the returned
+	// amount and restocks the returned units.
+	DecideReturn(context.Context, *DecideReturnRequest) (*Return, error)
 	mustEmbedUnimplementedOrderServiceServer()
 }
 
@@ -128,6 +198,18 @@ func (UnimplementedOrderServiceServer) ListOrders(context.Context, *ListOrdersRe
 }
 func (UnimplementedOrderServiceServer) CancelOrder(context.Context, *CancelOrderRequest) (*Order, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelOrder not implemented")
+}
+func (UnimplementedOrderServiceServer) RequestReturn(context.Context, *RequestReturnRequest) (*Return, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestReturn not implemented")
+}
+func (UnimplementedOrderServiceServer) GetReturn(context.Context, *GetReturnRequest) (*Return, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetReturn not implemented")
+}
+func (UnimplementedOrderServiceServer) ListReturns(context.Context, *ListReturnsRequest) (*ListReturnsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListReturns not implemented")
+}
+func (UnimplementedOrderServiceServer) DecideReturn(context.Context, *DecideReturnRequest) (*Return, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DecideReturn not implemented")
 }
 func (UnimplementedOrderServiceServer) mustEmbedUnimplementedOrderServiceServer() {}
 func (UnimplementedOrderServiceServer) testEmbeddedByValue()                      {}
@@ -222,6 +304,78 @@ func _OrderService_CancelOrder_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_RequestReturn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RequestReturnRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).RequestReturn(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_RequestReturn_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).RequestReturn(ctx, req.(*RequestReturnRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_GetReturn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetReturnRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).GetReturn(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_GetReturn_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).GetReturn(ctx, req.(*GetReturnRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ListReturns_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReturnsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ListReturns(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ListReturns_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ListReturns(ctx, req.(*ListReturnsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_DecideReturn_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DecideReturnRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).DecideReturn(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_DecideReturn_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).DecideReturn(ctx, req.(*DecideReturnRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrderService_ServiceDesc is the grpc.ServiceDesc for OrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -244,6 +398,22 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CancelOrder",
 			Handler:    _OrderService_CancelOrder_Handler,
+		},
+		{
+			MethodName: "RequestReturn",
+			Handler:    _OrderService_RequestReturn_Handler,
+		},
+		{
+			MethodName: "GetReturn",
+			Handler:    _OrderService_GetReturn_Handler,
+		},
+		{
+			MethodName: "ListReturns",
+			Handler:    _OrderService_ListReturns_Handler,
+		},
+		{
+			MethodName: "DecideReturn",
+			Handler:    _OrderService_DecideReturn_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

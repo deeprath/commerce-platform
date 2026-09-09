@@ -21,6 +21,23 @@ service OrderService {
   // CancelOrder cancels a PENDING_PAYMENT order (releases the reservation,
   // voids the payment intent).
   rpc CancelOrder(CancelOrderRequest) returns (Order);
+
+  // RequestReturn opens a return (RMA) for one or more lines of a delivered
+  // order the caller owns. The return starts REQUESTED, pending an operator
+  // decision.
+  rpc RequestReturn(RequestReturnRequest) returns (Return);
+
+  // GetReturn returns one return the caller owns (or any return for an
+  // order_manager).
+  rpc GetReturn(GetReturnRequest) returns (Return);
+
+  // ListReturns lists the caller's returns, newest first.
+  rpc ListReturns(ListReturnsRequest) returns (ListReturnsResponse);
+
+  // DecideReturn approves or rejects a REQUESTED return. Requires the
+  // order_manager role. On approval the order service refunds the returned
+  // amount and restocks the returned units.
+  rpc DecideReturn(DecideReturnRequest) returns (Return);
 }
 
 enum OrderStatus {
@@ -120,4 +137,86 @@ message OrderFulfilled {
   string order_id = 1;
   string owner_id = 2;
   string occurred_at = 3;
+}
+
+// --- returns (RMA) ---
+
+enum ReturnStatus {
+  RETURN_STATUS_UNSPECIFIED = 0;
+  RETURN_STATUS_REQUESTED = 1;
+  RETURN_STATUS_APPROVED = 2; // refund + restock done
+  RETURN_STATUS_REJECTED = 3;
+}
+
+message ReturnLine {
+  string product_id = 1;
+  int32 quantity = 2; // units being returned, 1..(ordered quantity)
+  commerce.common.v1.Money refund_amount = 3; // line refund incl. its share of tax
+}
+
+message Return {
+  string id = 1;
+  string order_id = 2;
+  string owner_id = 3;
+  ReturnStatus status = 4;
+  string reason = 5;
+  repeated ReturnLine lines = 6;
+  commerce.common.v1.Money refund_total = 7;
+  string decided_by = 8; // operator sub, once decided
+  string decision_note = 9;
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+message RequestReturnRequest {
+  string order_id = 1;
+  string reason = 2;
+  message Line {
+    string product_id = 1;
+    int32 quantity = 2;
+  }
+  repeated Line lines = 3; // empty => every line, full quantity
+}
+
+message GetReturnRequest {
+  string id = 1;
+}
+
+message ListReturnsRequest {
+  commerce.common.v1.PageRequest page = 1;
+}
+
+message ListReturnsResponse {
+  repeated Return returns = 1;
+  commerce.common.v1.PageResponse page = 2;
+}
+
+message DecideReturnRequest {
+  string id = 1;
+  bool approve = 2;
+  string note = 3;
+}
+
+// --- return events (topic: commerce.order.<event>) ---
+
+message ReturnRequested {
+  string return_id = 1;
+  string order_id = 2;
+  string owner_id = 3;
+  string occurred_at = 4;
+}
+
+message ReturnApproved {
+  string return_id = 1;
+  string order_id = 2;
+  string owner_id = 3;
+  commerce.common.v1.Money refund_total = 4;
+  string occurred_at = 5;
+}
+
+message ReturnRejected {
+  string return_id = 1;
+  string order_id = 2;
+  string owner_id = 3;
+  string occurred_at = 4;
 }
