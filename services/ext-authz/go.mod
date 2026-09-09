@@ -1,6 +1,6 @@
 module github.com/deeprath/commerce-platform/services/ext-authz
 
-go 1.26.8
+go 1.26.0
 
 // Intra-repo modules are resolved from the local tree. go.work does this for
 // local dev; these replace directives make `go mod tidy` and a workspace-less

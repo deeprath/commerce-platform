@@ -1,6 +1,6 @@
 module github.com/deeprath/commerce-platform/pkg
 
-go 1.26.8
+go 1.26.0
 
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.2

@@ -22,8 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # full history on schedule; diff-only otherwise
-          fetch-depth: ${{ github.event_name == 'schedule' && 0 || 1 }}
+          fetch-depth: 0 # gitleaks-action needs full history to diff a PR
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.28.0
+      - uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: fs
           scanners: vuln,secret
@@ -51,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.28.0
+      - uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: config
           severity: HIGH,CRITICAL
@@ -76,7 +75,7 @@ jobs:
           load: true
           tags: commerce/${{ matrix.service }}:scan
       - name: trivy (our libraries — blocking)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: image
           image-ref: commerce/${{ matrix.service }}:scan
@@ -86,7 +85,7 @@ jobs:
           ignore-unfixed: "true"
           trivyignores: infra/security/.trivyignore
       - name: trivy (full image incl. base OS — informational)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           scan-type: image
           image-ref: commerce/${{ matrix.service }}:scan
