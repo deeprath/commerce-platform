@@ -67,12 +67,12 @@ func Duration(key string, def time.Duration) time.Duration {
 
 // Service is the config every service needs. Embed it in a service-specific struct.
 type Service struct {
-	Name        string // logical service name, e.g. "catalog"
-	Environment string // "local" | "staging" | "prod"
-	Version     string // build version / git sha
-	GRPCAddr    string // listen address for the gRPC server
+	Name         string // logical service name, e.g. "catalog"
+	Environment  string // "local" | "staging" | "prod"
+	Version      string // build version / git sha
+	GRPCAddr     string // listen address for the gRPC server
 	OTLPEndpoint string // OpenTelemetry collector, host:port (no scheme)
-	LogLevel    string // "debug" | "info" | "warn" | "error"
+	LogLevel     string // "debug" | "info" | "warn" | "error"
 }
 
 // LoadService reads the common service config from the environment.

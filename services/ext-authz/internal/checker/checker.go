@@ -45,6 +45,7 @@ type Decision struct {
 // Checker makes decisions from HTTP request attributes.
 type Checker struct{ cfg Config }
 
+// New returns a Checker that evaluates requests against cfg.
 func New(cfg Config) *Checker { return &Checker{cfg: cfg} }
 
 // Check evaluates one request. headers keys are expected lower-cased (Envoy does this).

@@ -17,18 +17,19 @@ import (
 // Kind is a coarse failure category. It maps 1:1 to a gRPC code and an HTTP status.
 type Kind int
 
+// The failure categories. Order is not significant; do not persist the numeric value.
 const (
-	KindInternal       Kind = iota // unexpected; a bug or a dependency failure
-	KindInvalidArgument            // caller sent something malformed
-	KindNotFound                   // the addressed resource does not exist / not visible
-	KindAlreadyExists              // uniqueness violation
-	KindPermissionDenied           // authenticated but not allowed
-	KindUnauthenticated            // no / bad credentials
-	KindFailedPrecondition        // resource state forbids the operation
-	KindConflict                   // optimistic-concurrency / version clash
-	KindResourceExhausted          // rate limited / quota / load-shed
-	KindUnavailable                // dependency down; safe to retry
-	KindDeadlineExceeded           // ran out of time
+	KindInternal           Kind = iota // unexpected; a bug or a dependency failure
+	KindInvalidArgument                // caller sent something malformed
+	KindNotFound                       // the addressed resource does not exist / not visible
+	KindAlreadyExists                  // uniqueness violation
+	KindPermissionDenied               // authenticated but not allowed
+	KindUnauthenticated                // no / bad credentials
+	KindFailedPrecondition             // resource state forbids the operation
+	KindConflict                       // optimistic-concurrency / version clash
+	KindResourceExhausted              // rate limited / quota / load-shed
+	KindUnavailable                    // dependency down; safe to retry
+	KindDeadlineExceeded               // ran out of time
 )
 
 // Error is a domain error carrying a stable machine reason plus a Kind.

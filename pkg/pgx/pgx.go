@@ -56,7 +56,7 @@ func Migrate(ctx context.Context, dsn string, migrationsFS fs.FS, dir string) er
 	if err != nil {
 		return fmt.Errorf("pgx: open for migrate: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	goose.SetBaseFS(migrationsFS)
 	if err := goose.SetDialect("postgres"); err != nil {
