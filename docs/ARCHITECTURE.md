@@ -121,7 +121,7 @@ are drawn so that the **critical checkout path** touches as few services as poss
 | **payment** | Payment intents, PSP integration, refunds, webhook ingestion | `CreatePayment`, `CapturePayment`, `Refund` | `payment.authorized`, `payment.captured`, `payment.failed`, `payment.refunded` | `order.created`, `order.cancelled` |
 | **fulfillment** | Shipments (one per order in v1), sandbox carrier, tracking | `GetShipment`, `ListShipments`, `MarkShipped`, `MarkDelivered`, `CancelShipment` | `fulfillment.shipment_created`, `fulfillment.shipped`, `fulfillment.delivered`, `fulfillment.cancelled` | `order.confirmed` |
 | **notification** | Transactional notifications: templates, delivery history, sandbox channel | `ListNotifications`, `SendTest` | `notification.sent` | `order.created`, `order.confirmed`, `order.cancelled`, `order.fulfilled`, `fulfillment.shipped`, `fulfillment.delivered` |
-| **review** | Product ratings & reviews, moderation queue | `ListReviews`, `SubmitReview`, `ModerateReview` | `review.published` | `order.fulfilled` (verified-purchase flag) |
+| **review** | Product ratings & reviews, verified-purchase index, moderation | `CreateReview`, `ListReviews`, `GetRatingSummary`, `ModerateReview` | `review.published`, `review.hidden` | `order.confirmed` (verified-purchase index) |
 | **media** | Upload intake (MinIO), image derivatives, AV scan, CDN origin | `CreateUploadURL`, `GetAsset` | `media.asset_ready`, `media.asset_rejected` | — |
 
 **Read-side note:** the `search` service is the query engine for product listing/browse. The

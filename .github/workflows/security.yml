@@ -85,7 +85,7 @@ jobs:
     env: { TRIVY_VERSION: v0.74.0 }
     strategy:
       matrix:
-        service: [ext-authz, catalog, media, search, bff, storefront, cart, pricing, inventory, payment, order, fulfillment, notification]
+        service: [ext-authz, catalog, media, search, bff, storefront, cart, pricing, inventory, payment, order, fulfillment, notification, review]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -136,7 +136,9 @@ jobs:
           cache-dependency-path: "**/go.sum"
       - name: coverage
         if: steps.gate.outputs.enabled == 'true'
-        run: go test -coverprofile=coverage.out $(go list -m -f '{{.Dir}}/...') || true
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true" # see ci.yml test job
+        run: go test -coverprofile=coverage.out -p 4 $(go list -m -f '{{.Dir}}/...') || true
       - name: SonarCloud scan
         if: steps.gate.outputs.enabled == 'true'
         uses: SonarSource/sonarqube-scan-action@v4
