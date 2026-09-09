@@ -1,0 +1,266 @@
+:root {
+  --brand: #4f46e5;
+  --brand-dark: #3730a3;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --bg: #f8fafc;
+  --card: #ffffff;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+a {
+  color: var(--brand-dark);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+.brand {
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--brand);
+}
+.site-main {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.site-footer {
+  text-align: center;
+  color: var(--muted);
+  padding: 32px;
+  font-size: 0.85rem;
+}
+.linkbtn {
+  background: none;
+  border: none;
+  color: var(--brand-dark);
+  cursor: pointer;
+  font: inherit;
+}
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 0.85rem;
+}
+.error {
+  color: #b91c1c;
+}
+
+/* browse */
+.searchbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.searchbar input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+.searchbar button,
+.login button,
+.buy {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.searchbar button:hover {
+  background: var(--brand-dark);
+}
+.browse-body {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 24px;
+}
+.facets .facet {
+  margin-bottom: 20px;
+}
+.facets h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.facets select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+.facets ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.facets li button {
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+}
+.facets li button.active {
+  color: var(--brand);
+  font-weight: 700;
+}
+.facets .count {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+}
+.card-link {
+  color: inherit;
+}
+.card-link:hover {
+  text-decoration: none;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  transition: box-shadow 0.15s;
+}
+.card-link:hover .card {
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.1);
+}
+.card-img,
+.pdp-media {
+  aspect-ratio: 1;
+  background: #f1f5f9;
+  border-radius: 8px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.card-img img,
+.pdp-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.noimg {
+  width: 40%;
+  height: 40%;
+  background: repeating-linear-gradient(45deg, #e2e8f0, #e2e8f0 8px, #f1f5f9 8px, #f1f5f9 16px);
+  border-radius: 6px;
+}
+.card h2 {
+  font-size: 0.95rem;
+  margin: 10px 0 4px;
+}
+.price {
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+.price.big {
+  font-size: 1.4rem;
+}
+
+/* pdp */
+.pdp .back {
+  display: inline-block;
+  margin-bottom: 16px;
+}
+.pdp-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+}
+.pdp-info h1 {
+  margin: 0 0 8px;
+}
+.desc {
+  color: var(--muted);
+}
+.attrs {
+  margin: 16px 0;
+}
+.attrs > div {
+  display: flex;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding: 6px 0;
+}
+.attrs dt {
+  font-weight: 600;
+  min-width: 90px;
+  text-transform: capitalize;
+}
+.attrs dd {
+  margin: 0;
+}
+.buy {
+  margin-top: 12px;
+}
+.buy:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+}
+
+/* login */
+.login {
+  max-width: 360px;
+  margin: 40px auto;
+}
+.login form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.login input {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+}
+
+@media (max-width: 720px) {
+  .browse-body,
+  .pdp-body {
+    grid-template-columns: 1fr;
+  }
+}

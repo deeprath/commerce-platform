@@ -1,0 +1,109 @@
+{
+  "uid": "service-drilldown",
+  "title": "Service Drill-down",
+  "tags": ["commerce", "service"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(rpc_server_call_duration_seconds_count, job)",
+        "refresh": 2,
+        "sort": 1,
+        "current": { "text": "catalog", "value": "catalog" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Inbound request rate by RPC method (req/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (rpc_method) (rate(rpc_server_call_duration_seconds_count{job=\"$service\"}[5m]))",
+          "legendFormat": "{{rpc_method}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Inbound error rate by method (non-OK status, %)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 * sum by (rpc_method) (rate(rpc_server_call_duration_seconds_count{job=\"$service\", rpc_response_status_code!=\"OK\"}[5m])) / clamp_min(sum by (rpc_method) (rate(rpc_server_call_duration_seconds_count{job=\"$service\"}[5m])), 0.001)",
+          "legendFormat": "{{rpc_method}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0 } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Inbound latency p50 / p95 / p99 (all methods)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le) (rate(rpc_server_call_duration_seconds_bucket{job=\"$service\"}[5m])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(rpc_server_call_duration_seconds_bucket{job=\"$service\"}[5m])))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(rpc_server_call_duration_seconds_bucket{job=\"$service\"}[5m])))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Inbound p95 latency by method",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, rpc_method) (rate(rpc_server_call_duration_seconds_bucket{job=\"$service\"}[5m])))",
+          "legendFormat": "{{rpc_method}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbound gRPC p95 by peer method (empty for leaf services)",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, rpc_method) (rate(rpc_client_call_duration_seconds_bucket{job=\"$service\"}[5m])))",
+          "legendFormat": "{{rpc_method}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbound gRPC error rate (%)",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "100 * sum by (rpc_method) (rate(rpc_client_call_duration_seconds_count{job=\"$service\", rpc_response_status_code!=\"OK\"}[5m])) / clamp_min(sum by (rpc_method) (rate(rpc_client_call_duration_seconds_count{job=\"$service\"}[5m])), 0.001)",
+          "legendFormat": "{{rpc_method}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0 } }
+    },
+    {
+      "type": "logs",
+      "title": "Recent errors ($service)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 23 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [{ "expr": "{service_name=\"$service\"} | json | level=`ERROR`" }]
+    }
+  ]
+}

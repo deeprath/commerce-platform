@@ -232,8 +232,11 @@ func wrapPG(err error) error {
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		if pgErr.Code == "23505" { // unique_violation
+		switch pgErr.Code {
+		case "23505": // unique_violation
 			return pkgerrs.Wrap(err, pkgerrs.KindAlreadyExists, "SLUG_TAKEN", "a product with that slug already exists")
+		case "22P02": // invalid_text_representation — e.g. a non-UUID id
+			return pkgerrs.New(pkgerrs.KindNotFound, "PRODUCT_NOT_FOUND", "no such product")
 		}
 		// Keep the pg detail in Message (logged, never returned to the client).
 		return pkgerrs.Wrap(err, pkgerrs.KindInternal, "DB_ERROR", "pg "+pgErr.Code+": "+pgErr.Message)

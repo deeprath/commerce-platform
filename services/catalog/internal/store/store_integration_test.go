@@ -94,6 +94,9 @@ func TestCreateReadArchiveAndOutbox(t *testing.T) {
 	if _, err := st.Get(ctx, "00000000-0000-0000-0000-000000000000"); !errs.Is(err, errs.KindNotFound) {
 		t.Fatalf("missing id => %v", err)
 	}
+	if _, err := st.Get(ctx, "not-a-uuid"); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("non-uuid id should be NotFound, not a DB error: %v", err)
+	}
 
 	// Activate then it shows in List
 	if err := got.ApplyUpdate(got.Title, got.Description, got.CategoryID, got.ListPrice,

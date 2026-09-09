@@ -35,3 +35,6 @@ zap-report.*
 trivy-report.*
 
 # Go workspace sum is committed; per-module vendor dirs are not
+
+# TS incremental build info
+*.tsbuildinfo
