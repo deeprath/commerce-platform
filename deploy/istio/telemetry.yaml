@@ -1,0 +1,19 @@
+# Send mesh traces and metrics to the OpenTelemetry collector (registered as the
+# `otel` extensionProvider in istiod's meshConfig). This puts the mesh hop in the
+# same trace as the application spans emitted by pkg/telemetry.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: mesh-default
+  namespace: istio-system
+spec:
+  tracing:
+    - providers:
+        - name: otel
+      randomSamplingPercentage: 100.0 # lower in production
+  metrics:
+    - providers:
+        - name: prometheus
+  accessLogging:
+    - providers:
+        - name: otel

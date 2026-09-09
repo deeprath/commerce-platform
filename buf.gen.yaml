@@ -1,0 +1,17 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/deeprath/commerce-platform/gen/go
+# Remote plugins with pinned versions => byte-identical output on every machine
+# and in CI (the local toolchain's protoc-gen-go version no longer matters).
+plugins:
+  - remote: buf.build/protocolbuffers/go:v1.36.6
+    out: gen/go
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go:v1.5.1
+    out: gen/go
+    opt:
+      - paths=source_relative
+      - require_unimplemented_servers=true

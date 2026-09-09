@@ -1,0 +1,19 @@
+# Gitleaks config. Extends the built-in ruleset; only adds allowlist entries for
+# known-safe local-dev fixtures. Every entry is dated and justified.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Local-dev-only fixtures — never real credentials"
+paths = [
+  # 2026-09-09: compose example env holds throwaway local passwords
+  '''deploy/compose/\.env\.example''',
+  # 2026-09-09: Keycloak realm import contains the seeded testuser password
+  # (testuser123) and a local-only BFF client secret; documented in
+  # docs/SECURITY.md. The real realm in each environment is imported from Vault.
+  '''deploy/compose/keycloak/realm-commerce\.json''',
+]
+regexes = [
+  # 2026-09-09: the one documented, unreachable dependency CVE placeholder
+  '''local-dev-bff-secret''',
+]

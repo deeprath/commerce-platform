@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+// Package commerce.common.v1 holds types shared across every service contract.
+// It has no service; it is only messages and enums.
+package commerce.common.v1;
+
+// Money is a fixed-point monetary amount. Avoid floats for currency.
+message Money {
+  // ISO 4217 currency code, e.g. "USD".
+  string currency_code = 1;
+  // Whole units of the amount, e.g. 12 for $12.34.
+  int64 units = 2;
+  // Fractional units in nanos (10^-9). 340_000_000 == $0.34.
+  // Must have the same sign as units. Range: [-999_999_999, +999_999_999].
+  int32 nanos = 3;
+}
+
+// PageRequest is the standard cursor-pagination request fragment.
+message PageRequest {
+  // Max items to return. Server clamps to a sane maximum. 0 => server default.
+  int32 page_size = 1;
+  // Opaque cursor from a previous PageResponse.next_page_token. Empty => first page.
+  string page_token = 2;
+}
+
+// PageResponse is the standard cursor-pagination response fragment.
+message PageResponse {
+  // Cursor for the next page. Empty => no more results.
+  string next_page_token = 1;
+  // Total matching items, if the server can compute it cheaply. -1 => unknown.
+  int64 total_size = 2;
+}
+
+// ErrorInfo is attached as a details payload on gRPC error statuses so
+// clients get a stable machine-readable reason without string-matching.
+message ErrorInfo {
+  // Stable UPPER_SNAKE reason, e.g. "PRODUCT_NOT_FOUND", "COUPON_EXPIRED".
+  string reason = 1;
+  // Service that produced the error, e.g. "catalog".
+  string domain = 2;
+  // Arbitrary key/value context. Never put PII or secrets here.
+  map<string, string> metadata = 3;
+}

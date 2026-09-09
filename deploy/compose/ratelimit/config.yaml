@@ -1,0 +1,23 @@
+# envoyproxy/ratelimit descriptors for the "edge" domain.
+# Keys match the actions declared in envoy.yaml. Kubernetes carries the same
+# descriptors as an Istio ratelimit EnvoyFilter (deploy/istio/).
+domain: edge
+descriptors:
+  # Tight limit on auth endpoints to blunt credential stuffing.
+  - key: path
+    value: "/api/v1/auth/login"
+    rate_limit:
+      unit: minute
+      requests_per_unit: 20
+
+  - key: path
+    value: "/api/v1/auth/refresh"
+    rate_limit:
+      unit: minute
+      requests_per_unit: 60
+
+  # Generous default for everything else.
+  - key: path
+    rate_limit:
+      unit: second
+      requests_per_unit: 100

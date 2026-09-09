@@ -1,0 +1,9 @@
+# Require mTLS for all in-mesh traffic. A non-mesh client cannot connect.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system # mesh-wide
+spec:
+  mtls:
+    mode: STRICT

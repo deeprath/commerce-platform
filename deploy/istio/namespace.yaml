@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: commerce
+  labels:
+    # Join every workload in this namespace to the ambient mesh (ztunnel L4 + mTLS).
+    istio.io/dataplane-mode: ambient
+    # Enforce restricted Pod Security.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

@@ -113,8 +113,12 @@ the *what*, this is the *how it's enforced and verified*.
 ## 5. CI security scanning — the four tools
 
 Pipeline: `.github/workflows/security.yml`. Policy below follows the `security-scanning`
-skill. **None of these have run yet** — [§7](#7-the-verification-rule) is the gate before any
-row here is considered done.
+skill.
+
+**First real run: PR #1, 2026-09-09.** `ci` + `security` both green. Every scanner below
+executed for real and its actual output was read (§7). Gitleaks, Trivy (fs / config /
+image) and SonarCloud run on every push + PR; ZAP is `workflow_dispatch` / weekly and was
+dispatched once against the live stack. Re-check these rows whenever the pipeline changes.
 
 ### 5.1 Gitleaks — secret scanning
 
@@ -122,25 +126,28 @@ row here is considered done.
   weekly schedule and on first setup.
 - **Config:** `infra/security/.gitleaks.toml` — default ruleset plus allow-list entries for
   known test fixtures (each dated + justified).
-- **Pre-commit hook** provided (`.pre-commit-config.yaml` / `lefthook.yml`) so secrets are
-  caught before they ever reach a commit.
 - **Policy:** any finding **fails the build**. No `|| true`.
-- **Current findings:** _not yet run._
+- **Needs `GITHUB_TOKEN`** in the job env (gitleaks-action v2 requires it to diff a PR) and a
+  full-history checkout (`fetch-depth: 0`).
+- **First run (2026-09-09):** ✅ 0 leaks. Scanned the full history + the PR diff.
+- **TODO:** pre-commit hook (`lefthook`/`pre-commit`) so secrets are caught before a commit —
+  not yet added.
 
 ### 5.2 Trivy — dependency / image / IaC scanning
 
-Three scans, **different policies on purpose** (per the skill's guidance):
+Run via the **official install script + the raw `trivy` CLI** (pinned `v0.74.0`), not a
+wrapper action — every flag is explicit and behaviour doesn't drift. Four invocations,
+**different policies on purpose** (per the skill's guidance):
 
-| Scan | What | Policy |
-|---|---|---|
-| `fs --scanners vuln,secret,misconfig` on the repo | Our direct + transitive deps (`go.mod`, `package-lock.json`), stray secrets, Dockerfile misconfig | **Blocks** the build on `HIGH`/`CRITICAL` in *our* dependencies |
-| `image --pkg-types library` per service image | Application-level packages baked into the image | **Blocks** the build on `HIGH`/`CRITICAL` |
-| `image` (full, incl. base OS packages) | Upstream OS CVEs in the distroless/Chainguard base | **Informational** — reported, not blocking (OS patches follow their own cadence; base rebuilt weekly) |
-| `config` on `deploy/helm`, `deploy/istio`, k8s manifests | IaC misconfig (privileged, hostPath, missing limits, over-broad `AuthorizationPolicy`, etc.) | **Informational** at first, promoted to blocking once the baseline is clean |
+| Scan | What | Policy | First run (2026-09-09) |
+|---|---|---|---|
+| `trivy fs --scanners vuln,secret` | Our deps (`go.mod` ×3) + stray secrets | **Blocks** on `HIGH`/`CRITICAL` in our deps | ✅ 0 vulns, 0 secrets |
+| `trivy image --pkg-types library` per service | App packages baked into the image | **Blocks** on `HIGH`/`CRITICAL` | ✅ `ext-authz` gobinary — 0 |
+| `trivy image` (full, incl. base OS) | Upstream CVEs in the distroless base | **Informational** (`--exit-code 0`) | ✅ 0 at HIGH/CRITICAL |
+| `trivy config .` | IaC misconfig (Dockerfile, Helm, k8s/Istio manifests) | **Informational** first; promote to blocking once baseline clean | ✅ 0 at HIGH/CRITICAL |
 
-- **`.trivyignore`** at `infra/security/.trivyignore` — every entry has a **date**, a **CVE
-  id**, and a **one-line reason it's unreachable or accepted**. Reviewed each release.
-- **Current findings:** _not yet run._
+- **`.trivyignore`** at `infra/security/.trivyignore` — empty today; every future entry gets a
+  **date**, a **CVE id**, and a **one-line reason**. Reviewed each release.
 
 ### 5.3 SonarCloud — static analysis & quality
 
@@ -158,7 +165,11 @@ Three scans, **different policies on purpose** (per the skill's guidance):
 - **Quality gate:** the **"Sonar way" gate on new code** — new-code coverage ≥ 80%, 0 new
   bugs, 0 new vulnerabilities, security hotspots reviewed, duplication < 3%. **Gate failure
   blocks merge** via the PR check.
-- **Current findings:** _not yet run._
+- **`sonar-project.properties`** is committed (project key `deeprath_commerce-platform`,
+  org `deeprath`, coverage from `coverage.out`).
+- **First run (2026-09-09):** the job runs but **self-skips** its scan step with a `::notice::`
+  because the `SONAR_TOKEN` repo secret does not exist yet. Add the secret (steps above) to
+  turn it on — nothing else needs to change.
 
 ### 5.4 OWASP ZAP — dynamic scanning
 
@@ -179,10 +190,19 @@ The tool most prone to "configured but never actually scanned anything." Guardra
     `workflow_dispatch`. Fails on new `HIGH` alerts; `WARN` triaged.
   - **Full active scan** — weekly, longer, against staging only (never prod), auth context
     configured with a test user so authenticated routes are actually exercised.
-- **Auth context:** a ZAP context file with a Keycloak-obtained token so the scanner sees
-  past the login wall — an unauthenticated ZAP run only ever tests the login page.
-- **Reports:** HTML + JSON uploaded as CI artifacts and archived to MinIO `security-reports`.
-- **Current findings:** _not yet run._
+- **Reports:** HTML + JSON uploaded as the `zap-reports` CI artifact (MinIO archival is a
+  Phase 1 TODO).
+- **First run (2026-09-09, `workflow_dispatch`):** brought up the full compose stack in the
+  runner, scanned the Envoy edge on `host.docker.internal:8080` (3 URLs), ran 7m36s.
+  - **FAIL-NEW: 0** — no HIGH alerts; the gate passed.
+  - **WARN-NEW: 1** — `Storable and Cacheable Content [10049]` ×3: the edge's 401/403/503
+    responses carry no `Cache-Control: no-store`. Low severity; fix is a header on the BFF's
+    authed responses in Phase 1. Tracked in §8.
+  - The security-header checks (CSP, HSTS, `X-Content-Type-Options`, Permissions-Policy, …)
+    all report PASS, but **only because the edge has no HTML/content responses yet** — real
+    header enforcement gets exercised once the BFF serves real payloads (Phase 1).
+- **TODO (Phase 4):** authenticated context (Keycloak token in a ZAP context file) + the
+  full active scan against staging.
 
 ---
 
@@ -234,21 +254,43 @@ A tool is **not done** until:
 
 Checklist to close out before Phase 0 is "done":
 
-- [ ] Gitleaks: real CI run, full-history scan, report read, findings recorded
-- [ ] Trivy: real CI run of all three scans, tables read, `.trivyignore` entries justified
-- [ ] SonarCloud: project imported, first analysis run from CI, quality gate result read via API
-- [ ] ZAP: real scan against the live compose stack, **confirmed it hit the ingress gateway
-      and not an empty `localhost`**, report opened, auth context verified to reach past login
-- [ ] All four wired into `security.yml` with the documented block/inform policy
-- [ ] This document updated from real output
+- [x] Gitleaks: real CI run (PR #1, 2026-09-09), full history + PR diff, 0 leaks
+- [x] Trivy: real CI run of fs / config / image (×2), all tables read, all clean at HIGH/CRITICAL
+- [~] SonarCloud: job wired and green; **scan self-skips until the `SONAR_TOKEN` secret is
+      added** (owner action — §5.3)
+- [x] ZAP: real `workflow_dispatch` scan against the live compose stack — confirmed it hit
+      `host.docker.internal:8080` (the Envoy edge), not an empty `localhost`; report read;
+      FAIL-NEW 0, one WARN tracked in §8. Authenticated context is Phase 4.
+- [x] All four wired into `security.yml` with the documented block/inform policy
+- [x] This document updated from the real output
 
 ---
 
 ## 8. Open items / accepted tradeoffs
 
-_None recorded yet — this section fills in from real scan output per §7._
+### ZAP-10049 — Storable and Cacheable Content on edge error responses
+- Tool: zap (baseline, 2026-09-09)
+- Status: **open item**
+- Detail: the Envoy edge's 401/403/503 responses have no `Cache-Control: no-store`.
+  Low severity (no sensitive body today), but authed API responses must not be cacheable.
+- Fix: set `Cache-Control: no-store` on the BFF's authenticated responses; revisit in Phase 1.
 
-Template for each entry:
+### SonarCloud not yet active
+- Tool: sonarcloud
+- Status: **open item** (owner action)
+- Detail: the CI job is wired and green but self-skips its scan until the `SONAR_TOKEN`
+  repo secret exists. See §5.3 for the one-time setup.
+
+### Accepted for now (revisit as noted)
+- **Base-OS CVE scan is informational**, not blocking — deliberate (§5.2); distroless base
+  is rebuilt weekly. Revisit if a reachable base CVE ever appears.
+- **`trivy config` is informational**, not blocking — promote to blocking once Phase 1–3
+  manifests are all clean.
+- **No pre-commit secret hook yet** — CI gitleaks is the backstop; add `lefthook` in Phase 1.
+
+---
+
+Template for a new entry:
 
 ```
 ### <CVE id / finding id> — <short title>

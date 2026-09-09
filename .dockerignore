@@ -1,0 +1,9 @@
+*
+!go.work
+!go.work.sum
+!pkg/
+!gen/
+!services/
+**/*_test.go
+**/testdata/
+.git/

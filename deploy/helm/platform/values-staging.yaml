@@ -1,0 +1,26 @@
+spec:
+  targetRevision: main
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+
+istio:
+  profile: ambient
+  meshConfig:
+    extensionProviders:
+      - name: otel
+        opentelemetry:
+          service: otel-collector.observability.svc.cluster.local
+          port: 4317
+      - name: ext-authz-grpc
+        envoyExtAuthzGrpc:
+          service: ext-authz.commerce.svc.cluster.local
+          port: 50051
+      - name: edge-ratelimit
+        envoyRateLimit:
+          service: ratelimit.commerce.svc.cluster.local
+          port: 8081

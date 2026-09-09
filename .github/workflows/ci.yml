@@ -1,0 +1,107 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: auto
+
+jobs:
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: pkg/go.mod
+          cache-dependency-path: "**/go.sum"
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+      - name: buf lint
+        run: buf lint
+      - name: buf format check
+        run: buf format --diff --exit-code
+      - name: generated stubs are up to date
+        run: |
+          buf generate
+          git diff --exit-code -- gen/ || {
+            echo "::error::gen/ is stale — run 'task proto' and commit"; exit 1;
+          }
+      - name: buf breaking (vs main)
+        # Non-blocking until main carries a proto baseline (this PR introduces
+        # proto/); becomes enforcing on the next PR after it merges.
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          buf breaking --against "https://github.com/${{ github.repository }}.git#branch=main" \
+            || echo "::warning::buf breaking skipped/failed — expected until proto/ exists on main"
+
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [pkg, gen/go, services/ext-authz]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: pkg/go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: golangci-lint (${{ matrix.module }})
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest # must be a build whose Go >= our go directive (1.26)
+          working-directory: ${{ matrix.module }}
+          args: --timeout=5m --config=${{ github.workspace }}/.golangci.yml
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: pkg/go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: go vet
+        run: go vet $(go list -m -f '{{.Dir}}/...')
+      - name: go test (race, includes testcontainers integration)
+        run: go test -race -shuffle=on $(go list -m -f '{{.Dir}}/...')
+
+  build-images:
+    runs-on: ubuntu-latest
+    needs: [proto, test]
+    strategy:
+      matrix:
+        service: [ext-authz]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build ${{ matrix.service }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/${{ matrix.service }}.Dockerfile
+          push: false
+          tags: commerce/${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/platform
+      - run: helm template deploy/helm/platform >/dev/null

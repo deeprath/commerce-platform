@@ -1,0 +1,100 @@
+# Local edge proxy. Mirrors what the Istio ingress gateway does in Kubernetes:
+#  - terminates HTTP on :8080
+#  - calls the ext-authz gRPC service for a shallow pre-check on every request
+#  - applies a global rate limit via the ratelimit service
+#  - routes /api/v1/* to the BFF (added in Phase 1; until then these 503)
+#
+# In Kubernetes this same behaviour is expressed as Gateway API + Istio
+# resources under deploy/istio/ — see docs/ARCHITECTURE.md §8.
+
+admin:
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 9901 }
+
+static_resources:
+  listeners:
+    - name: http
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8080 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: edge
+                generate_request_id: true
+                use_remote_address: true
+                route_config:
+                  name: local
+                  virtual_hosts:
+                    - name: all
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/api/v1/" }
+                          route:
+                            cluster: bff
+                            timeout: 15s
+                            rate_limits:
+                              - actions:
+                                  - { request_headers: { header_name: ":path", descriptor_key: "path" } }
+                      response_headers_to_add:
+                        - header: { key: "x-edge", value: "envoy-local" }
+                http_filters:
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      failure_mode_allow: false
+                      grpc_service:
+                        envoy_grpc: { cluster_name: ext_authz }
+                        timeout: 1s
+                  - name: envoy.filters.http.ratelimit
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+                      domain: edge
+                      failure_mode_deny: false
+                      rate_limit_service:
+                        transport_api_version: V3
+                        grpc_service:
+                          envoy_grpc: { cluster_name: ratelimit }
+                          timeout: 1s
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: bff
+      type: STRICT_DNS
+      connect_timeout: 1s
+      load_assignment:
+        cluster_name: bff
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address: { socket_address: { address: bff, port_value: 8080 } }
+    - name: ext_authz
+      type: STRICT_DNS
+      connect_timeout: 1s
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config: { http2_protocol_options: {} }
+      load_assignment:
+        cluster_name: ext_authz
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address: { socket_address: { address: ext-authz, port_value: 50051 } }
+    - name: ratelimit
+      type: STRICT_DNS
+      connect_timeout: 1s
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config: { http2_protocol_options: {} }
+      load_assignment:
+        cluster_name: ratelimit
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address: { socket_address: { address: ratelimit, port_value: 8081 } }

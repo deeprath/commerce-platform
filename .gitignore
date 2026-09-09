@@ -24,11 +24,14 @@ dist/
 .vscode/
 .DS_Store
 
-# Build / codegen output (regenerated via `task proto`)
-**/gen/
+# Frontend codegen output (regenerated via `task proto`); the Go stubs under
+# gen/go/ ARE committed and verified in CI.
+web/**/gen/
 *.pb.go.bak
 
 # Security scan reports
 /reports/
 zap-report.*
 trivy-report.*
+
+# Go workspace sum is committed; per-module vendor dirs are not

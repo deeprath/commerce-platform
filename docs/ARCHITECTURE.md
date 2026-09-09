@@ -504,7 +504,7 @@ These were weighed against Kong and accepted — see [`DECISIONS.md` ADR-011](DE
 
 ### 9.1 Images
 
-- Multi-stage: `golang:1.24` build stage → **distroless** (`gcr.io/distroless/static`) or
+- Multi-stage: `golang:1.26` build stage → **distroless** (`gcr.io/distroless/static`) or
   Chainguard runtime. Final image is a single static binary, non-root `USER 65532`,
   read-only root filesystem, no shell.
 - One Dockerfile per service under `deploy/docker/`, sharing a common base.
@@ -689,13 +689,17 @@ Full posture, current findings, and the CI verification checklist live in
 ### 13.1 Local
 
 `task up` brings up, via `deploy/compose/`:
-- all 13 services (hot-reload with `air`) + `bff` + `ext-authz`,
-- **Envoy Gateway** (Gateway API — runs the *same* `Gateway`/`HTTPRoute` YAML as the
-  cluster) + a local `envoyproxy/ratelimit`. **No mesh locally** — containers talk plaintext
-  on the compose network; mTLS + `AuthorizationPolicy` exist only in Kubernetes. This
-  dev/prod gap is deliberate and documented (§8.7).
-- Postgres, Redis, Kafka + Schema Registry, OpenSearch, MinIO, Keycloak (realm imported),
-- otel-collector + Prometheus + Loki + Tempo + Grafana (dashboards auto-provisioned).
+- the services built so far (`ext-authz` now; `bff` + domain services as phases land),
+- **plain Envoy** with a static config equivalent to the cluster's Gateway API setup
+  (ext-authz + `envoyproxy/ratelimit` + route to the BFF) + its Redis. **No mesh locally** —
+  containers talk plaintext on the compose network; mTLS + `AuthorizationPolicy` exist only
+  in Kubernetes. This dev/prod gap is deliberate and documented (§8.7).
+- Postgres (one DB per service), Redis, Kafka (KRaft), MinIO (+ bucket init), Keycloak
+  (realm imported),
+- otel-collector + Prometheus + Loki + Tempo + Grafana (datasources + dashboards
+  auto-provisioned).
+- `task up:full` additionally starts **OpenSearch** and **Schema Registry** (large images,
+  first needed in Phase 1 / Phase 2).
 
 `task proto` runs `buf generate` (Go stubs + TS `connect-es` clients). `task test` runs unit
 tests plus integration tests that spin up real Postgres/Kafka/MinIO via **testcontainers**

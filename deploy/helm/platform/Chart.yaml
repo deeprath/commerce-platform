@@ -1,0 +1,9 @@
+apiVersion: v2
+name: commerce-platform
+description: >
+  App-of-apps: renders Argo CD Application resources that install the platform
+  prerequisites (Gateway API CRDs, Istio ambient, cert-manager, External Secrets,
+  KEDA, and the observability stack) and then the per-service charts.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

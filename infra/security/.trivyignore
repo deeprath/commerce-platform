@@ -1,0 +1,5 @@
+# Trivy ignore list. EVERY entry MUST have: a date, the CVE id, and a one-line
+# reason it is unreachable or an accepted risk. Reviewed each release.
+#
+# (none yet — this file exists so the CI wiring is real from day one.
+#  Add entries as: `CVE-XXXX-YYYYY  # 2026-MM-DD  <reason it is not exploitable here>`)

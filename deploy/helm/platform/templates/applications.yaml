@@ -1,0 +1,40 @@
+{{- $spec := .Values.spec -}}
+{{- range .Values.applications }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .name }}
+  namespace: argocd
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: {{ $spec.project }}
+  destination:
+    server: {{ $spec.destinationServer }}
+    namespace: {{ .namespace }}
+  source:
+    repoURL: {{ .repoURL }}
+    targetRevision: {{ .targetRevision }}
+    {{- if .chart }}
+    chart: {{ .chart }}
+    {{- end }}
+    {{- if .path }}
+    path: {{ .path }}
+    {{- end }}
+    {{- if or .helmValues .valuesFromKey }}
+    helm:
+      {{- if .helmValues }}
+      values: |
+        {{- .helmValues | nindent 8 }}
+      {{- end }}
+      {{- if .valuesFromKey }}
+      valuesObject:
+        {{- toYaml (index $.Values .valuesFromKey) | nindent 8 }}
+      {{- end }}
+    {{- end }}
+  syncPolicy:
+    {{- toYaml $spec.syncPolicy | nindent 4 }}
+---
+{{- end }}
