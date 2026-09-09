@@ -43,13 +43,15 @@ func run() error {
 	defer func() { _ = shutdown(context.Background()) }()
 
 	cl, err := clients.Dial(clients.Targets{
-		Catalog: config.String("CATALOG_ADDR", "catalog:50051"),
-		Media:   config.String("MEDIA_ADDR", "media:50051"),
-		Search:  config.String("SEARCH_ADDR", "search:50051"),
-		Cart:    config.String("CART_ADDR", "cart:50051"),
-		Pricing: config.String("PRICING_ADDR", "pricing:50051"),
-		Order:   config.String("ORDER_ADDR", "order:50051"),
-		Payment: config.String("PAYMENT_ADDR", "payment:50051"),
+		Catalog:     config.String("CATALOG_ADDR", "catalog:50051"),
+		Media:       config.String("MEDIA_ADDR", "media:50051"),
+		Search:      config.String("SEARCH_ADDR", "search:50051"),
+		Cart:        config.String("CART_ADDR", "cart:50051"),
+		Pricing:     config.String("PRICING_ADDR", "pricing:50051"),
+		Order:       config.String("ORDER_ADDR", "order:50051"),
+		Payment:     config.String("PAYMENT_ADDR", "payment:50051"),
+		Fulfillment: config.String("FULFILLMENT_ADDR", "fulfillment:50051"),
+		Review:      config.String("REVIEW_ADDR", "review:50051"),
 	})
 	if err != nil {
 		return err

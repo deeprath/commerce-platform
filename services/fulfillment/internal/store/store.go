@@ -113,10 +113,11 @@ func (s *Store) Get(ctx context.Context, id, ownerID string) (*domain.Shipment, 
 	return sh, nil
 }
 
-// List returns the caller's shipments, newest first, keyset-paginated by
-// created_at (cursor is an RFC3339Nano timestamp). orderID "" => no filter.
+// List returns shipments newest-first, keyset-paginated by created_at.
+// ownerID "" lists every customer's shipments (caller-gated by role in
+// grpcsvc); orderID / status "" => no filter.
 func (s *Store) List(
-	ctx context.Context, ownerID, orderID string, limit int, before string,
+	ctx context.Context, ownerID, orderID, status string, limit int, before string,
 ) ([]*domain.Shipment, string, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
@@ -128,10 +129,10 @@ func (s *Store) List(
 		}
 	}
 	q := `SELECT ` + cols + ` FROM shipments
-		WHERE owner_id = $1 AND created_at < $2
-		  AND ($3 = '' OR order_id = $3)
-		ORDER BY created_at DESC LIMIT $4`
-	rows, err := s.pool.Query(ctx, q, ownerID, cursor, orderID, limit+1)
+		WHERE ($1 = '' OR owner_id = $1) AND created_at < $2
+		  AND ($3 = '' OR order_id = $3) AND ($4 = '' OR status = $4)
+		ORDER BY created_at DESC LIMIT $5`
+	rows, err := s.pool.Query(ctx, q, ownerID, cursor, orderID, status, limit+1)
 	if err != nil {
 		return nil, "", wrap(err)
 	}

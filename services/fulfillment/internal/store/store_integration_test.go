@@ -253,17 +253,36 @@ func TestListPagination(t *testing.T) {
 		time.Sleep(2 * time.Millisecond) // distinct created_at for a stable keyset
 	}
 
-	page1, next, err := st.List(ctx, "pager", "", 2, "")
+	page1, next, err := st.List(ctx, "pager", "", "", 2, "")
 	if err != nil || len(page1) != 2 || next == "" {
 		t.Fatalf("page 1: n=%d next=%q err=%v", len(page1), next, err)
 	}
-	page2, next2, err := st.List(ctx, "pager", "", 2, next)
+	page2, next2, err := st.List(ctx, "pager", "", "", 2, next)
 	if err != nil || len(page2) != 1 || next2 != "" {
 		t.Fatalf("page 2: n=%d next=%q err=%v", len(page2), next2, err)
 	}
 	// Filtering by order id narrows to one.
-	one, _, err := st.List(ctx, "pager", "pg-b", 10, "")
+	one, _, err := st.List(ctx, "pager", "pg-b", "", 10, "")
 	if err != nil || len(one) != 1 || one[0].OrderID != "pg-b" {
 		t.Fatalf("filtered list: %v %+v", err, one)
+	}
+
+	// A shipment for another owner + one advanced to SHIPPED, for the operator view.
+	if _, err := st.CreateFromOrder(ctx, "pg-x", "other", addr(), items(), ""); err != nil {
+		t.Fatalf("seed other: %v", err)
+	}
+	shx, _ := st.CreateFromOrder(ctx, "pg-y", "pager", addr(), items(), "")
+	if _, err := st.Transition(ctx, shx.ID, domain.StatusShipped, "UPS", "1Z", ""); err != nil {
+		t.Fatalf("ship: %v", err)
+	}
+
+	// Operator mode ("" owner): sees every owner's shipments; status filters.
+	all, _, err := st.List(ctx, "", "", "", 50, "")
+	if err != nil || len(all) != 5 {
+		t.Fatalf("operator list: %v n=%d", err, len(all))
+	}
+	shipped, _, _ := st.List(ctx, "", "", "SHIPPED", 50, "")
+	if len(shipped) != 1 || shipped[0].OrderID != "pg-y" {
+		t.Fatalf("status filter: %+v", shipped)
 	}
 }

@@ -57,11 +57,15 @@ func spinUp(t *testing.T) *pgxpool.Pool {
 }
 
 func seedPending(t *testing.T, st *store.Store) *domain.Order {
+	return seedPendingFor(t, st, "owner-1")
+}
+
+func seedPendingFor(t *testing.T, st *store.Store, owner string) *domain.Order {
 	t.Helper()
 	usd := func(c int64) domain.Money { return domain.Money{Currency: "USD", Cents: c} }
 	o := &domain.Order{
 		ID:      uuid.NewString(),
-		OwnerID: "owner-1",
+		OwnerID: owner,
 		Status:  domain.StatusPendingPayment,
 		Lines: []domain.Line{
 			{ProductID: "p1", Title: "Desk Lamp", Quantity: 2, UnitPrice: usd(3499), LineTotal: usd(6998)},
@@ -74,6 +78,32 @@ func seedPending(t *testing.T, st *store.Store) *domain.Order {
 		t.Fatalf("insert: %v", err)
 	}
 	return o
+}
+
+// List: "" ownerID lists every customer's orders (operator mode), and status
+// filters; a real ownerID stays scoped to that customer.
+func TestList_OperatorScopeAndStatusFilter(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+
+	a := seedPendingFor(t, st, "cust-a")
+	_ = seedPendingFor(t, st, "cust-b")
+	if _, err := st.Apply(ctx, a.ID, "c", func(o *domain.Order) error { return o.Confirm() }); err != nil {
+		t.Fatalf("confirm a: %v", err)
+	}
+
+	all, _, err := st.List(ctx, "", "", 50, "")
+	if err != nil || len(all) != 2 {
+		t.Fatalf("operator list: %v n=%d", err, len(all))
+	}
+	confirmed, _, _ := st.List(ctx, "", "CONFIRMED", 50, "")
+	if len(confirmed) != 1 || confirmed[0].ID != a.ID {
+		t.Fatalf("status filter: %+v", confirmed)
+	}
+	mine, _, _ := st.List(ctx, "cust-b", "", 50, "")
+	if len(mine) != 1 || mine[0].OwnerID != "cust-b" {
+		t.Fatalf("owner-scoped list leaked: %+v", mine)
+	}
 }
 
 // The saga's Apply path drives CONFIRMED -> FULFILLED and writes the matching

@@ -6,35 +6,41 @@ import (
 
 	cartv1 "github.com/deeprath/commerce-platform/gen/go/commerce/cart/v1"
 	catalogv1 "github.com/deeprath/commerce-platform/gen/go/commerce/catalog/v1"
+	fulfillmentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/fulfillment/v1"
 	mediav1 "github.com/deeprath/commerce-platform/gen/go/commerce/media/v1"
 	orderv1 "github.com/deeprath/commerce-platform/gen/go/commerce/order/v1"
 	paymentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/payment/v1"
 	pricingv1 "github.com/deeprath/commerce-platform/gen/go/commerce/pricing/v1"
+	reviewv1 "github.com/deeprath/commerce-platform/gen/go/commerce/review/v1"
 	searchv1 "github.com/deeprath/commerce-platform/gen/go/commerce/search/v1"
 	"github.com/deeprath/commerce-platform/pkg/grpcx"
 )
 
 // Targets is the set of downstream addresses.
 type Targets struct {
-	Catalog, Media, Search, Cart, Pricing, Order, Payment string
+	Catalog, Media, Search, Cart, Pricing, Order, Payment, Fulfillment, Review string
 }
 
 type Set struct {
-	Catalog catalogv1.CatalogServiceClient
-	Media   mediav1.MediaServiceClient
-	Search  searchv1.SearchServiceClient
-	Cart    cartv1.CartServiceClient
-	Pricing pricingv1.PricingServiceClient
-	Order   orderv1.OrderServiceClient
-	Payment paymentv1.PaymentServiceClient
+	Catalog     catalogv1.CatalogServiceClient
+	Media       mediav1.MediaServiceClient
+	Search      searchv1.SearchServiceClient
+	Cart        cartv1.CartServiceClient
+	Pricing     pricingv1.PricingServiceClient
+	Order       orderv1.OrderServiceClient
+	Payment     paymentv1.PaymentServiceClient
+	Fulfillment fulfillmentv1.FulfillmentServiceClient
+	Review      reviewv1.ReviewServiceClient
 
 	conns []*grpc.ClientConn
 }
 
-// Dial opens one connection per downstream service.
+// Dial opens one connection per downstream service. Per-request the BFF builds
+// an outgoing context carrying the caller's token (see api.outCtx), so
+// role-gated admin RPCs see the operator.
 func Dial(t Targets) (*Set, error) {
 	s := &Set{}
-	dial := func(addr string) (*grpc.ClientConn, error) {
+	conn := func(addr string) (*grpc.ClientConn, error) {
 		cc, err := grpcx.Dial(addr)
 		if err != nil {
 			s.Close()
@@ -43,41 +49,27 @@ func Dial(t Targets) (*Set, error) {
 		s.conns = append(s.conns, cc)
 		return cc, nil
 	}
-	cc, err := dial(t.Catalog)
-	if err != nil {
-		return nil, err
+
+	for _, w := range []struct {
+		addr string
+		set  func(*grpc.ClientConn)
+	}{
+		{t.Catalog, func(c *grpc.ClientConn) { s.Catalog = catalogv1.NewCatalogServiceClient(c) }},
+		{t.Media, func(c *grpc.ClientConn) { s.Media = mediav1.NewMediaServiceClient(c) }},
+		{t.Search, func(c *grpc.ClientConn) { s.Search = searchv1.NewSearchServiceClient(c) }},
+		{t.Cart, func(c *grpc.ClientConn) { s.Cart = cartv1.NewCartServiceClient(c) }},
+		{t.Pricing, func(c *grpc.ClientConn) { s.Pricing = pricingv1.NewPricingServiceClient(c) }},
+		{t.Order, func(c *grpc.ClientConn) { s.Order = orderv1.NewOrderServiceClient(c) }},
+		{t.Payment, func(c *grpc.ClientConn) { s.Payment = paymentv1.NewPaymentServiceClient(c) }},
+		{t.Fulfillment, func(c *grpc.ClientConn) { s.Fulfillment = fulfillmentv1.NewFulfillmentServiceClient(c) }},
+		{t.Review, func(c *grpc.ClientConn) { s.Review = reviewv1.NewReviewServiceClient(c) }},
+	} {
+		cc, err := conn(w.addr)
+		if err != nil {
+			return nil, err
+		}
+		w.set(cc)
 	}
-	mc, err := dial(t.Media)
-	if err != nil {
-		return nil, err
-	}
-	sc, err := dial(t.Search)
-	if err != nil {
-		return nil, err
-	}
-	ca, err := dial(t.Cart)
-	if err != nil {
-		return nil, err
-	}
-	pr, err := dial(t.Pricing)
-	if err != nil {
-		return nil, err
-	}
-	or, err := dial(t.Order)
-	if err != nil {
-		return nil, err
-	}
-	pa, err := dial(t.Payment)
-	if err != nil {
-		return nil, err
-	}
-	s.Catalog = catalogv1.NewCatalogServiceClient(cc)
-	s.Media = mediav1.NewMediaServiceClient(mc)
-	s.Search = searchv1.NewSearchServiceClient(sc)
-	s.Cart = cartv1.NewCartServiceClient(ca)
-	s.Pricing = pricingv1.NewPricingServiceClient(pr)
-	s.Order = orderv1.NewOrderServiceClient(or)
-	s.Payment = paymentv1.NewPaymentServiceClient(pa)
 	return s, nil
 }
 

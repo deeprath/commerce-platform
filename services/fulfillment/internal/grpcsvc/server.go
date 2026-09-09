@@ -47,7 +47,11 @@ func (s *Server) ListShipments(ctx context.Context, req *fulfillmentv1.ListShipm
 	if p == nil {
 		return nil, errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
 	}
-	shipments, next, err := s.store.List(ctx, p.Subject, req.GetOrderId(),
+	owner, status := p.Subject, ""
+	if p.HasRole(roleOrderManager) {
+		owner, status = "", req.GetStatus() // every customer's shipments; optional status queue
+	}
+	shipments, next, err := s.store.List(ctx, owner, req.GetOrderId(), status,
 		int(req.GetPage().GetPageSize()), req.GetPage().GetPageToken())
 	if err != nil {
 		return nil, err

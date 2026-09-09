@@ -111,6 +111,16 @@ func TestGetAndList_OwnerScoping(t *testing.T) {
 	if len(empty.GetShipments()) != 0 {
 		t.Fatalf("list filtered to another owner's order should be empty, got %d", len(empty.GetShipments()))
 	}
+
+	// A manager sees every customer's shipments; the status filter is honoured.
+	all, err := s.ListShipments(manager("staff"), &fulfillmentv1.ListShipmentsRequest{})
+	if err != nil || len(all.GetShipments()) != 2 {
+		t.Fatalf("operator list: %v n=%d", err, len(all.GetShipments()))
+	}
+	pending, _ := s.ListShipments(manager("staff"), &fulfillmentv1.ListShipmentsRequest{Status: "PENDING"})
+	if len(pending.GetShipments()) != 2 {
+		t.Fatalf("PENDING queue = %d, want 2", len(pending.GetShipments()))
+	}
 }
 
 func TestErrorPaths(t *testing.T) {

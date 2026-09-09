@@ -61,7 +61,11 @@ func (s *Server) ListReturns(ctx context.Context, req *orderv1.ListReturnsReques
 	if err != nil {
 		return nil, err
 	}
-	items, next, err := s.store.ListReturns(ctx, p.Subject,
+	owner, status := p.Subject, ""
+	if p.HasRole(roleOrderManager) {
+		owner, status = "", req.GetStatus() // every customer's returns; optional status queue
+	}
+	items, next, err := s.store.ListReturns(ctx, owner, status,
 		int(req.GetPage().GetPageSize()), req.GetPage().GetPageToken())
 	if err != nil {
 		return nil, err

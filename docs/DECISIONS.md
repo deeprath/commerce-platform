@@ -667,3 +667,43 @@ refund + restock. This spans `order`, `payment` and `inventory`.
 **Consequences:** `order` now also exposes 4 return RPCs and emits 3 return events (on the
 `commerce.order.*` topic namespace). Payment refunds are repeatable and no longer a single
 state flip. No return UI yet — the RPCs are ready for the storefront/admin work.
+
+---
+
+## ADR-022 — Admin API: operator mode on existing list RPCs, not new services
+
+**Status:** Accepted (Phase 3).
+
+**Context:** The admin dashboard needs to see *every* customer's orders / returns /
+shipments and to run the operator actions (decide a return, ship/deliver/cancel a
+shipment). The customer-facing `List*` RPCs are owner-scoped.
+
+**Decision:**
+- **Overload the existing `List*` RPCs with an operator mode**, gated on the caller's role
+  — the same pattern `fulfillment.GetShipment` already uses ("managers may read any
+  shipment"). `order.ListOrders` / `order.ListReturns` / `fulfillment.ListShipments` gain
+  optional `owner_id` / `status` filter fields that are **honoured only when the caller
+  holds `order_manager`**; for everyone else the list stays scoped to `p.Subject` and the
+  filters are ignored. `order.GetOrder` / `GetReturn` likewise return any record for an
+  `order_manager`. No new RPCs, no new "admin" service.
+- **The BFF gets an `/api/v1/admin/*` group** that forwards to these RPCs
+  (`GET /admin/orders`, `/admin/orders/:id`, `/admin/returns`, `POST /admin/returns/:id/decide`,
+  `GET /admin/shipments`, `POST /admin/shipments/:id/{ship,deliver,cancel}`). The BFF only
+  checks that a token is present; **the services enforce the role** (defence in depth: the
+  gateway will also restrict `/admin` by source IP, below).
+- **BFF client set gains `Fulfillment` and `Review` connections**; `clients.Dial` was
+  refactored from a straight-line list into a table so adding a service is one row.
+
+**Alternatives:**
+- *A dedicated admin/BFF-for-operators service* — a second aggregation layer and deploy for
+  a handful of pass-through endpoints; the role gate already lives in the domain services.
+- *New `ListAll*` / `AdminList*` RPCs* — doubles the surface and the store queries for the
+  same data with a different filter; the role-gated filter fields are additive and smaller.
+- *Enforce the admin role in the BFF* — the BFF would need its own JWKS verify + role check
+  duplicating `pkg/auth`; keeping enforcement in the services means a mis-scoped BFF call
+  still can't leak another customer's data.
+
+**Consequences:** `List*` handlers now branch on role. The admin **SPA** and the gateway
+**`HTTPRoute` + source-IP `AuthorizationPolicy`** for `/admin` are the remaining Phase 3
+pieces (tracked in the roadmap); until then `/admin/*` is reachable on the dev BFF port and
+protected only by the services' role check.

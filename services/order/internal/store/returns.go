@@ -93,9 +93,10 @@ func (s *Store) getReturn(ctx context.Context, q querier, id, ownerID string) (*
 	return &r, wrap(rows.Err())
 }
 
-// ListReturns returns the caller's returns, newest first, keyset-paginated by
-// created_at (cursor is an RFC3339Nano timestamp).
-func (s *Store) ListReturns(ctx context.Context, ownerID string, limit int, before string) ([]*domain.Return, string, error) {
+// ListReturns returns returns newest-first, keyset-paginated by created_at.
+// ownerID "" lists every customer's returns (caller-gated by role in grpcsvc);
+// status "" means any status.
+func (s *Store) ListReturns(ctx context.Context, ownerID, status string, limit int, before string) ([]*domain.Return, string, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -106,8 +107,9 @@ func (s *Store) ListReturns(ctx context.Context, ownerID string, limit int, befo
 		}
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id FROM returns WHERE owner_id = $1 AND created_at < $2
-		ORDER BY created_at DESC LIMIT $3`, ownerID, cursor, limit+1)
+		SELECT id FROM returns
+		WHERE ($1 = '' OR owner_id = $1) AND ($2 = '' OR status = $2) AND created_at < $3
+		ORDER BY created_at DESC LIMIT $4`, ownerID, status, cursor, limit+1)
 	if err != nil {
 		return nil, "", wrap(err)
 	}
