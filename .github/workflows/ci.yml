@@ -49,17 +49,22 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [pkg, gen/go, services/ext-authz]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: pkg/go.mod
           cache-dependency-path: "**/go.sum"
-      - name: golangci-lint
+      - name: golangci-lint (${{ matrix.module }})
         uses: golangci/golangci-lint-action@v7
         with:
           version: latest # must be a build whose Go >= our go directive (1.26)
-          args: --timeout=5m
+          working-directory: ${{ matrix.module }}
+          args: --timeout=5m --config=${{ github.workspace }}/.golangci.yml
 
   test:
     runs-on: ubuntu-latest

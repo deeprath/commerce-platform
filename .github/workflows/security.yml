@@ -30,37 +30,49 @@ jobs:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
 
   # ---- dependency / image / IaC scanning ------------------------------
+  # Trivy is run via its official install script + the raw CLI so every flag is
+  # explicit and the behaviour does not drift with a wrapper action.
   trivy-fs:
-    # BLOCKS the build: vulnerabilities in our own dependencies, and stray secrets.
+    # BLOCKS the build: HIGH/CRITICAL in our own dependencies, plus stray secrets.
     runs-on: ubuntu-latest
+    env: { TRIVY_VERSION: v0.74.0 }
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: fs
-          scanners: vuln,secret
-          severity: HIGH,CRITICAL
-          exit-code: "1"
-          ignore-unfixed: "true"
-          trivyignores: infra/security/.trivyignore
+      - name: install trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin "${TRIVY_VERSION}"
+          trivy --version
+      - name: trivy fs (vuln + secret) — blocking
+        run: |
+          trivy fs . \
+            --scanners vuln,secret \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --ignorefile infra/security/.trivyignore \
+            --exit-code 1
 
   trivy-config:
     # INFORMATIONAL: IaC / Dockerfile / manifest misconfig. Promote to blocking
     # once the baseline is clean (docs/SECURITY.md §5.2).
     runs-on: ubuntu-latest
+    env: { TRIVY_VERSION: v0.74.0 }
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: config
-          severity: HIGH,CRITICAL
-          exit-code: "0"
-          trivyignores: infra/security/.trivyignore
+      - name: install trivy
+        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin "${TRIVY_VERSION}"
+      - name: trivy config — informational
+        run: |
+          trivy config . \
+            --severity HIGH,CRITICAL \
+            --ignorefile infra/security/.trivyignore \
+            --exit-code 0
 
   trivy-image:
     # BLOCKS on library packages baked into the image; base-OS CVEs are reported
-    # but do not fail (separate step, exit-code 0).
+    # but do not fail (second invocation, --exit-code 0).
     runs-on: ubuntu-latest
+    env: { TRIVY_VERSION: v0.74.0 }
     strategy:
       matrix:
         service: [ext-authz]
@@ -74,23 +86,21 @@ jobs:
           file: deploy/docker/${{ matrix.service }}.Dockerfile
           load: true
           tags: commerce/${{ matrix.service }}:scan
-      - name: trivy (our libraries — blocking)
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: image
-          image-ref: commerce/${{ matrix.service }}:scan
-          pkg-types: library
-          severity: HIGH,CRITICAL
-          exit-code: "1"
-          ignore-unfixed: "true"
-          trivyignores: infra/security/.trivyignore
-      - name: trivy (full image incl. base OS — informational)
-        uses: aquasecurity/trivy-action@v0.33.1
-        with:
-          scan-type: image
-          image-ref: commerce/${{ matrix.service }}:scan
-          severity: HIGH,CRITICAL
-          exit-code: "0"
+      - name: install trivy
+        run: curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin "${TRIVY_VERSION}"
+      - name: trivy image — our libraries (blocking)
+        run: |
+          trivy image commerce/${{ matrix.service }}:scan \
+            --pkg-types library \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --ignorefile infra/security/.trivyignore \
+            --exit-code 1
+      - name: trivy image — full incl. base OS (informational)
+        run: |
+          trivy image commerce/${{ matrix.service }}:scan \
+            --severity HIGH,CRITICAL \
+            --exit-code 0
 
   # ---- static analysis (SonarCloud — repo is public) -------------------
   # Whole job is skipped until the SONAR_TOKEN repo secret exists
