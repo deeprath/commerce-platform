@@ -573,6 +573,18 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  admin:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/admin.Dockerfile
+    environment:
+      BFF_UPSTREAM: http://bff:8080
+      MEDIA_ORIGIN: http://localhost:9000
+    ports: ["5174:8080"]
+    depends_on: [bff]
+    networks: [commerce]
+    logging: *default-logging
+
   envoy:
     image: envoyproxy/envoy:${ENVOY_TAG}
     command: ["-c", "/etc/envoy/envoy.yaml", "-l", "info"]
