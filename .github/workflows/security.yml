@@ -26,6 +26,7 @@ jobs:
           fetch-depth: ${{ github.event_name == 'schedule' && 0 || 1 }}
       - uses: gitleaks/gitleaks-action@v2
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: infra/security/.gitleaks.toml
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
 
@@ -35,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.29.0
+      - uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: fs
           scanners: vuln,secret
@@ -50,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.29.0
+      - uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: config
           severity: HIGH,CRITICAL
@@ -75,7 +76,7 @@ jobs:
           load: true
           tags: commerce/${{ matrix.service }}:scan
       - name: trivy (our libraries — blocking)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: image
           image-ref: commerce/${{ matrix.service }}:scan
@@ -85,7 +86,7 @@ jobs:
           ignore-unfixed: "true"
           trivyignores: infra/security/.trivyignore
       - name: trivy (full image incl. base OS — informational)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: image
           image-ref: commerce/${{ matrix.service }}:scan
@@ -93,23 +94,34 @@ jobs:
           exit-code: "0"
 
   # ---- static analysis (SonarCloud — repo is public) -------------------
+  # Whole job is skipped until the SONAR_TOKEN repo secret exists
+  # (docs/SECURITY.md §5.3 has the one-time setup).
   sonarcloud:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      - name: check for token
+        id: gate
+        run: echo "enabled=${{ secrets.SONAR_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v5
-        with: { go-version-file: pkg/go.mod }
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          go-version-file: pkg/go.mod
+          cache-dependency-path: "**/go.sum"
       - name: coverage
-        run: |
-          go test -coverprofile=coverage.out $(go list -m -f '{{.Dir}}/...') || true
+        if: steps.gate.outputs.enabled == 'true'
+        run: go test -coverprofile=coverage.out $(go list -m -f '{{.Dir}}/...') || true
       - name: SonarCloud scan
+        if: steps.gate.outputs.enabled == 'true'
         uses: SonarSource/sonarqube-scan-action@v4
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
-        # No-op with a clear log line until SONAR_TOKEN is added (docs/SECURITY.md §5.3).
-        if: ${{ env.SONAR_TOKEN != '' }}
+      - name: note
+        if: steps.gate.outputs.enabled != 'true'
+        run: echo "::notice::SonarCloud skipped — add the SONAR_TOKEN repo secret to enable (docs/SECURITY.md §5.3)"
 
   # ---- dynamic scanning (live stack) ---------------------------------
   zap-baseline:
@@ -119,7 +131,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version-file: pkg/go.mod }
+        with:
+          go-version-file: pkg/go.mod
+          cache-dependency-path: "**/go.sum"
       - name: bring up the stack
         run: |
           cp deploy/compose/.env.example deploy/compose/.env

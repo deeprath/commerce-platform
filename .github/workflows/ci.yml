@@ -22,7 +22,9 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: actions/setup-go@v5
-        with: { go-version-file: pkg/go.mod }
+        with:
+          go-version-file: pkg/go.mod
+          cache-dependency-path: "**/go.sum"
       - uses: bufbuild/buf-action@v1
         with:
           setup_only: true
@@ -45,11 +47,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version-file: pkg/go.mod }
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
         with:
-          version: v2.1
+          go-version-file: pkg/go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.3.0
           args: --timeout=5m
 
   test:
@@ -57,7 +61,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version-file: pkg/go.mod }
+        with:
+          go-version-file: pkg/go.mod
+          cache-dependency-path: "**/go.sum"
       - name: go vet
         run: go vet $(go list -m -f '{{.Dir}}/...')
       - name: go test (race, includes testcontainers integration)
