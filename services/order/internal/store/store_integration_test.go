@@ -1,0 +1,206 @@
+package store_test
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/testcontainers/testcontainers-go"
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"google.golang.org/protobuf/proto"
+
+	fulfillmentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/fulfillment/v1"
+	orderv1 "github.com/deeprath/commerce-platform/gen/go/commerce/order/v1"
+	"github.com/deeprath/commerce-platform/pkg/kafka"
+	"github.com/deeprath/commerce-platform/pkg/pgx"
+	"github.com/deeprath/commerce-platform/services/order/internal/consumer"
+	"github.com/deeprath/commerce-platform/services/order/internal/domain"
+	"github.com/deeprath/commerce-platform/services/order/internal/saga"
+	"github.com/deeprath/commerce-platform/services/order/internal/store"
+)
+
+func spinUp(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("integration test needs Docker; skipped with -short")
+	}
+	ctx := context.Background()
+	pg, err := tcpostgres.Run(ctx, "postgres:16",
+		tcpostgres.WithDatabase("order"),
+		tcpostgres.WithUsername("t"), tcpostgres.WithPassword("t"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
+	)
+	if err != nil {
+		t.Fatalf("start postgres: %v", err)
+	}
+	t.Cleanup(func() { _ = pg.Terminate(ctx) })
+
+	dsn, err := pg.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pgx.Migrate(ctx, dsn, store.Migrations, "migrations"); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	pool, err := pgx.NewPool(ctx, pgx.PoolConfig{DSN: dsn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+func seedPending(t *testing.T, st *store.Store) *domain.Order {
+	t.Helper()
+	usd := func(c int64) domain.Money { return domain.Money{Currency: "USD", Cents: c} }
+	o := &domain.Order{
+		ID:      uuid.NewString(),
+		OwnerID: "owner-1",
+		Status:  domain.StatusPendingPayment,
+		Lines: []domain.Line{
+			{ProductID: "p1", Title: "Desk Lamp", Quantity: 2, UnitPrice: usd(3499), LineTotal: usd(6998)},
+		},
+		Subtotal: usd(6998), Discount: usd(0), Tax: usd(560), Total: usd(7558),
+		ShipTo:    domain.Address{FullName: "Buyer", Line1: "1 Main St", City: "Shelbyville", Region: "IL", PostalCode: "62701", CountryCode: "US"},
+		PaymentID: "pay-1", ReservationID: "res-1",
+	}
+	if err := st.Insert(context.Background(), o); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	return o
+}
+
+// The saga's Apply path drives CONFIRMED -> FULFILLED and writes the matching
+// order.* outbox rows; the enriched order.confirmed event carries ship_to+lines.
+func TestApply_ConfirmThenFulfill_OutboxEnrichment(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	o := seedPending(t, st)
+
+	if _, err := st.Apply(ctx, o.ID, "evt-confirm", func(o *domain.Order) error { return o.Confirm() }); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+	ful, err := st.Apply(ctx, o.ID, "evt-fulfill", func(o *domain.Order) error { return o.Fulfill() })
+	if err != nil {
+		t.Fatalf("fulfill: %v", err)
+	}
+	if ful == nil || ful.Status != domain.StatusFulfilled {
+		t.Fatalf("status = %v, want FULFILLED", ful)
+	}
+
+	// Redelivered fulfill event -> short-circuits, no error, no extra outbox row.
+	if again, err := st.Apply(ctx, o.ID, "evt-fulfill", func(o *domain.Order) error { return o.Fulfill() }); err != nil || again != nil {
+		t.Fatalf("duplicate event id should be a no-op: %+v %v", again, err)
+	}
+
+	// order.confirmed carries the shipping address and line items.
+	var confirmedPayload []byte
+	if err := pool.QueryRow(ctx,
+		`SELECT payload FROM outbox WHERE topic='commerce.order.confirmed'`).Scan(&confirmedPayload); err != nil {
+		t.Fatalf("no order.confirmed outbox row: %v", err)
+	}
+	var oc orderv1.OrderConfirmed
+	if err := proto.Unmarshal(confirmedPayload, &oc); err != nil {
+		t.Fatalf("confirmed payload: %v", err)
+	}
+	if oc.GetShipTo().GetCity() != "Shelbyville" || len(oc.GetLines()) != 1 || oc.GetLines()[0].GetTitle() != "Desk Lamp" {
+		t.Fatalf("order.confirmed not enriched: %+v", &oc)
+	}
+	if oc.GetLines()[0].GetLineTotal().GetUnits() != 69 {
+		t.Fatalf("line money not carried: %+v", oc.GetLines()[0])
+	}
+
+	// order.fulfilled emitted exactly once.
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox WHERE topic='commerce.order.fulfilled'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("order.fulfilled count = %d, want 1", n)
+	}
+}
+
+// A delivery event for a cancelled order must not resurrect it.
+func TestApply_ShipmentDeliveredOnCancelledOrder_NoOp(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	o := seedPending(t, st)
+
+	if _, err := st.Apply(ctx, o.ID, "c", func(o *domain.Order) error { return o.Cancel("PAYMENT_FAILED") }); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	got, err := st.Apply(ctx, o.ID, "d", func(o *domain.Order) error {
+		if o.Status != domain.StatusConfirmed {
+			return nil // mirrors saga.OnShipmentDelivered
+		}
+		return o.Fulfill()
+	})
+	if err != nil {
+		t.Fatalf("apply on cancelled: %v", err)
+	}
+	if got.Status != domain.StatusCancelled {
+		t.Fatalf("status = %s, want CANCELLED (unchanged)", got.Status)
+	}
+	var n int
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM outbox WHERE topic='commerce.order.fulfilled'`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("order.fulfilled should not have been emitted, got %d", n)
+	}
+}
+
+// saga.OnShipmentDelivered moves a CONFIRMED order to FULFILLED and is
+// idempotent; nil downstream clients are fine — it only touches the store.
+func TestSaga_OnShipmentDelivered(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	orch := saga.New(st, saga.Clients{})
+	o := seedPending(t, st)
+	if _, err := st.Apply(ctx, o.ID, "c", func(o *domain.Order) error { return o.Confirm() }); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	if err := orch.OnShipmentDelivered(ctx, "deliver-1", o.ID); err != nil {
+		t.Fatalf("OnShipmentDelivered: %v", err)
+	}
+	got, _ := st.Get(ctx, o.ID, "owner-1")
+	if got.Status != domain.StatusFulfilled {
+		t.Fatalf("status = %s, want FULFILLED", got.Status)
+	}
+	// Duplicate delivery event -> no-op, no error.
+	if err := orch.OnShipmentDelivered(ctx, "deliver-1", o.ID); err != nil {
+		t.Fatalf("duplicate delivery: %v", err)
+	}
+}
+
+// The order consumer routes a fulfillment.delivered record into the saga.
+func TestConsumer_DispatchesShipmentDelivered(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	h := consumer.Handler(saga.New(st, saga.Clients{}))
+	o := seedPending(t, st)
+	if _, err := st.Apply(ctx, o.ID, "c", func(o *domain.Order) error { return o.Confirm() }); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	payload, _ := proto.Marshal(&fulfillmentv1.ShipmentDelivered{ShipmentId: "sh-1", OrderId: o.ID, OwnerId: "owner-1"})
+	rec := &kgo.Record{Topic: kafka.Topic("fulfillment", "delivered"), Partition: 0, Offset: 3, Value: payload}
+	if err := h(ctx, rec); err != nil {
+		t.Fatalf("handle delivered: %v", err)
+	}
+
+	got, _ := st.Get(ctx, o.ID, "owner-1")
+	if got.Status != domain.StatusFulfilled {
+		t.Fatalf("consumer did not fulfil the order: %s", got.Status)
+	}
+}
