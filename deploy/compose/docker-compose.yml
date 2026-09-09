@@ -536,6 +536,8 @@ services:
       PRICING_ADDR: pricing:50051
       ORDER_ADDR: order:50051
       PAYMENT_ADDR: payment:50051
+      FULFILLMENT_ADDR: fulfillment:50051
+      REVIEW_ADDR: review:50051
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: bff
       KEYCLOAK_CLIENT_SECRET: local-dev-bff-secret
@@ -550,6 +552,8 @@ services:
       pricing: { condition: service_started }
       order: { condition: service_started }
       payment: { condition: service_started }
+      fulfillment: { condition: service_started }
+      review: { condition: service_started }
       keycloak: { condition: service_healthy }
       otel-collector: { condition: service_started }
     networks: [commerce]

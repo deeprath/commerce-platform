@@ -95,6 +95,10 @@ message GetOrderRequest {
 
 message ListOrdersRequest {
   commerce.common.v1.PageRequest page = 1;
+  // Operator filters, honoured only when the caller holds the order_manager
+  // role; otherwise the list is always scoped to the caller.
+  string owner_id = 2; // restrict to one customer
+  string status = 3; // e.g. "CONFIRMED", "FULFILLED"
 }
 
 message ListOrdersResponse {
@@ -184,6 +188,9 @@ message GetReturnRequest {
 
 message ListReturnsRequest {
   commerce.common.v1.PageRequest page = 1;
+  // Honoured only for an order_manager: lists every customer's returns,
+  // optionally filtered by status (e.g. "REQUESTED" for the decision queue).
+  string status = 2;
 }
 
 message ListReturnsResponse {

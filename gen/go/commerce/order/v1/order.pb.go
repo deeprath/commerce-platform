@@ -554,8 +554,12 @@ func (x *GetOrderRequest) GetId() string {
 }
 
 type ListOrdersRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Page          *v1.PageRequest        `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Page  *v1.PageRequest        `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
+	// Operator filters, honoured only when the caller holds the order_manager
+	// role; otherwise the list is always scoped to the caller.
+	OwnerId       string `protobuf:"bytes,2,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"` // restrict to one customer
+	Status        string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`                  // e.g. "CONFIRMED", "FULFILLED"
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -595,6 +599,20 @@ func (x *ListOrdersRequest) GetPage() *v1.PageRequest {
 		return x.Page
 	}
 	return nil
+}
+
+func (x *ListOrdersRequest) GetOwnerId() string {
+	if x != nil {
+		return x.OwnerId
+	}
+	return ""
+}
+
+func (x *ListOrdersRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
 }
 
 type ListOrdersResponse struct {
@@ -1271,8 +1289,11 @@ func (x *GetReturnRequest) GetId() string {
 }
 
 type ListReturnsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Page          *v1.PageRequest        `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Page  *v1.PageRequest        `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
+	// Honoured only for an order_manager: lists every customer's returns,
+	// optionally filtered by status (e.g. "REQUESTED" for the decision queue).
+	Status        string `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1312,6 +1333,13 @@ func (x *ListReturnsRequest) GetPage() *v1.PageRequest {
 		return x.Page
 	}
 	return nil
+}
+
+func (x *ListReturnsRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
 }
 
 type ListReturnsResponse struct {
@@ -1738,9 +1766,11 @@ const file_commerce_order_v1_order_proto_rawDesc = "" +
 	"\x15payment_client_secret\x18\x04 \x01(\tR\x13paymentClientSecret\x12/\n" +
 	"\x05total\x18\x05 \x01(\v2\x19.commerce.common.v1.MoneyR\x05total\"!\n" +
 	"\x0fGetOrderRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"H\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"{\n" +
 	"\x11ListOrdersRequest\x123\n" +
-	"\x04page\x18\x01 \x01(\v2\x1f.commerce.common.v1.PageRequestR\x04page\"|\n" +
+	"\x04page\x18\x01 \x01(\v2\x1f.commerce.common.v1.PageRequestR\x04page\x12\x19\n" +
+	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\"|\n" +
 	"\x12ListOrdersResponse\x120\n" +
 	"\x06orders\x18\x01 \x03(\v2\x18.commerce.order.v1.OrderR\x06orders\x124\n" +
 	"\x04page\x18\x02 \x01(\v2 .commerce.common.v1.PageResponseR\x04page\"$\n" +
@@ -1804,9 +1834,10 @@ const file_commerce_order_v1_order_proto_rawDesc = "" +
 	"product_id\x18\x01 \x01(\tR\tproductId\x12\x1a\n" +
 	"\bquantity\x18\x02 \x01(\x05R\bquantity\"\"\n" +
 	"\x10GetReturnRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"I\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"a\n" +
 	"\x12ListReturnsRequest\x123\n" +
-	"\x04page\x18\x01 \x01(\v2\x1f.commerce.common.v1.PageRequestR\x04page\"\x80\x01\n" +
+	"\x04page\x18\x01 \x01(\v2\x1f.commerce.common.v1.PageRequestR\x04page\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\"\x80\x01\n" +
 	"\x13ListReturnsResponse\x123\n" +
 	"\areturns\x18\x01 \x03(\v2\x19.commerce.order.v1.ReturnR\areturns\x124\n" +
 	"\x04page\x18\x02 \x01(\v2 .commerce.common.v1.PageResponseR\x04page\"S\n" +

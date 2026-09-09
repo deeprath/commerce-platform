@@ -53,7 +53,11 @@ func (s *Server) GetOrder(ctx context.Context, req *orderv1.GetOrderRequest) (*o
 	if p == nil {
 		return nil, errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
 	}
-	o, err := s.store.Get(ctx, req.GetId(), p.Subject)
+	owner := p.Subject
+	if p.HasRole(roleOrderManager) {
+		owner = "" // operators may read any order
+	}
+	o, err := s.store.Get(ctx, req.GetId(), owner)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +69,14 @@ func (s *Server) ListOrders(ctx context.Context, req *orderv1.ListOrdersRequest)
 	if p == nil {
 		return nil, errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
 	}
-	orders, next, err := s.store.List(ctx, p.Subject, int(req.GetPage().GetPageSize()), req.GetPage().GetPageToken())
+	// An operator may list any customer's orders and filter; everyone else is
+	// scoped to their own.
+	owner, status := p.Subject, ""
+	if p.HasRole(roleOrderManager) {
+		owner, status = req.GetOwnerId(), req.GetStatus()
+	}
+	orders, next, err := s.store.List(ctx, owner, status,
+		int(req.GetPage().GetPageSize()), req.GetPage().GetPageToken())
 	if err != nil {
 		return nil, err
 	}

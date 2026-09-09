@@ -325,9 +325,12 @@ func (x *GetShipmentRequest) GetId() string {
 }
 
 type ListShipmentsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrderId       string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"` // optional; empty => all of the caller's shipments
-	Page          *v1.PageRequest        `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	OrderId string                 `protobuf:"bytes,1,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"` // optional; empty => all of the caller's shipments
+	Page    *v1.PageRequest        `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	// Honoured only for an order_manager: lists every customer's shipments,
+	// optionally filtered by status (e.g. "PENDING" for the pickup queue).
+	Status        string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -374,6 +377,13 @@ func (x *ListShipmentsRequest) GetPage() *v1.PageRequest {
 		return x.Page
 	}
 	return nil
+}
+
+func (x *ListShipmentsRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
 }
 
 type ListShipmentsResponse struct {
@@ -907,10 +917,11 @@ const file_commerce_fulfillment_v1_fulfillment_proto_rawDesc = "" +
 	"\fdelivered_at\x18\v \x01(\tR\vdeliveredAt\x12#\n" +
 	"\rcancel_reason\x18\f \x01(\tR\fcancelReason\"$\n" +
 	"\x12GetShipmentRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"f\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"~\n" +
 	"\x14ListShipmentsRequest\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x123\n" +
-	"\x04page\x18\x02 \x01(\v2\x1f.commerce.common.v1.PageRequestR\x04page\"\x8e\x01\n" +
+	"\x04page\x18\x02 \x01(\v2\x1f.commerce.common.v1.PageRequestR\x04page\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\"\x8e\x01\n" +
 	"\x15ListShipmentsResponse\x12?\n" +
 	"\tshipments\x18\x01 \x03(\v2!.commerce.fulfillment.v1.ShipmentR\tshipments\x124\n" +
 	"\x04page\x18\x02 \x01(\v2 .commerce.common.v1.PageResponseR\x04page\"g\n" +

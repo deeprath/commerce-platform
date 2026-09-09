@@ -69,6 +69,9 @@ message GetShipmentRequest {
 message ListShipmentsRequest {
   string order_id = 1; // optional; empty => all of the caller's shipments
   commerce.common.v1.PageRequest page = 2;
+  // Honoured only for an order_manager: lists every customer's shipments,
+  // optionally filtered by status (e.g. "PENDING" for the pickup queue).
+  string status = 3;
 }
 
 message ListShipmentsResponse {

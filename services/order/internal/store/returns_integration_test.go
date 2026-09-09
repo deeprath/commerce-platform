@@ -50,7 +50,7 @@ func TestInsertGetListReturn(t *testing.T) {
 		t.Fatalf("cross-owner get: want NotFound, got %v", err)
 	}
 
-	list, next, err := st.ListReturns(ctx, "owner-1", 10, "")
+	list, next, err := st.ListReturns(ctx, "owner-1", "", 10, "")
 	if err != nil || len(list) != 1 || next != "" {
 		t.Fatalf("list: %v n=%d next=%q", err, len(list), next)
 	}
@@ -84,11 +84,11 @@ func TestListReturns_Pagination(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 
-	p1, next, err := st.ListReturns(ctx, "owner-1", 2, "")
+	p1, next, err := st.ListReturns(ctx, "owner-1", "", 2, "")
 	if err != nil || len(p1) != 2 || next == "" {
 		t.Fatalf("page 1: n=%d next=%q err=%v", len(p1), next, err)
 	}
-	p2, next2, err := st.ListReturns(ctx, "owner-1", 2, next)
+	p2, next2, err := st.ListReturns(ctx, "owner-1", "", 2, next)
 	if err != nil || len(p2) != 1 || next2 != "" {
 		t.Fatalf("page 2: n=%d next=%q err=%v", len(p2), next2, err)
 	}
@@ -97,9 +97,46 @@ func TestListReturns_Pagination(t *testing.T) {
 		t.Fatalf("ordering / line hydration wrong: %+v", p1)
 	}
 	// Another owner sees nothing.
-	other, _, _ := st.ListReturns(ctx, "nobody", 10, "")
+	other, _, _ := st.ListReturns(ctx, "nobody", "", 10, "")
 	if len(other) != 0 {
 		t.Fatalf("cross-owner list not empty")
+	}
+}
+
+// ListReturns "" ownerID is operator mode; status filters the queue.
+func TestListReturns_OperatorScopeAndStatusFilter(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+	oa := seedPendingFor(t, st, "cust-a")
+	ob := seedPendingFor(t, st, "cust-b")
+
+	ra := newReturn(oa.ID)
+	ra.ID = "c1111111-1111-1111-1111-111111111111"
+	ra.OwnerID = "cust-a"
+	if err := st.InsertReturn(ctx, ra); err != nil {
+		t.Fatalf("insert ra: %v", err)
+	}
+	rb := newReturn(ob.ID)
+	rb.ID = "c2222222-2222-2222-2222-222222222222"
+	rb.OwnerID = "cust-b"
+	if err := st.InsertReturn(ctx, rb); err != nil {
+		t.Fatalf("insert rb: %v", err)
+	}
+	if _, err := st.DecideReturn(ctx, rb.ID, "op", true, ""); err != nil {
+		t.Fatalf("approve rb: %v", err)
+	}
+
+	all, _, err := st.ListReturns(ctx, "", "", 50, "")
+	if err != nil || len(all) != 2 {
+		t.Fatalf("operator list: %v n=%d", err, len(all))
+	}
+	queue, _, _ := st.ListReturns(ctx, "", "REQUESTED", 50, "")
+	if len(queue) != 1 || queue[0].ID != ra.ID {
+		t.Fatalf("REQUESTED queue: %+v", queue)
+	}
+	mine, _, _ := st.ListReturns(ctx, "cust-b", "", 50, "")
+	if len(mine) != 1 || mine[0].OwnerID != "cust-b" {
+		t.Fatalf("owner-scoped list leaked: %+v", mine)
 	}
 }
 

@@ -78,6 +78,14 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	adm.POST("/catalog/products/:id/archive", s.archiveProduct)
 	adm.POST("/media/uploads", s.createUpload)
 	adm.POST("/media/uploads/confirm", s.confirmUpload)
+	adm.GET("/orders", s.adminListOrders)
+	adm.GET("/orders/:id", s.adminGetOrder)
+	adm.GET("/returns", s.adminListReturns)
+	adm.POST("/returns/:id/decide", s.adminDecideReturn)
+	adm.GET("/shipments", s.adminListShipments)
+	adm.POST("/shipments/:id/ship", s.adminShipShipment)
+	adm.POST("/shipments/:id/deliver", s.adminDeliverShipment)
+	adm.POST("/shipments/:id/cancel", s.adminCancelShipment)
 
 	return e
 }

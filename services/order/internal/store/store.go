@@ -141,23 +141,24 @@ func (s *Store) findBy(ctx context.Context, col, val string) (*domain.Order, err
 
 // List returns the owner's orders newest-first. before (RFC3339Nano) is the
 // keyset cursor; the returned string is the next cursor, or "" when exhausted.
-func (s *Store) List(ctx context.Context, ownerID string, limit int, before string) ([]*domain.Order, string, error) {
+// List returns orders newest-first. ownerID "" lists every customer's orders
+// (caller-gated by role in grpcsvc); status "" means any status.
+func (s *Store) List(ctx context.Context, ownerID, status string, limit int, before string) ([]*domain.Order, string, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	args := []any{ownerID, limit + 1}
-	q := `SELECT id FROM orders WHERE owner_id = $1`
+	cursor := time.Now().Add(time.Hour)
 	if before != "" {
 		t, err := time.Parse(time.RFC3339Nano, before)
 		if err != nil {
 			return nil, "", pkgerrs.New(pkgerrs.KindInvalidArgument, "BAD_CURSOR", "page_token is invalid")
 		}
-		args = append(args, t)
-		q += ` AND created_at < $3`
+		cursor = t
 	}
-	q += ` ORDER BY created_at DESC LIMIT $2`
-
-	rows, err := s.pool.Query(ctx, q, args...)
+	q := `SELECT id FROM orders
+		WHERE ($1 = '' OR owner_id = $1) AND ($2 = '' OR status = $2) AND created_at < $3
+		ORDER BY created_at DESC LIMIT $4`
+	rows, err := s.pool.Query(ctx, q, ownerID, status, cursor, limit+1)
 	if err != nil {
 		return nil, "", wrap(err)
 	}

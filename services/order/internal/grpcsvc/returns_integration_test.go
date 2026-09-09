@@ -161,6 +161,45 @@ func TestReturnRPCs_EndToEnd(t *testing.T) {
 	}
 }
 
+// An order_manager sees every customer's orders/returns; a plain customer does not.
+func TestAdminScoping_OrdersAndReturns(t *testing.T) {
+	st := store.New(spinUp(t))
+	s := newServer(st)
+	oa := seedFulfilled(t, st, "cust-a")
+	ob := seedFulfilled(t, st, "cust-b")
+
+	// customer only sees their own
+	mine, _ := s.ListOrders(customer("cust-a"), &orderv1.ListOrdersRequest{})
+	if len(mine.GetOrders()) != 1 || mine.GetOrders()[0].GetOwnerId() != "cust-a" {
+		t.Fatalf("customer ListOrders leaked: %+v", mine.GetOrders())
+	}
+	// operator sees all, and can filter + drill down by owner
+	all, err := s.ListOrders(manager("op"), &orderv1.ListOrdersRequest{})
+	if err != nil || len(all.GetOrders()) != 2 {
+		t.Fatalf("operator ListOrders: %v n=%d", err, len(all.GetOrders()))
+	}
+	byOwner, _ := s.ListOrders(manager("op"), &orderv1.ListOrdersRequest{OwnerId: "cust-b"})
+	if len(byOwner.GetOrders()) != 1 || byOwner.GetOrders()[0].GetId() != ob.ID {
+		t.Fatalf("operator owner filter: %+v", byOwner.GetOrders())
+	}
+	// operator can GetOrder for a customer they are not
+	if _, err := s.GetOrder(manager("op"), &orderv1.GetOrderRequest{Id: oa.ID}); err != nil {
+		t.Fatalf("operator GetOrder: %v", err)
+	}
+	if _, err := s.GetOrder(customer("cust-b"), &orderv1.GetOrderRequest{Id: oa.ID}); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("customer cross-order Get: want NotFound, got %v", err)
+	}
+
+	// returns queue
+	if _, err := s.RequestReturn(customer("cust-a"), &orderv1.RequestReturnRequest{OrderId: oa.ID}); err != nil {
+		t.Fatalf("request a: %v", err)
+	}
+	q, err := s.ListReturns(manager("op"), &orderv1.ListReturnsRequest{Status: "REQUESTED"})
+	if err != nil || len(q.GetReturns()) != 1 {
+		t.Fatalf("operator returns queue: %v n=%d", err, len(q.GetReturns()))
+	}
+}
+
 func TestRequestReturn_Rejections(t *testing.T) {
 	st := store.New(spinUp(t))
 	s := newServer(st)
