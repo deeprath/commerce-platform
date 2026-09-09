@@ -44,6 +44,32 @@ spec:
             principals:
               - cluster.local/ns/commerce/sa/commerce-gateway
 ---
+# 3b) Admin API source-IP allow-list. Requests to /api/v1/admin/* at the gateway
+#     must originate from an operator network (office / VPN CIDR). Everything
+#     else on the gateway is unaffected. Combined with the operator-role check
+#     the domain services already enforce, this is defence in depth.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: admin-ip-allowlist
+  namespace: commerce
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: commerce-gateway
+  action: DENY
+  rules:
+    - to:
+        - operation:
+            paths: ["/api/v1/admin", "/api/v1/admin/*"]
+      from:
+        - source:
+            notRemoteIpBlocks:
+              # Replace with the real operator ranges before production.
+              - "10.0.0.0/8"
+              - "192.168.0.0/16"
+---
 # 4) Allow the BFF to reach the domain services (Phase 1+ workloads).
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy

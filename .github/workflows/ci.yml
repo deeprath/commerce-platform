@@ -90,16 +90,19 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [storefront, admin]
     defaults:
       run:
-        working-directory: web/storefront
+        working-directory: web/${{ matrix.app }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: web/storefront/package-lock.json
+          cache-dependency-path: web/${{ matrix.app }}/package-lock.json
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
@@ -111,7 +114,7 @@ jobs:
     needs: [proto, test]
     strategy:
       matrix:
-        service: [ext-authz, catalog, media, search, bff, storefront, cart, pricing, inventory, payment, order, fulfillment, notification, review]
+        service: [ext-authz, catalog, media, search, bff, storefront, admin, cart, pricing, inventory, payment, order, fulfillment, notification, review]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

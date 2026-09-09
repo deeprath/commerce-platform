@@ -24,6 +24,11 @@ spec:
       timeouts:
         request: 15s
 ---
+# The admin console and its API. Same BFF, separate hostname, and locked to an
+# operator source-IP range by the AuthorizationPolicy `admin-ip-allowlist`
+# (authorization-policy.yaml). The BFF still forwards the token and the domain
+# services still enforce the operator role — the IP allow-list is defence in
+# depth, not the only gate.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -35,9 +40,9 @@ spec:
   hostnames: ["admin.commerce.example.com"]
   rules:
     - matches:
-        - path: { type: PathPrefix, value: /api/v1 }
+        - path: { type: PathPrefix, value: /api/v1/admin }
       backendRefs:
-        - name: bff-admin
+        - name: bff
           port: 8080
       timeouts:
         request: 15s

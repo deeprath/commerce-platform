@@ -707,3 +707,36 @@ shipment). The customer-facing `List*` RPCs are owner-scoped.
 **`HTTPRoute` + source-IP `AuthorizationPolicy`** for `/admin` are the remaining Phase 3
 pieces (tracked in the roadmap); until then `/admin/*` is reachable on the dev BFF port and
 protected only by the services' role check.
+
+---
+
+## ADR-023 — Admin console is its own SPA on its own hostname
+
+**Status:** Accepted (Phase 3).
+
+**Context:** Operators need a UI for the admin API (ADR-022): product CRUD, an order
+browser, the returns queue, shipment actions.
+
+**Decision:**
+- **A separate SPA (`web/admin`), not a section of the storefront.** It has a different
+  audience, a different threat model (privileged actions), and a different deploy target
+  (`admin.commerce.example.com`, not `store.*`). It reuses the storefront's toolchain
+  (Vite 7 / React 18 / react-router 7 / vitest), the same `/api` same-origin proxy so the
+  httpOnly cookie works, and the same 401-drops-the-session pattern.
+- **Two gates, layered.** The gateway `HTTPRoute` for `admin.*` routes only
+  `/api/v1/admin/*` and is fronted by a source-IP `AuthorizationPolicy`
+  (`admin-ip-allowlist`) that DENYs anything not from an operator CIDR. Behind that, the
+  BFF forwards the token and every domain service still enforces the `order_manager` /
+  `catalog_manager` role. Losing any one layer does not expose customer data.
+- **No new BFF.** The admin SPA talks to the same BFF `/api/v1/admin/*` endpoints; the
+  hostname split is purely at the gateway.
+
+**Alternatives:**
+- *An `/admin` route inside the storefront* — same origin and bundle as the customer app;
+  the privileged surface would ship to every shopper's browser and share its CSP/cookie.
+- *A dedicated operator BFF* — another deployable for endpoints that are already
+  pass-throughs; the role check lives in the domain services regardless.
+
+**Consequences:** A second frontend to build and deploy (added to the `web` CI matrix and
+`build-images` / trivy). The IP allow-list CIDRs in `authorization-policy.yaml` are
+placeholders that must be set per environment.
