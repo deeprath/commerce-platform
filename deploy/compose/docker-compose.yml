@@ -348,6 +348,114 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  pricing:
+    build: { context: ../.., dockerfile: deploy/docker/pricing.Dockerfile }
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/pricing?sslmode=disable
+      CATALOG_ADDR: catalog:50051
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+      TAX_RATE_BPS: "800"
+    ports: ["50056:50051"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
+  inventory:
+    build: { context: ../.., dockerfile: deploy/docker/inventory.Dockerfile }
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/inventory?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+      DEFAULT_STOCK_ON_HAND: "100"
+      RESERVATION_SWEEP_INTERVAL: "10s"
+    ports: ["50057:50051"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
+  cart:
+    build: { context: ../.., dockerfile: deploy/docker/cart.Dockerfile }
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      REDIS_URL: redis://redis:6379/1
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+    ports: ["50058:50051"]
+    depends_on:
+      redis: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
+  payment:
+    build: { context: ../.., dockerfile: deploy/docker/payment.Dockerfile }
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/payment?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+    ports: ["50059:50051"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
+  order:
+    build: { context: ../.., dockerfile: deploy/docker/order.Dockerfile }
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/order?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+      CART_ADDR: cart:50051
+      PRICING_ADDR: pricing:50051
+      INVENTORY_ADDR: inventory:50051
+      PAYMENT_ADDR: payment:50051
+    ports: ["50060:50051"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      cart: { condition: service_started }
+      pricing: { condition: service_started }
+      inventory: { condition: service_started }
+      payment: { condition: service_started }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
   bff:
     build:
       context: ../..
@@ -360,6 +468,10 @@ services:
       CATALOG_ADDR: catalog:50051
       MEDIA_ADDR: media:50051
       SEARCH_ADDR: search:50051
+      CART_ADDR: cart:50051
+      PRICING_ADDR: pricing:50051
+      ORDER_ADDR: order:50051
+      PAYMENT_ADDR: payment:50051
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: bff
       KEYCLOAK_CLIENT_SECRET: local-dev-bff-secret
@@ -370,6 +482,10 @@ services:
       catalog: { condition: service_started }
       media: { condition: service_started }
       search: { condition: service_started }
+      cart: { condition: service_started }
+      pricing: { condition: service_started }
+      order: { condition: service_started }
+      payment: { condition: service_started }
       keycloak: { condition: service_healthy }
       otel-collector: { condition: service_started }
     networks: [commerce]

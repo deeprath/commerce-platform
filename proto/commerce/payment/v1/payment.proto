@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+// commerce.payment.v1 — payment intents against a PSP.
+//
+// v1 ships a SANDBOX PSP: CreatePayment returns an intent immediately and
+// ConfirmPayment simulates the shopper completing payment (or it failing).
+// In production, ConfirmPayment is replaced by a signature-verified PSP webhook
+// handler on the public edge — the emitted events are identical either way.
+package commerce.payment.v1;
+
+import "commerce/common/v1/types.proto";
+
+service PaymentService {
+  // CreatePayment opens a payment intent for an order and returns a client
+  // secret the storefront would hand to the PSP SDK.
+  rpc CreatePayment(CreatePaymentRequest) returns (Payment);
+
+  // ConfirmPayment (SANDBOX) drives the intent to AUTHORIZED or FAILED and
+  // emits the matching event. Idempotent on payment_id.
+  rpc ConfirmPayment(ConfirmPaymentRequest) returns (Payment);
+
+  // Refund reverses a captured/authorized payment. Idempotent.
+  rpc Refund(RefundRequest) returns (Payment);
+
+  // Void cancels an authorized-but-not-captured intent (used by the saga when a
+  // reservation expires before payment). Idempotent.
+  rpc Void(VoidRequest) returns (Payment);
+}
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_REQUIRES_CONFIRMATION = 1;
+  PAYMENT_STATUS_AUTHORIZED = 2;
+  PAYMENT_STATUS_FAILED = 3;
+  PAYMENT_STATUS_REFUNDED = 4;
+  PAYMENT_STATUS_VOIDED = 5;
+}
+
+message Payment {
+  string payment_id = 1;
+  string order_id = 2;
+  commerce.common.v1.Money amount = 3;
+  PaymentStatus status = 4;
+  string client_secret = 5; // only on CreatePayment
+  string created_at = 6;
+}
+
+message CreatePaymentRequest {
+  string order_id = 1;
+  commerce.common.v1.Money amount = 2;
+  // Sandbox method token, e.g. "pm_card_ok" or "pm_card_declined".
+  string method_token = 3;
+}
+
+message ConfirmPaymentRequest {
+  string payment_id = 1;
+  Outcome outcome = 2;
+
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_AUTHORIZE = 1;
+    OUTCOME_FAIL = 2;
+  }
+}
+
+message RefundRequest {
+  string payment_id = 1;
+}
+
+message VoidRequest {
+  string payment_id = 1;
+}
+
+// --- events (topic: commerce.payment.<event>) ---
+
+message PaymentAuthorized {
+  string payment_id = 1;
+  string order_id = 2;
+  commerce.common.v1.Money amount = 3;
+  string occurred_at = 4;
+}
+
+message PaymentFailed {
+  string payment_id = 1;
+  string order_id = 2;
+  string reason = 3;
+  string occurred_at = 4;
+}
+
+message PaymentRefunded {
+  string payment_id = 1;
+  string order_id = 2;
+  commerce.common.v1.Money amount = 3;
+  string occurred_at = 4;
+}

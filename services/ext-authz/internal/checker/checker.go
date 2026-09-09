@@ -29,6 +29,7 @@ func DefaultConfig() Config {
 			"/healthz", "/readyz", "/metrics",
 			"/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/register",
 			"/api/v1/catalog", "/api/v1/search", // anonymous browse
+			"/api/v1/cart", // guest carts (a cart_id cookie, not a login)
 		},
 		AdminPrefixes: []string{"/api/v1/admin"},
 		AdminRoles:    []string{"admin", "platform_admin"},

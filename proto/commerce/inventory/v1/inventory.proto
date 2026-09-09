@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+// commerce.inventory.v1 — stock levels and time-bounded reservations. The
+// checkout saga calls Reserve, then Commit on payment success or Release on
+// failure; a sweeper expires stale reservations and emits ReservationExpired.
+package commerce.inventory.v1;
+
+service InventoryService {
+  // CheckAvailability reports free-to-sell quantity per product (no side effect).
+  rpc CheckAvailability(CheckAvailabilityRequest) returns (Availability);
+
+  // Reserve holds stock for order_ref for ttl_seconds and returns a reservation
+  // id. FAILED_PRECONDITION (reason INSUFFICIENT_STOCK) if any line can't be met.
+  rpc Reserve(ReserveRequest) returns (Reservation);
+
+  // Commit converts a reservation into a permanent stock decrement. Idempotent.
+  rpc Commit(CommitRequest) returns (CommitResponse);
+
+  // Release returns reserved stock. Idempotent; a no-op on an unknown id.
+  rpc Release(ReleaseRequest) returns (ReleaseResponse);
+
+  // AdjustStock changes on-hand for a product (inventory_manager role).
+  rpc AdjustStock(AdjustStockRequest) returns (StockLevel);
+}
+
+message LineItem {
+  string product_id = 1;
+  int32 quantity = 2;
+}
+
+message CheckAvailabilityRequest {
+  repeated string product_ids = 1;
+}
+
+message StockLevel {
+  string product_id = 1;
+  int32 on_hand = 2;
+  int32 reserved = 3;
+  int32 available = 4; // on_hand - reserved
+}
+
+message Availability {
+  repeated StockLevel levels = 1;
+}
+
+message ReserveRequest {
+  string order_ref = 1; // the order id the saga is building
+  repeated LineItem items = 2;
+  int32 ttl_seconds = 3; // clamped to [60, 3600]; default 900
+}
+
+message Reservation {
+  string reservation_id = 1;
+  string expires_at = 2;
+}
+
+message CommitRequest {
+  string reservation_id = 1;
+}
+message CommitResponse {}
+
+message ReleaseRequest {
+  string reservation_id = 1;
+}
+message ReleaseResponse {}
+
+message AdjustStockRequest {
+  string product_id = 1;
+  int32 delta = 2; // may be negative
+  string reason = 3;
+}
+
+// --- events (topic: commerce.inventory.<event>) ---
+
+message StockChanged {
+  string product_id = 1;
+  int32 on_hand = 2;
+  int32 reserved = 3;
+  int32 available = 4;
+  string occurred_at = 5;
+}
+
+message ReservationExpired {
+  string reservation_id = 1;
+  string order_ref = 2;
+  repeated LineItem items = 3;
+  string occurred_at = 4;
+}

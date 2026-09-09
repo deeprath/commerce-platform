@@ -4,6 +4,13 @@ modules:
 lint:
   use:
     - STANDARD
+  except:
+    # We allow a method to return a shared domain message (e.g. Cart, Order,
+    # Payment) rather than a one-field <Method>Response wrapper. The trade-off
+    # is deliberate: fewer types, and the response IS the resource.
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
 breaking:
   use:
     - FILE
