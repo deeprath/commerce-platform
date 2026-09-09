@@ -1,0 +1,78 @@
+# Cluster copy of deploy/compose/prometheus/rules/slo.yml. kube-prometheus-stack
+# discovers PrometheusRule CRs by the release label; adjust `release:` to match
+# your kube-prometheus-stack Helm release name.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: commerce-slo
+  namespace: observability
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: slo_recording
+      interval: 30s
+      rules:
+        - record: job:grpc_requests:rate5m
+          expr: sum by (job) (rate(rpc_server_call_duration_seconds_count[5m]))
+        - record: job:grpc_requests:rate30m
+          expr: sum by (job) (rate(rpc_server_call_duration_seconds_count[30m]))
+        - record: job:grpc_requests:rate1h
+          expr: sum by (job) (rate(rpc_server_call_duration_seconds_count[1h]))
+        - record: job:grpc_requests:rate6h
+          expr: sum by (job) (rate(rpc_server_call_duration_seconds_count[6h]))
+        - record: job:grpc_errors:rate5m
+          expr: sum by (job) (rate(rpc_server_call_duration_seconds_count{rpc_response_status_code!~"OK|NOT_FOUND|INVALID_ARGUMENT|UNAUTHENTICATED|PERMISSION_DENIED|ALREADY_EXISTS|FAILED_PRECONDITION"}[5m]))
+        - record: job:grpc_errors:rate30m
+          expr: sum by (job) (rate(rpc_server_call_duration_seconds_count{rpc_response_status_code!~"OK|NOT_FOUND|INVALID_ARGUMENT|UNAUTHENTICATED|PERMISSION_DENIED|ALREADY_EXISTS|FAILED_PRECONDITION"}[30m]))
+        - record: job:grpc_errors:rate1h
+          expr: sum by (job) (rate(rpc_server_call_duration_seconds_count{rpc_response_status_code!~"OK|NOT_FOUND|INVALID_ARGUMENT|UNAUTHENTICATED|PERMISSION_DENIED|ALREADY_EXISTS|FAILED_PRECONDITION"}[1h]))
+        - record: job:grpc_errors:rate6h
+          expr: sum by (job) (rate(rpc_server_call_duration_seconds_count{rpc_response_status_code!~"OK|NOT_FOUND|INVALID_ARGUMENT|UNAUTHENTICATED|PERMISSION_DENIED|ALREADY_EXISTS|FAILED_PRECONDITION"}[6h]))
+        - record: job:grpc_error_ratio:5m
+          expr: job:grpc_errors:rate5m / clamp_min(job:grpc_requests:rate5m, 1e-9)
+        - record: job:grpc_error_ratio:30m
+          expr: job:grpc_errors:rate30m / clamp_min(job:grpc_requests:rate30m, 1e-9)
+        - record: job:grpc_error_ratio:1h
+          expr: job:grpc_errors:rate1h / clamp_min(job:grpc_requests:rate1h, 1e-9)
+        - record: job:grpc_error_ratio:6h
+          expr: job:grpc_errors:rate6h / clamp_min(job:grpc_requests:rate6h, 1e-9)
+
+    - name: slo_burn_rate_alerts
+      rules:
+        - alert: SLOErrorBudgetFastBurn
+          expr: |
+            job:grpc_error_ratio:1h > (14.4 * 0.005)
+            and
+            job:grpc_error_ratio:5m > (14.4 * 0.005)
+          for: 2m
+          labels: { severity: page, slo: availability }
+          annotations:
+            summary: "{{ $labels.job }}: burning the availability error budget fast"
+            description: >
+              {{ $labels.job }} error ratio is {{ $value | humanizePercentage }} over 1h
+              (and still elevated over 5m) — at this rate the 30-day budget is gone in ~2 days.
+        - alert: SLOErrorBudgetSlowBurn
+          expr: |
+            job:grpc_error_ratio:6h > (6 * 0.005)
+            and
+            job:grpc_error_ratio:30m > (6 * 0.005)
+          for: 15m
+          labels: { severity: ticket, slo: availability }
+          annotations:
+            summary: "{{ $labels.job }}: slow burn of the availability error budget"
+            description: >
+              {{ $labels.job }} error ratio is {{ $value | humanizePercentage }} over 6h —
+              sustained, this exhausts the 30-day budget early.
+
+    - name: platform_alerts
+      rules:
+        - alert: ServiceServingNoTraffic
+          expr: |
+            (sum by (job) (rate(rpc_server_call_duration_seconds_count[10m])) == 0)
+            and on() (sum(rate(rpc_server_call_duration_seconds_count[10m])) > 0)
+          for: 10m
+          labels: { severity: ticket }
+          annotations:
+            summary: "{{ $labels.job }} is serving no gRPC traffic"
+            description: "{{ $labels.job }} has had no gRPC calls for 10m while the rest of the platform is active."
