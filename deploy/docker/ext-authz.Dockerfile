@@ -1,19 +1,17 @@
 # syntax=docker/dockerfile:1
-# Build context is the repo root. Only the workspace modules this service needs
-# are copied (see .dockerignore).
-
+# Built without the go.work workspace (GOWORK=off): the service's own go.mod
+# replace directive resolves pkg/ from the copied tree.
 FROM golang:1.26 AS build
 WORKDIR /src
-ENV CGO_ENABLED=0 GOTOOLCHAIN=auto
+ENV CGO_ENABLED=0 GOTOOLCHAIN=auto GOWORK=off
 
-COPY go.work go.work.sum* ./
 COPY pkg/ pkg/
-COPY gen/ gen/
 COPY services/ext-authz/ services/ext-authz/
 
+WORKDIR /src/services/ext-authz
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -trimpath -ldflags="-s -w" -o /out/ext-authz ./services/ext-authz
+    go build -trimpath -ldflags="-s -w" -o /out/ext-authz .
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/ext-authz /ext-authz

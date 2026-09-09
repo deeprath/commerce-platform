@@ -25,6 +25,9 @@ const (
 	CatalogService_GetProduct_FullMethodName       = "/commerce.catalog.v1.CatalogService/GetProduct"
 	CatalogService_ListProducts_FullMethodName     = "/commerce.catalog.v1.CatalogService/ListProducts"
 	CatalogService_BatchGetProducts_FullMethodName = "/commerce.catalog.v1.CatalogService/BatchGetProducts"
+	CatalogService_CreateProduct_FullMethodName    = "/commerce.catalog.v1.CatalogService/CreateProduct"
+	CatalogService_UpdateProduct_FullMethodName    = "/commerce.catalog.v1.CatalogService/UpdateProduct"
+	CatalogService_ArchiveProduct_FullMethodName   = "/commerce.catalog.v1.CatalogService/ArchiveProduct"
 )
 
 // CatalogServiceClient is the client API for CatalogService service.
@@ -42,6 +45,13 @@ type CatalogServiceClient interface {
 	// BatchGetProducts resolves many ids at once for list/cart rendering.
 	// Unknown ids are omitted from the response rather than erroring.
 	BatchGetProducts(ctx context.Context, in *BatchGetProductsRequest, opts ...grpc.CallOption) (*BatchGetProductsResponse, error)
+	// CreateProduct adds a product in DRAFT status and returns it with its id.
+	CreateProduct(ctx context.Context, in *CreateProductRequest, opts ...grpc.CallOption) (*CreateProductResponse, error)
+	// UpdateProduct replaces the mutable fields of an existing product.
+	UpdateProduct(ctx context.Context, in *UpdateProductRequest, opts ...grpc.CallOption) (*UpdateProductResponse, error)
+	// ArchiveProduct moves a product to ARCHIVED (soft delete); it stops
+	// appearing in ListProducts/search but existing orders still resolve it.
+	ArchiveProduct(ctx context.Context, in *ArchiveProductRequest, opts ...grpc.CallOption) (*ArchiveProductResponse, error)
 }
 
 type catalogServiceClient struct {
@@ -82,6 +92,36 @@ func (c *catalogServiceClient) BatchGetProducts(ctx context.Context, in *BatchGe
 	return out, nil
 }
 
+func (c *catalogServiceClient) CreateProduct(ctx context.Context, in *CreateProductRequest, opts ...grpc.CallOption) (*CreateProductResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateProductResponse)
+	err := c.cc.Invoke(ctx, CatalogService_CreateProduct_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *catalogServiceClient) UpdateProduct(ctx context.Context, in *UpdateProductRequest, opts ...grpc.CallOption) (*UpdateProductResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateProductResponse)
+	err := c.cc.Invoke(ctx, CatalogService_UpdateProduct_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *catalogServiceClient) ArchiveProduct(ctx context.Context, in *ArchiveProductRequest, opts ...grpc.CallOption) (*ArchiveProductResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ArchiveProductResponse)
+	err := c.cc.Invoke(ctx, CatalogService_ArchiveProduct_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CatalogServiceServer is the server API for CatalogService service.
 // All implementations must embed UnimplementedCatalogServiceServer
 // for forward compatibility.
@@ -97,6 +137,13 @@ type CatalogServiceServer interface {
 	// BatchGetProducts resolves many ids at once for list/cart rendering.
 	// Unknown ids are omitted from the response rather than erroring.
 	BatchGetProducts(context.Context, *BatchGetProductsRequest) (*BatchGetProductsResponse, error)
+	// CreateProduct adds a product in DRAFT status and returns it with its id.
+	CreateProduct(context.Context, *CreateProductRequest) (*CreateProductResponse, error)
+	// UpdateProduct replaces the mutable fields of an existing product.
+	UpdateProduct(context.Context, *UpdateProductRequest) (*UpdateProductResponse, error)
+	// ArchiveProduct moves a product to ARCHIVED (soft delete); it stops
+	// appearing in ListProducts/search but existing orders still resolve it.
+	ArchiveProduct(context.Context, *ArchiveProductRequest) (*ArchiveProductResponse, error)
 	mustEmbedUnimplementedCatalogServiceServer()
 }
 
@@ -115,6 +162,15 @@ func (UnimplementedCatalogServiceServer) ListProducts(context.Context, *ListProd
 }
 func (UnimplementedCatalogServiceServer) BatchGetProducts(context.Context, *BatchGetProductsRequest) (*BatchGetProductsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BatchGetProducts not implemented")
+}
+func (UnimplementedCatalogServiceServer) CreateProduct(context.Context, *CreateProductRequest) (*CreateProductResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateProduct not implemented")
+}
+func (UnimplementedCatalogServiceServer) UpdateProduct(context.Context, *UpdateProductRequest) (*UpdateProductResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateProduct not implemented")
+}
+func (UnimplementedCatalogServiceServer) ArchiveProduct(context.Context, *ArchiveProductRequest) (*ArchiveProductResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ArchiveProduct not implemented")
 }
 func (UnimplementedCatalogServiceServer) mustEmbedUnimplementedCatalogServiceServer() {}
 func (UnimplementedCatalogServiceServer) testEmbeddedByValue()                        {}
@@ -191,6 +247,60 @@ func _CatalogService_BatchGetProducts_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CatalogService_CreateProduct_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateProductRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CatalogServiceServer).CreateProduct(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CatalogService_CreateProduct_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CatalogServiceServer).CreateProduct(ctx, req.(*CreateProductRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CatalogService_UpdateProduct_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateProductRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CatalogServiceServer).UpdateProduct(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CatalogService_UpdateProduct_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CatalogServiceServer).UpdateProduct(ctx, req.(*UpdateProductRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CatalogService_ArchiveProduct_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArchiveProductRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CatalogServiceServer).ArchiveProduct(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CatalogService_ArchiveProduct_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CatalogServiceServer).ArchiveProduct(ctx, req.(*ArchiveProductRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CatalogService_ServiceDesc is the grpc.ServiceDesc for CatalogService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -209,6 +319,18 @@ var CatalogService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BatchGetProducts",
 			Handler:    _CatalogService_BatchGetProducts_Handler,
+		},
+		{
+			MethodName: "CreateProduct",
+			Handler:    _CatalogService_CreateProduct_Handler,
+		},
+		{
+			MethodName: "UpdateProduct",
+			Handler:    _CatalogService_UpdateProduct_Handler,
+		},
+		{
+			MethodName: "ArchiveProduct",
+			Handler:    _CatalogService_ArchiveProduct_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

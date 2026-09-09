@@ -22,6 +22,7 @@ type ServerOption func(*serverConfig)
 type serverConfig struct {
 	verifier    *auth.Verifier
 	authSkip    map[string]bool
+	authOpt     map[string]bool
 	extraUnary  []grpc.UnaryServerInterceptor
 	extraStream []grpc.StreamServerInterceptor
 }
@@ -31,9 +32,25 @@ type serverConfig struct {
 func WithAuth(v *auth.Verifier, skipFullMethods ...string) ServerOption {
 	return func(c *serverConfig) {
 		c.verifier = v
-		c.authSkip = map[string]bool{}
+		if c.authSkip == nil {
+			c.authSkip = map[string]bool{}
+		}
 		for _, m := range skipFullMethods {
 			c.authSkip[m] = true
+		}
+	}
+}
+
+// WithOptionalAuthMethods marks methods where a bearer token is verified and the
+// Principal injected *if present*, but an anonymous call is still allowed
+// through (e.g. public product browse that shows more to a logged-in operator).
+func WithOptionalAuthMethods(fullMethods ...string) ServerOption {
+	return func(c *serverConfig) {
+		if c.authOpt == nil {
+			c.authOpt = map[string]bool{}
+		}
+		for _, m := range fullMethods {
+			c.authOpt[m] = true
 		}
 	}
 }
@@ -58,7 +75,7 @@ func NewServer(opts ...ServerOption) *grpc.Server {
 		recoveryStream(),
 	}
 	if cfg.verifier != nil {
-		unary = append(unary, authUnary(cfg.verifier, cfg.authSkip))
+		unary = append(unary, authUnary(cfg.verifier, cfg.authSkip, cfg.authOpt))
 	}
 	unary = append(unary, cfg.extraUnary...)
 	stream = append(stream, cfg.extraStream...)

@@ -30,6 +30,9 @@ func NewProducer(brokers ...string) (*Producer, error) {
 		kgo.ProducerBatchCompression(kgo.SnappyCompression()),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.ProducerLinger(0),
+		// Let the broker create commerce.* topics on first publish in dev; in
+		// production topics are created ahead of time with explicit partitions.
+		kgo.AllowAutoTopicCreation(),
 	)
 	if err != nil {
 		return nil, err

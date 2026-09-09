@@ -90,10 +90,8 @@ services:
     networks: [commerce]
     logging: *default-logging
 
-  # Large image; the search service arrives in Phase 1. `task up:full` to include it.
   opensearch:
     image: opensearchproject/opensearch:${OPENSEARCH_TAG}
-    profiles: ["full"]
     environment:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"
@@ -152,6 +150,11 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
       KC_HEALTH_ENABLED: "true"
+      # Stamp a stable issuer on every token (browser-facing URL) while still
+      # answering backchannel JWKS/token calls on the in-network keycloak:8080.
+      # This is the KEYCLOAK_ISSUER_URL vs KEYCLOAK_SERVER_URL split.
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     volumes:
       - ./keycloak/realm-commerce.json:/opt/keycloak/data/import/realm-commerce.json:ro
       - ./keycloak/themes/commerce:/opt/keycloak/themes/commerce:ro
@@ -254,6 +257,105 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
       LOG_LEVEL: debug
     depends_on: [otel-collector]
+    networks: [commerce]
+    logging: *default-logging
+
+  # ------------------------------------------------------ domain services
+  catalog:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/catalog.Dockerfile
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/catalog?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+    ports: ["50053:50051"] # host access for grpcurl during dev
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
+  media:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/media.Dockerfile
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/media?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+      # Internal client (HEAD etc.) talks to minio:9000; upload URLs are signed
+      # for localhost:9000 so a browser on the host can PUT to them directly.
+      MINIO_INTERNAL_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MEDIA_PUBLIC_BASE_URL: http://localhost:9000
+    ports: ["50054:50051"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
+  search:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/search.Dockerfile
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      OPENSEARCH_ADDRESSES: http://opensearch:9200
+      KAFKA_BROKERS: kafka:9092
+    ports: ["50055:50051"]
+    depends_on:
+      opensearch: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
+  bff:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/bff.Dockerfile
+    environment:
+      HTTP_ADDR: ":8080"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      CATALOG_ADDR: catalog:50051
+      MEDIA_ADDR: media:50051
+      SEARCH_ADDR: search:50051
+      KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/token
+      KEYCLOAK_CLIENT_ID: bff
+      KEYCLOAK_CLIENT_SECRET: local-dev-bff-secret
+      COOKIE_SECURE: "false"
+      CORS_ORIGINS: http://localhost:5173,http://localhost:5174
+    ports: ["8088:8080"] # direct BFF access for dev; prod goes via the gateway
+    depends_on:
+      catalog: { condition: service_started }
+      media: { condition: service_started }
+      search: { condition: service_started }
+      keycloak: { condition: service_healthy }
+      otel-collector: { condition: service_started }
     networks: [commerce]
     logging: *default-logging
 

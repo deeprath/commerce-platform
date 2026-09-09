@@ -281,6 +281,16 @@ Checklist to close out before Phase 0 is "done":
 - Detail: the CI job is wired and green but self-skips its scan until the `SONAR_TOKEN`
   repo secret exists. See §5.3 for the one-time setup.
 
+### Fixed
+- **CVE-2026-17106** — `github.com/moby/go-archive` (transitive via testcontainers-go,
+  test-only). Trivy `fs` HIGH on PR #2. **Fixed** by bumping to `v0.3.0`.
+- **CVE-2026-55677** — `github.com/labstack/echo/v4` (the BFF's HTTP framework),
+  unauthorized information disclosure. Trivy `fs` HIGH on PR #2. **Fixed** by bumping to
+  `v4.15.3`.
+
+Both fixes were dependency bumps caught by the blocking `trivy fs` gate before merge — no
+`.trivyignore` entry, no accepted risk.
+
 ### Accepted for now (revisit as noted)
 - **Base-OS CVE scan is informational**, not blocking — deliberate (§5.2); distroless base
   is rebuilt weekly. Revisit if a reachable base CVE ever appears.

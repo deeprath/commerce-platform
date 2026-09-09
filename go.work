@@ -3,5 +3,9 @@ go 1.26.0
 use (
 	./gen/go
 	./pkg
+	./services/bff
+	./services/catalog
 	./services/ext-authz
+	./services/media
+	./services/search
 )
