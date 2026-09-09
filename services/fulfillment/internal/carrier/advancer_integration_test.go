@@ -2,6 +2,7 @@ package carrier
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -90,5 +91,44 @@ func TestAdvancerSweep_DrivesPendingToDelivered(t *testing.T) {
 	got, _ = st.Get(ctx, fresh.ID, "")
 	if got.Status != domain.StatusPending {
 		t.Fatalf("fresh shipment advanced despite 1h threshold: %s", got.Status)
+	}
+}
+
+// Run ticks on its interval and stops cleanly when the context is cancelled.
+func TestAdvancerRun_TicksThenStops(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+	sh, err := st.CreateFromOrder(ctx, "order-run", "owner-run",
+		domain.Address{}, []domain.Item{{ProductID: "p1", Quantity: 1}}, "e:9:1")
+	if err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	a := New(st, 20*time.Millisecond, 0, 0)
+	done := make(chan error, 1)
+	go func() { done <- a.Run(runCtx) }()
+
+	deadline := time.After(3 * time.Second)
+	for {
+		got, _ := st.Get(ctx, sh.ID, "")
+		if got.Status == domain.StatusDelivered {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("Run did not advance the shipment to DELIVERED in time (at %s)", got.Status)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Run returned %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return after cancel")
 	}
 }

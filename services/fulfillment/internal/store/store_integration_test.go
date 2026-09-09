@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	fulfillmentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/fulfillment/v1"
+	"github.com/deeprath/commerce-platform/pkg/errs"
 	"github.com/deeprath/commerce-platform/pkg/pgx"
 	"github.com/deeprath/commerce-platform/services/fulfillment/internal/domain"
 	"github.com/deeprath/commerce-platform/services/fulfillment/internal/store"
@@ -195,5 +196,63 @@ func TestDueForAdvance(t *testing.T) {
 	}
 	if len(due) != 1 || due[0].To != domain.StatusShipped {
 		t.Fatalf("want one PENDING->SHIPPED target, got %+v", due)
+	}
+}
+
+func TestStoreEdgePaths(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	const missing = "00000000-0000-0000-0000-000000000000"
+
+	if _, err := st.Get(ctx, missing, ""); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("Get(missing): want NotFound, got %v", err)
+	}
+	if _, err := st.Transition(ctx, missing, domain.StatusShipped, "", "", ""); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("Transition(missing): want NotFound, got %v", err)
+	}
+
+	sh, err := st.CreateFromOrder(ctx, "edge-1", "owner-e", addr(), items(), "") // empty eventID branch
+	if err != nil {
+		t.Fatalf("create (no eventID): %v", err)
+	}
+	// Transition to the status it is already in -> idempotent no-op.
+	same, err := st.Transition(ctx, sh.ID, domain.StatusPending, "", "", "")
+	if err != nil || same.Status != domain.StatusPending {
+		t.Fatalf("idempotent same-status transition: %v %+v", err, same)
+	}
+	// Unknown target status -> InvalidArgument.
+	if _, err := st.Transition(ctx, sh.ID, domain.Status("BOGUS"), "", "", ""); !errs.Is(err, errs.KindInvalidArgument) {
+		t.Fatalf("Transition(bogus): want InvalidArgument, got %v", err)
+	}
+	// Cross-owner Get is a NotFound, not a leak.
+	if _, err := st.Get(ctx, sh.ID, "someone-else"); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("Get cross-owner: want NotFound, got %v", err)
+	}
+}
+
+func TestListPagination(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	for i := 0; i < 3; i++ {
+		if _, err := st.CreateFromOrder(ctx, "pg-"+string(rune('a'+i)), "pager", addr(), items(), ""); err != nil {
+			t.Fatalf("seed %d: %v", i, err)
+		}
+		time.Sleep(2 * time.Millisecond) // distinct created_at for a stable keyset
+	}
+
+	page1, next, err := st.List(ctx, "pager", "", 2, "")
+	if err != nil || len(page1) != 2 || next == "" {
+		t.Fatalf("page 1: n=%d next=%q err=%v", len(page1), next, err)
+	}
+	page2, next2, err := st.List(ctx, "pager", "", 2, next)
+	if err != nil || len(page2) != 1 || next2 != "" {
+		t.Fatalf("page 2: n=%d next=%q err=%v", len(page2), next2, err)
+	}
+	// Filtering by order id narrows to one.
+	one, _, err := st.List(ctx, "pager", "pg-b", 10, "")
+	if err != nil || len(one) != 1 || one[0].OrderID != "pg-b" {
+		t.Fatalf("filtered list: %v %+v", err, one)
 	}
 }

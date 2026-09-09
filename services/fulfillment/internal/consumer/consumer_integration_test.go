@@ -112,6 +112,13 @@ func TestHandler_CreatesShipmentFromEventAndDedupes(t *testing.T) {
 	}
 }
 
+func TestTopics(t *testing.T) {
+	got := consumer.Topics()
+	if len(got) != 1 || got[0] != kafka.Topic("order", "confirmed") {
+		t.Fatalf("Topics() = %v", got)
+	}
+}
+
 func TestHandler_IgnoresOtherTopicsAndBadPayloads(t *testing.T) {
 	ctx := context.Background()
 	st := store.New(spinUp(t))

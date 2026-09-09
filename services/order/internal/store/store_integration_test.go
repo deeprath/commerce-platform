@@ -180,6 +180,16 @@ func TestSaga_OnShipmentDelivered(t *testing.T) {
 	if err := orch.OnShipmentDelivered(ctx, "deliver-1", o.ID); err != nil {
 		t.Fatalf("duplicate delivery: %v", err)
 	}
+
+	// A delivery for an order that never confirmed is ignored (stays put).
+	pend := seedPending(t, st)
+	if err := orch.OnShipmentDelivered(ctx, "deliver-pend", pend.ID); err != nil {
+		t.Fatalf("delivery on pending order: %v", err)
+	}
+	got2, _ := st.Get(ctx, pend.ID, "owner-1")
+	if got2.Status != domain.StatusPendingPayment {
+		t.Fatalf("pending order changed on delivery: %s", got2.Status)
+	}
 }
 
 // The order consumer routes a fulfillment.delivered record into the saga.
@@ -202,5 +212,14 @@ func TestConsumer_DispatchesShipmentDelivered(t *testing.T) {
 	got, _ := st.Get(ctx, o.ID, "owner-1")
 	if got.Status != domain.StatusFulfilled {
 		t.Fatalf("consumer did not fulfil the order: %s", got.Status)
+	}
+
+	// Topic list and undecodable-payload handling.
+	if len(consumer.Topics()) == 0 {
+		t.Fatal("Topics() is empty")
+	}
+	bad := &kgo.Record{Topic: kafka.Topic("fulfillment", "delivered"), Partition: 0, Offset: 4, Value: []byte("not-proto")}
+	if err := h(ctx, bad); err != nil {
+		t.Fatalf("undecodable record should be skipped, got %v", err)
 	}
 }

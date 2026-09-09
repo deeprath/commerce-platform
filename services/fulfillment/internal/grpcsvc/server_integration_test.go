@@ -113,6 +113,38 @@ func TestGetAndList_OwnerScoping(t *testing.T) {
 	}
 }
 
+func TestErrorPaths(t *testing.T) {
+	st := store.New(spinUp(t))
+	s := grpcsvc.New(st)
+	const missing = "00000000-0000-0000-0000-000000000000"
+
+	// ListShipments needs a principal.
+	if _, err := s.ListShipments(context.Background(), &fulfillmentv1.ListShipmentsRequest{}); !errs.Is(err, errs.KindUnauthenticated) {
+		t.Fatalf("anon list: want Unauthenticated, got %v", err)
+	}
+	// GetShipment for a nonexistent id is a clean NotFound.
+	if _, err := s.GetShipment(customer("x"), &fulfillmentv1.GetShipmentRequest{Id: missing}); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("get missing: want NotFound, got %v", err)
+	}
+	// Admin transition on a nonexistent id surfaces the store's NotFound.
+	if _, err := s.MarkShipped(manager("staff"), &fulfillmentv1.MarkShippedRequest{Id: missing}); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("ship missing: want NotFound, got %v", err)
+	}
+	if _, err := s.MarkDelivered(manager("staff"), &fulfillmentv1.MarkDeliveredRequest{Id: missing}); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("deliver missing: want NotFound, got %v", err)
+	}
+	if _, err := s.CancelShipment(manager("staff"), &fulfillmentv1.CancelShipmentRequest{Id: missing}); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("cancel missing: want NotFound, got %v", err)
+	}
+	// MarkDelivered / CancelShipment are also role-gated.
+	if _, err := s.MarkDelivered(customer("c"), &fulfillmentv1.MarkDeliveredRequest{Id: missing}); !errs.Is(err, errs.KindPermissionDenied) {
+		t.Fatalf("customer MarkDelivered: want PermissionDenied, got %v", err)
+	}
+	if _, err := s.CancelShipment(customer("c"), &fulfillmentv1.CancelShipmentRequest{Id: missing}); !errs.Is(err, errs.KindPermissionDenied) {
+		t.Fatalf("customer CancelShipment: want PermissionDenied, got %v", err)
+	}
+}
+
 func TestAdminTransitions_RoleGatedAndMapped(t *testing.T) {
 	st := store.New(spinUp(t))
 	s := grpcsvc.New(st)
