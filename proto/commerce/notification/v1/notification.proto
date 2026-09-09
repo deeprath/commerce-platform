@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+// commerce.notification.v1 — transactional customer notifications.
+//
+// The service consumes the customer-facing lifecycle events (order.* and
+// fulfillment.*), renders a template per event, and dispatches it through a
+// channel. v1 ships a SANDBOX channel that records the notification and logs it
+// instead of calling a real provider; production swaps in SES / Twilio / a push
+// gateway behind the same Channel interface, emitting the same
+// commerce.notification.sent event either way.
+package commerce.notification.v1;
+
+import "commerce/common/v1/types.proto";
+
+service NotificationService {
+  // ListNotifications returns the caller's notifications, newest first.
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse);
+
+  // SendTest renders and dispatches a sample notification to the caller. Useful
+  // for verifying delivery wiring. Requires authentication; only ever notifies
+  // the calling principal.
+  rpc SendTest(SendTestRequest) returns (Notification);
+}
+
+enum Channel {
+  CHANNEL_UNSPECIFIED = 0;
+  CHANNEL_EMAIL = 1;
+  CHANNEL_SMS = 2;
+  CHANNEL_PUSH = 3;
+}
+
+enum DeliveryStatus {
+  DELIVERY_STATUS_UNSPECIFIED = 0;
+  DELIVERY_STATUS_SENT = 1;
+  DELIVERY_STATUS_FAILED = 2;
+}
+
+message Notification {
+  string id = 1;
+  string owner_id = 2; // Keycloak sub of the recipient
+  string kind = 3; // e.g. "order_confirmed", "shipment_delivered"
+  Channel channel = 4;
+  DeliveryStatus status = 5;
+  string subject = 6;
+  string body = 7;
+  string ref_id = 8; // the order / shipment id this notification is about
+  string created_at = 9;
+}
+
+message ListNotificationsRequest {
+  commerce.common.v1.PageRequest page = 1;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  commerce.common.v1.PageResponse page = 2;
+}
+
+message SendTestRequest {
+  // Informational in the sandbox — the sample is delivered to the caller
+  // regardless.
+  string to = 1;
+}
+
+// --- events (topic: commerce.notification.<event>) ---
+
+message NotificationSent {
+  string notification_id = 1;
+  string owner_id = 2;
+  string kind = 3;
+  string channel = 4;
+  string ref_id = 5;
+  string occurred_at = 6;
+}

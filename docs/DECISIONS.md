@@ -533,3 +533,45 @@ confirmed orders into shipments and drives them to delivery.
 **Consequences:** `order.confirmed` payloads are larger (the line items travel twice — once
 on `order.created`, once on `order.confirmed`). One more service, DB, and Kafka consumer
 group. The `order` consumer now also subscribes to `commerce.fulfillment.delivered`.
+
+---
+
+## ADR-019 — Notification: event-driven, template registry, sandbox channel
+
+**Status:** Accepted (Phase 3).
+
+**Context:** Customers get no confirmation when an order is placed, confirmed, cancelled,
+shipped, delivered, or fulfilled. Phase 3 adds a `notification` service.
+
+**Decision:**
+- **Consume the customer-facing lifecycle only.** `order.created / confirmed / cancelled /
+  fulfilled` and `fulfillment.shipped / delivered` — every one of which carries an
+  `owner_id`, so the recipient is known from the event alone. Payment events
+  (`payment.failed`, `payment.refunded`) do **not** carry `owner_id`; a payment failure
+  already surfaces to the customer as `order.cancelled` (reason `PAYMENT_FAILED:*`), and
+  refund notifications are deferred until those events are enriched.
+- **Template registry in `internal/domain`.** A `map[kind]tmpl` with `{placeholder}`
+  substitution — no `text/template`, no files. Kinds are derived from the inbound topic.
+  Rendering is a pure function, unit-tested for every kind.
+- **`Channel` interface, sandbox `LogChannel`.** v1 records the notification and logs it;
+  production swaps in SES / Twilio / a push gateway behind the same interface. A channel
+  error marks the row `FAILED` but is **not** returned to the consumer — the event is still
+  "handled" (the notification is a record of the attempt), so it is not redelivered
+  forever. Retries/backoff belong in a real channel implementation.
+- **Store writes the row + `commerce.notification.sent` outbox + `processed_events` in one
+  tx.** Same idempotency pattern as the other services. `notification.sent` exists for
+  analytics / an eventual digest, nothing consumes it yet.
+- **`SendTest` requires authentication, not a role.** It only ever notifies the calling
+  principal, so there is nothing to gate — the ARCHITECTURE table's "admin only" note
+  predates the design. `ListNotifications` is owner-scoped.
+
+**Alternatives:**
+- *`text/template` + files* — more power than six one-line messages need; files to embed and
+  test-load.
+- *Return channel errors to the consumer (block the partition until delivery succeeds)* —
+  one flaky provider call stalls every customer's notifications; a `FAILED` row + a real
+  channel's own retry is the right seam.
+- *Consume `payment.*` too* — needs `owner_id` on those events first; out of scope here.
+
+**Consequences:** No delivery guarantee in v1 (the sandbox always "succeeds"; a real channel
+failure is recorded, not retried by this service). One more service, DB, and consumer group.

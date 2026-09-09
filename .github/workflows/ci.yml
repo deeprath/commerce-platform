@@ -52,7 +52,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [pkg, gen/go, services/ext-authz, services/catalog, services/media, services/search, services/bff, services/cart, services/pricing, services/inventory, services/payment, services/order, services/fulfillment]
+        module: [pkg, gen/go, services/ext-authz, services/catalog, services/media, services/search, services/bff, services/cart, services/pricing, services/inventory, services/payment, services/order, services/fulfillment, services/notification]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -102,7 +102,7 @@ jobs:
     needs: [proto, test]
     strategy:
       matrix:
-        service: [ext-authz, catalog, media, search, bff, storefront, cart, pricing, inventory, payment, order, fulfillment]
+        service: [ext-authz, catalog, media, search, bff, storefront, cart, pricing, inventory, payment, order, fulfillment, notification]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

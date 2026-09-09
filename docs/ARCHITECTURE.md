@@ -120,7 +120,7 @@ are drawn so that the **critical checkout path** touches as few services as poss
 | **order** | Order aggregate, checkout **saga orchestrator**, order state machine | `CreateOrder`, `GetOrder`, `ListOrders`, `CancelOrder` | `order.created`, `order.confirmed`, `order.cancelled`, `order.fulfilled` | `payment.*`, `inventory.*`, `fulfillment.*` |
 | **payment** | Payment intents, PSP integration, refunds, webhook ingestion | `CreatePayment`, `CapturePayment`, `Refund` | `payment.authorized`, `payment.captured`, `payment.failed`, `payment.refunded` | `order.created`, `order.cancelled` |
 | **fulfillment** | Shipments (one per order in v1), sandbox carrier, tracking | `GetShipment`, `ListShipments`, `MarkShipped`, `MarkDelivered`, `CancelShipment` | `fulfillment.shipment_created`, `fulfillment.shipped`, `fulfillment.delivered`, `fulfillment.cancelled` | `order.confirmed` |
-| **notification** | Transactional email/SMS/push, templates, user prefs | `SendTest` (admin only) | `notification.sent` | `order.*`, `payment.*`, `fulfillment.*`, `user.registered` |
+| **notification** | Transactional notifications: templates, delivery history, sandbox channel | `ListNotifications`, `SendTest` | `notification.sent` | `order.created`, `order.confirmed`, `order.cancelled`, `order.fulfilled`, `fulfillment.shipped`, `fulfillment.delivered` |
 | **review** | Product ratings & reviews, moderation queue | `ListReviews`, `SubmitReview`, `ModerateReview` | `review.published` | `order.fulfilled` (verified-purchase flag) |
 | **media** | Upload intake (MinIO), image derivatives, AV scan, CDN origin | `CreateUploadURL`, `GetAsset` | `media.asset_ready`, `media.asset_rejected` | — |
 

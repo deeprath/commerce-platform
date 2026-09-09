@@ -79,7 +79,7 @@ commerce-platform/
 │   ├── order/                  # checkout saga orchestrator + order lifecycle
 │   ├── payment/                # PSP integration (Stripe/Adyen) — never stores PAN
 │   ├── fulfillment/            # shipments + sandbox carrier; closes CONFIRMED → FULFILLED
-│   ├── notification/           # email/SMS/push (Kafka consumer)
+│   ├── notification/           # lifecycle events → templated notifications (sandbox channel)
 │   ├── review/                 # ratings & reviews + moderation
 │   └── media/                  # MinIO uploads, image derivatives, virus scan
 ├── web/
