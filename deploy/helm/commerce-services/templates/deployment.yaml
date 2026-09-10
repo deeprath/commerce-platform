@@ -1,0 +1,132 @@
+{{- range $name, $rawSvc := .Values.services }}
+{{- $svc := mergeOverwrite (deepCopy $.Values.defaults) $rawSvc }}
+{{- $g := $.Values.global }}
+{{- $isHTTP := eq $svc.protocol "http" }}
+{{- $memLimit := $svc.resources.limits.memory }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $g.namespace }}
+  labels:
+    {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
+spec:
+  replicas: {{ $svc.replicas }}
+  revisionHistoryLimit: {{ $svc.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels:
+        {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ $svc.terminationGracePeriodSeconds }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      {{- if $svc.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ $svc.topologySpread.maxSkew }}
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 14 }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "commerce.image" (dict "name" $name "Values" $.Values "Chart" $.Chart) }}
+          imagePullPolicy: {{ $g.image.pullPolicy }}
+          ports:
+            - name: {{ if $isHTTP }}http{{ else }}grpc{{ end }}
+              containerPort: {{ $svc.port }}
+          env:
+            - name: GOMEMLIMIT
+              value: {{ include "commerce.gomemlimit" $memLimit | quote }}
+            {{- range $k, $v := $g.commonEnv }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- range $k, $v := $svc.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- if $svc.kafka }}
+            - name: KAFKA_BROKERS
+              value: {{ $g.kafkaBrokers | quote }}
+            {{- end }}
+            {{- if $svc.redis }}
+            - name: REDIS_URL
+              value: {{ $g.redisURL | quote }}
+            {{- end }}
+            {{- if $svc.auth }}
+            - name: KEYCLOAK_JWKS_URL
+              value: {{ $g.keycloak.jwksURL | quote }}
+            - name: KEYCLOAK_ISSUER
+              value: {{ $g.keycloak.issuer | quote }}
+            {{- end }}
+            {{- if $isHTTP }}
+            - name: KEYCLOAK_TOKEN_URL
+              value: {{ $g.keycloak.tokenURL | quote }}
+            {{- end }}
+            {{- if $svc.db }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $g.secretName }}
+                  key: {{ upper $svc.db }}_DATABASE_URL
+            {{- end }}
+            {{- range $k, $v := $svc.extraEnv }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- if $svc.envFromSecret }}
+          envFrom:
+            - secretRef: { name: {{ $g.secretName }} }
+          {{- end }}
+          resources:
+            {{- toYaml $svc.resources | nindent 12 }}
+          {{- if $isHTTP }}
+          readinessProbe:
+            httpGet: { path: /healthz, port: {{ $svc.port }} }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: {{ $svc.port }} }
+            periodSeconds: 15
+          {{- else }}
+          readinessProbe:
+            grpc: { port: {{ $svc.port }} }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            grpc: { port: {{ $svc.port }} }
+            periodSeconds: 15
+          {{- end }}
+          # SIGTERM -> stop accepting, drain, commit Kafka offsets, close pools.
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+{{- end }}

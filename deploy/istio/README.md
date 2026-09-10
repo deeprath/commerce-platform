@@ -18,6 +18,10 @@ helm install ztunnel       istio/ztunnel -n istio-system --wait
 
 # 3. Platform config in this directory
 kubectl apply -f deploy/istio/
+
+# 4. The services (creates the ServiceAccounts + `app:` labels the
+#    AuthorizationPolicy below keys on)
+helm upgrade --install commerce-services deploy/helm/commerce-services -n commerce
 ```
 
 `meshConfig.extensionProviders` (registered via the istiod values, see

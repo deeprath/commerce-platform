@@ -1,0 +1,33 @@
+# Local kind / k3d overrides: single replica, images side-loaded (not pulled),
+# plaintext Keycloak issuer, debug logs. Use with:
+#   helm upgrade --install commerce-services deploy/helm/commerce-services \
+#     -n commerce -f deploy/helm/commerce-services/values-dev.yaml
+global:
+  image:
+    tag: dev
+    pullPolicy: Never
+  commonEnv:
+    ENVIRONMENT: local
+    LOG_LEVEL: debug
+    OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector.observability.svc.cluster.local:4317
+  keycloak:
+    issuer: http://localhost:8081/realms/commerce
+
+defaults:
+  replicas: 1
+  podDisruptionBudget:
+    enabled: false
+  topologySpread:
+    enabled: false
+  resources:
+    requests: { cpu: 10m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+services:
+  ext-authz: { replicas: 1 }
+  order: { replicas: 1 }
+  bff:
+    replicas: 1
+    env:
+      COOKIE_SECURE: "false"
+      CORS_ORIGINS: http://localhost:5173,http://localhost:5174

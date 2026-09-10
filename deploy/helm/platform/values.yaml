@@ -110,3 +110,11 @@ applications:
     chart: opentelemetry-collector
     targetRevision: 0.108.0
     namespace: observability
+
+  # The platform's own services (this repo). Deployment + Service + SA + PDB per
+  # service; PSS restricted; per-service SPIFFE identity for AuthorizationPolicy.
+  - name: commerce-services
+    repoURL: https://github.com/deeprath/commerce-platform.git
+    targetRevision: main
+    path: deploy/helm/commerce-services
+    namespace: commerce

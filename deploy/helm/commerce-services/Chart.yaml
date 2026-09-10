@@ -1,0 +1,11 @@
+apiVersion: v2
+name: commerce-services
+description: >
+  The commerce platform's own gRPC / HTTP services. One templated chart that
+  renders a ServiceAccount + Deployment + Service (+ PodDisruptionBudget) per
+  service from a values map. PSS `restricted`-compliant pods, native gRPC health
+  probes, per-service SPIFFE identity for the mesh AuthorizationPolicy.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [commerce, grpc, microservices]

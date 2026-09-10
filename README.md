@@ -91,10 +91,11 @@ commerce-platform/
 │   ├── compose/                # docker-compose local stack (Envoy Gateway, no mesh)
 │   ├── istio/                  # Gateway + HTTPRoutes, PeerAuthentication, AuthorizationPolicy,
 │   │                          #   Telemetry, waypoint configs, ratelimit descriptors
+│   ├── k8s/                    # raw cluster manifests (observability PrometheusRule, …)
 │   └── helm/
 │       ├── platform/           # app-of-apps: istio-base/istiod/cni/ztunnel, gateway,
-│       │                       #   cert-manager, ESO, KEDA, observability stack
-│       └── charts/<service>/   # one subchart per service
+│       │                       #   KEDA, observability stack, + commerce-services
+│       └── commerce-services/  # one templated chart: SA+Deployment+Service+PDB per service
 ├── observability/
 │   ├── grafana/dashboards/     # provisioned dashboard JSON
 │   ├── prometheus/rules/       # recording + alerting rules, SLO burn-rate alerts

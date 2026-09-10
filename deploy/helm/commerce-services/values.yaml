@@ -1,0 +1,175 @@
+# Default (production-shaped) values for the commerce-services chart.
+# Override per environment with values-<env>.yaml.
+
+global:
+  namespace: commerce
+
+  image:
+    registry: ghcr.io/deeprath/commerce-platform
+    # Empty -> Chart.appVersion. CI/CD sets this to the release tag / git sha.
+    tag: ""
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+
+  # Env every service gets (merged under per-service `env`, which wins).
+  commonEnv:
+    ENVIRONMENT: production
+    LOG_LEVEL: info
+    OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector.observability.svc.cluster.local:4317
+
+  # Shared, non-secret infra endpoints. Referenced by services that opt in via
+  # `kafka: true` / `auth: true` / `redis: true`.
+  kafkaBrokers: kafka.commerce.svc.cluster.local:9092
+  redisURL: redis://redis.commerce.svc.cluster.local:6379/1
+  keycloak:
+    jwksURL: http://keycloak.commerce.svc.cluster.local:8080/realms/commerce/protocol/openid-connect/certs
+    tokenURL: http://keycloak.commerce.svc.cluster.local:8080/realms/commerce/protocol/openid-connect/token
+    issuer: https://auth.commerce.example.com/realms/commerce
+
+  # Secret with per-service DATABASE_URL keys (<SERVICE>_DATABASE_URL), the BFF
+  # client secret, MinIO keys, etc. Provisioned out of band (External Secrets
+  # Operator + Vault) — never templated by this chart.
+  secretName: commerce-services
+
+# Applied to every service unless overridden in the `services` map.
+defaults:
+  replicas: 2
+  protocol: grpc # grpc | http
+  port: 50051
+  terminationGracePeriodSeconds: 40
+  revisionHistoryLimit: 3
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+  # GOMEMLIMIT is set from the memory limit (see _helpers.tpl).
+  extraEnv: {}
+
+# --- the services -----------------------------------------------------------
+# Flags:
+#   protocol/port  - grpc:50051 (default) or http (bff)
+#   db: <name>     - inject DATABASE_URL from secret key <NAME>_DATABASE_URL
+#   kafka: true    - inject KAFKA_BROKERS
+#   redis: true    - inject REDIS_URL
+#   auth: true     - inject KEYCLOAK_JWKS_URL + KEYCLOAK_ISSUER
+#   envFromSecret  - also envFrom the shared secret (bff needs KEYCLOAK_CLIENT_SECRET)
+services:
+  ext-authz:
+    replicas: 3
+    env:
+      GRPC_ADDR: ":50051"
+    resources:
+      requests: { cpu: 25m, memory: 48Mi }
+      limits: { cpu: 250m, memory: 128Mi }
+
+  catalog:
+    db: catalog
+    kafka: true
+    auth: true
+    env: { GRPC_ADDR: ":50051" }
+
+  media:
+    db: media
+    kafka: true
+    auth: true
+    envFromSecret: true # MINIO_ACCESS_KEY / MINIO_SECRET_KEY
+    env:
+      GRPC_ADDR: ":50051"
+      MINIO_INTERNAL_ENDPOINT: minio.commerce.svc.cluster.local:9000
+      MEDIA_PUBLIC_BASE_URL: https://media.commerce.example.com
+
+  search:
+    kafka: true
+    env:
+      GRPC_ADDR: ":50051"
+      OPENSEARCH_ADDRESSES: http://opensearch.commerce.svc.cluster.local:9200
+
+  cart:
+    redis: true
+    auth: true
+    env: { GRPC_ADDR: ":50051" }
+
+  pricing:
+    db: pricing
+    auth: true
+    env:
+      GRPC_ADDR: ":50051"
+      CATALOG_ADDR: catalog.commerce.svc.cluster.local:50051
+      TAX_RATE_BPS: "800"
+
+  inventory:
+    db: inventory
+    kafka: true
+    auth: true
+    env:
+      GRPC_ADDR: ":50051"
+      DEFAULT_STOCK_ON_HAND: "0" # no dev auto-seed in prod
+      RESERVATION_SWEEP_INTERVAL: 15s
+
+  payment:
+    db: payment
+    kafka: true
+    auth: true
+    env: { GRPC_ADDR: ":50051" }
+
+  order:
+    db: order
+    kafka: true
+    auth: true
+    replicas: 3
+    env:
+      GRPC_ADDR: ":50051"
+      CART_ADDR: cart.commerce.svc.cluster.local:50051
+      PRICING_ADDR: pricing.commerce.svc.cluster.local:50051
+      INVENTORY_ADDR: inventory.commerce.svc.cluster.local:50051
+      PAYMENT_ADDR: payment.commerce.svc.cluster.local:50051
+
+  fulfillment:
+    db: fulfillment
+    kafka: true
+    auth: true
+    env:
+      GRPC_ADDR: ":50051"
+      CARRIER_SWEEP_INTERVAL: 30s
+      CARRIER_PENDING_AFTER: 1m
+      CARRIER_SHIPPED_AFTER: 5m
+
+  notification:
+    db: notification
+    kafka: true
+    auth: true
+    env: { GRPC_ADDR: ":50051" }
+
+  review:
+    db: review
+    kafka: true
+    auth: true
+    env: { GRPC_ADDR: ":50051" }
+
+  bff:
+    protocol: http
+    port: 8080
+    replicas: 3
+    envFromSecret: true # KEYCLOAK_CLIENT_SECRET
+    resources:
+      requests: { cpu: 100m, memory: 128Mi }
+      limits: { cpu: "1", memory: 384Mi }
+    env:
+      HTTP_ADDR: ":8080"
+      CATALOG_ADDR: catalog.commerce.svc.cluster.local:50051
+      MEDIA_ADDR: media.commerce.svc.cluster.local:50051
+      SEARCH_ADDR: search.commerce.svc.cluster.local:50051
+      CART_ADDR: cart.commerce.svc.cluster.local:50051
+      PRICING_ADDR: pricing.commerce.svc.cluster.local:50051
+      ORDER_ADDR: order.commerce.svc.cluster.local:50051
+      PAYMENT_ADDR: payment.commerce.svc.cluster.local:50051
+      FULFILLMENT_ADDR: fulfillment.commerce.svc.cluster.local:50051
+      REVIEW_ADDR: review.commerce.svc.cluster.local:50051
+      KEYCLOAK_CLIENT_ID: bff
+      COOKIE_SECURE: "true"
+      CORS_ORIGINS: https://store.commerce.example.com,https://admin.commerce.example.com
