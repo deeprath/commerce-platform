@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+// commerce.clickstream.v1 — browser interaction events.
+//
+// A ClientEvent is NOT a domain event: no service owns it as state and nothing
+// in the checkout saga reacts to it. The storefront batches these and posts
+// them to the BFF (`POST /api/v1/events`), which validates, enriches, and
+// publishes them to `commerce.clickstream.tracked` for the analytics service to
+// land in ClickHouse. Best-effort, at-least-once, lossy under back-pressure.
+package commerce.clickstream.v1;
+
+// EventType is the closed set of interactions the storefront reports. Anything
+// the BFF doesn't recognise is dropped rather than forwarded, so adding a new
+// kind is a coordinated proto change, not an open string.
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_PAGE_VIEW = 1;
+  EVENT_TYPE_PRODUCT_VIEW = 2;
+  EVENT_TYPE_SEARCH = 3;
+  EVENT_TYPE_ADD_TO_CART = 4;
+  EVENT_TYPE_BEGIN_CHECKOUT = 5;
+  EVENT_TYPE_PURCHASE = 6;
+}
+
+// ClientEvent is one enriched browser interaction. Fields 1-6 come from the
+// browser; 7-11 are stamped by the BFF and are the trustworthy ones.
+message ClientEvent {
+  EventType type = 1;
+  // Opaque per-visit id minted by the browser (sessionStorage). Groups events
+  // within a single tab session; not stable across visits.
+  string session_id = 2;
+  // URL path only, query string stripped by the BFF.
+  string path = 3;
+  // referrer host only (no path/query), or "" for same-site / direct.
+  string referrer = 4;
+  // Set for PRODUCT_VIEW / ADD_TO_CART.
+  string product_id = 5;
+  // Search term, set for SEARCH.
+  string query = 6;
+
+  // --- stamped by the BFF ---
+
+  // First-party cookie id (opaque, 128-bit random). Survives across visits for
+  // ~180 days; never joined to PII. Used for unique-visitor counts.
+  string anonymous_id = 7;
+  // Keycloak subject, set only when a valid session cookie rode along with the
+  // beacon; "" for anonymous traffic.
+  string owner_id = 8;
+  // Truncated User-Agent (<=256 bytes).
+  string user_agent = 9;
+  // Cart / order value in minor units, for ADD_TO_CART / BEGIN_CHECKOUT /
+  // PURCHASE; 0 otherwise.
+  int64 value_minor = 10;
+  string currency_code = 11;
+
+  // RFC3339Nano. client_time is the browser clock (may be skewed / forged);
+  // received_at is the BFF clock and is authoritative for ordering.
+  string client_time = 12;
+  string received_at = 13;
+}

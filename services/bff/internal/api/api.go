@@ -30,9 +30,19 @@ import (
 type Server struct {
 	cl     *clients.Set
 	broker *auth.Broker
+	pub    Publisher
 }
 
-func New(cl *clients.Set, broker *auth.Broker) *Server { return &Server{cl: cl, broker: broker} }
+// Publisher fans one enriched, marshalled clickstream event onto the event
+// backbone. nil in tests and in deployments without a Kafka broker configured;
+// the ingest endpoint then answers 503.
+type Publisher interface {
+	Publish(ctx context.Context, key string, value []byte) error
+}
+
+func New(cl *clients.Set, broker *auth.Broker, pub Publisher) *Server {
+	return &Server{cl: cl, broker: broker, pub: pub}
+}
 
 // Router builds the Echo instance with all routes and middleware.
 func (s *Server) Router(allowedOrigins []string) *echo.Echo {
@@ -67,6 +77,9 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	v1.GET("/catalog/products", s.listProducts)
 	v1.GET("/catalog/products/:slug", s.getProduct)
 	v1.GET("/search/autocomplete", s.autocomplete)
+
+	// --- clickstream ingestion (anonymous; navigator.sendBeacon) ---
+	v1.POST("/events", s.ingestEvents)
 
 	// --- cart (guest or signed-in; a cart_id cookie is minted on first use) ---
 	v1.GET("/cart", s.getCart)

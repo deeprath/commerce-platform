@@ -4,6 +4,7 @@ import { api, mediaUrl } from "../api";
 import { formatMoney } from "../types";
 import type { Product as P } from "../types";
 import { useCart } from "../cart-context";
+import { track } from "../track";
 
 export function Product() {
   const { slug = "" } = useParams();
@@ -20,7 +21,11 @@ export function Product() {
     setErr(null);
     api
       .product(slug)
-      .then((r) => !cancelled && setProduct(r.product))
+      .then((r) => {
+        if (cancelled) return;
+        setProduct(r.product);
+        track("product_view", { product_id: r.product.id, path: `/p/${slug}` });
+      })
       .catch(
         (e) =>
           !cancelled &&

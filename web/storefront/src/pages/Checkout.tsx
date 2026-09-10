@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type { Address } from "../api";
 import { useCart } from "../cart-context";
 import { formatMoney } from "../types";
+import { track, toMinor } from "../track";
 
 const BLANK: Address = {
   full_name: "Test User",
@@ -28,6 +29,14 @@ export function Checkout({ authed }: { authed: boolean }) {
   const [paymentId, setPaymentId] = useState("");
   const [orderId, setOrderId] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+
+  // One begin_checkout per visit to this page with a non-empty cart.
+  const beganCheckout = useRef(false);
+  useEffect(() => {
+    if (beganCheckout.current || !cart || cart.items.length === 0) return;
+    beganCheckout.current = true;
+    track("begin_checkout", { value_minor: toMinor(cart.total) });
+  }, [cart]);
 
   if (!authed) {
     return (
@@ -97,6 +106,9 @@ export function Checkout({ authed }: { authed: boolean }) {
         if (o.status !== "ORDER_STATUS_PENDING_PAYMENT") {
           setPhase("done");
           setMsg(o.status);
+          if (o.status === "ORDER_STATUS_CONFIRMED") {
+            track("purchase", { value_minor: toMinor(o.total) });
+          }
           void refresh();
           return;
         }

@@ -4,6 +4,7 @@ import { api } from "./api";
 import type { CartView } from "./types";
 import { Ctx } from "./cart-context";
 import type { CartCtx } from "./cart-context";
+import { track, toMinor } from "./track";
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartView | null>(null);
@@ -27,12 +28,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setCart(await fn());
   };
 
+  const add = async (id: string, qty = 1) => {
+    const next = await api.addToCart(id, qty);
+    setCart(next);
+    track("add_to_cart", { product_id: id, value_minor: toMinor(next.total) });
+  };
+
   const value: CartCtx = {
     cart,
     count: cart?.total_quantity ?? 0,
     loading,
     refresh,
-    add: (id, qty = 1) => wrap(() => api.addToCart(id, qty))(),
+    add,
     setQty: (id, qty) => wrap(() => api.setCartQuantity(id, qty))(),
     remove: (id) => wrap(() => api.removeFromCart(id))(),
     clear: () => wrap(() => api.clearCart())(),

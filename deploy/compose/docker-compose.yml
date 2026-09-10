@@ -581,6 +581,7 @@ services:
       PAYMENT_ADDR: payment:50051
       FULFILLMENT_ADDR: fulfillment:50051
       REVIEW_ADDR: review:50051
+      KAFKA_BROKERS: kafka:9092 # clickstream ingestion (POST /api/v1/events)
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: bff
       KEYCLOAK_CLIENT_SECRET: local-dev-bff-secret
@@ -597,6 +598,7 @@ services:
       payment: { condition: service_started }
       fulfillment: { condition: service_started }
       review: { condition: service_started }
+      kafka: { condition: service_healthy }
       keycloak: { condition: service_healthy }
       otel-collector: { condition: service_started }
     networks: [commerce]

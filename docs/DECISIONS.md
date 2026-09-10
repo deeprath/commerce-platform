@@ -1315,3 +1315,72 @@ Keeper+replicas in prod) and the Grafana image installs the ClickHouse plugin.
 `events` is append-only and derived — it is **not** backed up (rebuild by
 resetting the `analytics` consumer group to earliest; RUNBOOKS.md). The event →
 row mapping in `internal/consumer` must track new event fields to stay useful.
+
+---
+
+## ADR-034 — Browser clickstream ingestion: BFF beacon → Kafka → the analytics service
+
+**Status:** accepted · Phase 5
+
+**Context:** ADR-033 landed funnel/revenue analytics from *domain* events
+(`order.*` / `payment.*`). Those describe what the backend did, not what the
+shopper did on the way there — page views, product views, searches, and
+add-to-cart clicks that never became orders. Merchandising and conversion work
+needs that top-of-funnel behaviour.
+
+**Decision:**
+- **The storefront batches events and POSTs them to the BFF**
+  (`POST /api/v1/events`) with `navigator.sendBeacon`, so a beacon survives the
+  page being torn down mid-navigation. A tiny `web/storefront/src/track.ts`
+  queues events, flushes on a 2s timer / 20-event cap / `visibilitychange` /
+  `pagehide`. Six call sites: `page_view`, `product_view`, `search`,
+  `add_to_cart`, `begin_checkout`, `purchase`.
+- **The BFF is the only HTTP producer on the platform.** Every other service
+  emits through the transactional outbox; clickstream has no durability need — a
+  dropped beacon is an acceptable loss — so `internal/events` publishes directly
+  with `pkg/kafka`. The endpoint is anonymous (no sign-in), always answers `202`
+  for a parseable body, and `503` when no broker is configured.
+- **The BFF stamps the trustworthy fields.** The browser supplies `type`,
+  `path`, `referrer`, `product_id`, `query`; the BFF adds a first-party
+  `cid` cookie (opaque random UUID, HttpOnly, `SameSite=Lax`, ~180d — powers
+  unique-visitor counts, never joined to PII), an **unverified** `sub` lifted
+  from the bearer token if one rode along (analytics attribution only — a forged
+  sub only pollutes the forger's own funnel), a truncated User-Agent, and the
+  authoritative `received_at`. `path` is stripped to its path component and
+  `referrer` to its host.
+- **A closed `EventType` enum** in `commerce/clickstream/v1`. The BFF drops any
+  type it doesn't recognise rather than forwarding an open string, so adding a
+  kind is a coordinated proto change. `ClientEvent` is explicitly *not* a domain
+  event — no service owns it as state.
+- **A second consumer group in the analytics service** (`analytics-clickstream`,
+  separate from `analytics`) writes a dedicated `clickstream` MergeTree
+  (month-partitioned, 90-day TTL) plus a `clickstream_daily` `SummingMergeTree` +
+  MV. Separate group so a clickstream backlog or poison message can't stall
+  funnel ingestion, and so it scales on its own lag (its own KEDA trigger,
+  threshold 2000 vs the funnel's 500).
+- **The sink gained a parallel buffer.** `*clickhouse.Sink` now holds `buf`
+  (`events`) and `clickBuf` (`clickstream`); `Flush` drains both and they
+  re-queue / fail independently.
+
+**Alternatives:**
+- *Client → Kafka REST proxy / a dedicated collector service* — more moving
+  parts; the BFF already terminates the browser session, owns CORS + the auth
+  cookie, and is the natural enrichment point.
+- *Reuse the `analytics` consumer group / the `events` table* — a clickstream
+  poison message would then stall revenue ingestion, and the row shapes barely
+  overlap (`anonymous_id`/`session_id`/`path` vs `order_id`/`payment_id`).
+- *A GA4 / Segment / PostHog SDK straight from the browser* — third-party
+  origin, ad-blocker attrition, and the data leaves the platform; the point of
+  this project is to own the pipe.
+- *Verify the JWT in the BFF to get a trustworthy `owner_id`* — the BFF
+  deliberately doesn't verify tokens (ADR-011: the mesh / `ext-authz` do). Not
+  worth a JWKS client for an analytics attribution field.
+
+**Consequences:** a new **anonymous, unauthenticated** public endpoint —
+mitigations are the edge rate-limiter (`/api/v1/events` falls through to the
+generous default bucket), a 1 MiB body cap, a 20-event/beacon cap, and per-field
+length caps; it takes no action beyond appending to Kafka. `SECURITY.md §4.4`
+tracks it. The `cid` cookie is a new first-party identifier (documented; no
+consent banner in this project, which a real deployment in the EU would need).
+Clickstream volume is ~10–100× funnel volume — hence the separate group, the
+higher lag threshold, and `clickstream`'s shorter TTL.
