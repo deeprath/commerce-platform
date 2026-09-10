@@ -64,6 +64,7 @@ static_resources:
                                 "edge": [
                                   "Include @demo-conf",
                                   "Include @crs-setup-conf",
+                                  "SecAction \"id:900200,phase:1,nolog,pass,t:none,setvar:'tx.allowed_methods=GET HEAD POST PUT PATCH DELETE OPTIONS'\"",
                                   "Include @owasp_crs/*.conf",
                                   "SecRuleEngine On",
                                   "SecRequestBodyAccess On",

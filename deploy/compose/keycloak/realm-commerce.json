@@ -98,6 +98,16 @@
       "lastName": "User",
       "credentials": [{ "type": "password", "value": "adminuser123", "temporary": false }],
       "groups": ["/administrators"]
+    },
+    {
+      "username": "shopper2",
+      "email": "shopper2@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Second",
+      "lastName": "Shopper",
+      "credentials": [{ "type": "password", "value": "shopper2123", "temporary": false }],
+      "groups": ["/customers"]
     }
   ]
 }

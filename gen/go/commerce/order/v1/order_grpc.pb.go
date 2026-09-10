@@ -23,14 +23,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OrderService_CreateOrder_FullMethodName   = "/commerce.order.v1.OrderService/CreateOrder"
-	OrderService_GetOrder_FullMethodName      = "/commerce.order.v1.OrderService/GetOrder"
-	OrderService_ListOrders_FullMethodName    = "/commerce.order.v1.OrderService/ListOrders"
-	OrderService_CancelOrder_FullMethodName   = "/commerce.order.v1.OrderService/CancelOrder"
-	OrderService_RequestReturn_FullMethodName = "/commerce.order.v1.OrderService/RequestReturn"
-	OrderService_GetReturn_FullMethodName     = "/commerce.order.v1.OrderService/GetReturn"
-	OrderService_ListReturns_FullMethodName   = "/commerce.order.v1.OrderService/ListReturns"
-	OrderService_DecideReturn_FullMethodName  = "/commerce.order.v1.OrderService/DecideReturn"
+	OrderService_CreateOrder_FullMethodName      = "/commerce.order.v1.OrderService/CreateOrder"
+	OrderService_GetOrder_FullMethodName         = "/commerce.order.v1.OrderService/GetOrder"
+	OrderService_ListOrders_FullMethodName       = "/commerce.order.v1.OrderService/ListOrders"
+	OrderService_CancelOrder_FullMethodName      = "/commerce.order.v1.OrderService/CancelOrder"
+	OrderService_RequestReturn_FullMethodName    = "/commerce.order.v1.OrderService/RequestReturn"
+	OrderService_GetReturn_FullMethodName        = "/commerce.order.v1.OrderService/GetReturn"
+	OrderService_ListReturns_FullMethodName      = "/commerce.order.v1.OrderService/ListReturns"
+	OrderService_DecideReturn_FullMethodName     = "/commerce.order.v1.OrderService/DecideReturn"
+	OrderService_ShareOrder_FullMethodName       = "/commerce.order.v1.OrderService/ShareOrder"
+	OrderService_RevokeOrderShare_FullMethodName = "/commerce.order.v1.OrderService/RevokeOrderShare"
+	OrderService_ListOrderShares_FullMethodName  = "/commerce.order.v1.OrderService/ListOrderShares"
 )
 
 // OrderServiceClient is the client API for OrderService service.
@@ -60,6 +63,15 @@ type OrderServiceClient interface {
 	// order_manager role. On approval the order service refunds the returned
 	// amount and restocks the returned units.
 	DecideReturn(ctx context.Context, in *DecideReturnRequest, opts ...grpc.CallOption) (*Return, error)
+	// ShareOrder grants another user delegated read access to one of the
+	// caller's orders (a relationship tuple in OpenFGA). Owner-only; idempotent.
+	ShareOrder(ctx context.Context, in *ShareOrderRequest, opts ...grpc.CallOption) (*ShareOrderResponse, error)
+	// RevokeOrderShare removes a grant created by ShareOrder. Owner-only;
+	// idempotent (revoking a grant that isn't there succeeds).
+	RevokeOrderShare(ctx context.Context, in *RevokeOrderShareRequest, opts ...grpc.CallOption) (*RevokeOrderShareResponse, error)
+	// ListOrderShares lists the users an order is currently shared with.
+	// Owner-only.
+	ListOrderShares(ctx context.Context, in *ListOrderSharesRequest, opts ...grpc.CallOption) (*ListOrderSharesResponse, error)
 }
 
 type orderServiceClient struct {
@@ -150,6 +162,36 @@ func (c *orderServiceClient) DecideReturn(ctx context.Context, in *DecideReturnR
 	return out, nil
 }
 
+func (c *orderServiceClient) ShareOrder(ctx context.Context, in *ShareOrderRequest, opts ...grpc.CallOption) (*ShareOrderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ShareOrderResponse)
+	err := c.cc.Invoke(ctx, OrderService_ShareOrder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) RevokeOrderShare(ctx context.Context, in *RevokeOrderShareRequest, opts ...grpc.CallOption) (*RevokeOrderShareResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeOrderShareResponse)
+	err := c.cc.Invoke(ctx, OrderService_RevokeOrderShare_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *orderServiceClient) ListOrderShares(ctx context.Context, in *ListOrderSharesRequest, opts ...grpc.CallOption) (*ListOrderSharesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListOrderSharesResponse)
+	err := c.cc.Invoke(ctx, OrderService_ListOrderShares_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OrderServiceServer is the server API for OrderService service.
 // All implementations must embed UnimplementedOrderServiceServer
 // for forward compatibility.
@@ -177,6 +219,15 @@ type OrderServiceServer interface {
 	// order_manager role. On approval the order service refunds the returned
 	// amount and restocks the returned units.
 	DecideReturn(context.Context, *DecideReturnRequest) (*Return, error)
+	// ShareOrder grants another user delegated read access to one of the
+	// caller's orders (a relationship tuple in OpenFGA). Owner-only; idempotent.
+	ShareOrder(context.Context, *ShareOrderRequest) (*ShareOrderResponse, error)
+	// RevokeOrderShare removes a grant created by ShareOrder. Owner-only;
+	// idempotent (revoking a grant that isn't there succeeds).
+	RevokeOrderShare(context.Context, *RevokeOrderShareRequest) (*RevokeOrderShareResponse, error)
+	// ListOrderShares lists the users an order is currently shared with.
+	// Owner-only.
+	ListOrderShares(context.Context, *ListOrderSharesRequest) (*ListOrderSharesResponse, error)
 	mustEmbedUnimplementedOrderServiceServer()
 }
 
@@ -210,6 +261,15 @@ func (UnimplementedOrderServiceServer) ListReturns(context.Context, *ListReturns
 }
 func (UnimplementedOrderServiceServer) DecideReturn(context.Context, *DecideReturnRequest) (*Return, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DecideReturn not implemented")
+}
+func (UnimplementedOrderServiceServer) ShareOrder(context.Context, *ShareOrderRequest) (*ShareOrderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ShareOrder not implemented")
+}
+func (UnimplementedOrderServiceServer) RevokeOrderShare(context.Context, *RevokeOrderShareRequest) (*RevokeOrderShareResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RevokeOrderShare not implemented")
+}
+func (UnimplementedOrderServiceServer) ListOrderShares(context.Context, *ListOrderSharesRequest) (*ListOrderSharesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOrderShares not implemented")
 }
 func (UnimplementedOrderServiceServer) mustEmbedUnimplementedOrderServiceServer() {}
 func (UnimplementedOrderServiceServer) testEmbeddedByValue()                      {}
@@ -376,6 +436,60 @@ func _OrderService_DecideReturn_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OrderService_ShareOrder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ShareOrderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ShareOrder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ShareOrder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ShareOrder(ctx, req.(*ShareOrderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_RevokeOrderShare_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeOrderShareRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).RevokeOrderShare(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_RevokeOrderShare_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).RevokeOrderShare(ctx, req.(*RevokeOrderShareRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OrderService_ListOrderShares_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOrderSharesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OrderServiceServer).ListOrderShares(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OrderService_ListOrderShares_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OrderServiceServer).ListOrderShares(ctx, req.(*ListOrderSharesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OrderService_ServiceDesc is the grpc.ServiceDesc for OrderService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -414,6 +528,18 @@ var OrderService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DecideReturn",
 			Handler:    _OrderService_DecideReturn_Handler,
+		},
+		{
+			MethodName: "ShareOrder",
+			Handler:    _OrderService_ShareOrder_Handler,
+		},
+		{
+			MethodName: "RevokeOrderShare",
+			Handler:    _OrderService_RevokeOrderShare_Handler,
+		},
+		{
+			MethodName: "ListOrderShares",
+			Handler:    _OrderService_ListOrderShares_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

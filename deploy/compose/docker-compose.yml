@@ -133,6 +133,42 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  # Fine-grained (ReBAC / Zanzibar-style) authorization store. The order service
+  # uses it for delegated order sharing (ADR-035). One-shot migrate, then run.
+  openfga-migrate:
+    image: openfga/openfga:${OPENFGA_TAG}
+    command: ["migrate"]
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/openfga?sslmode=disable
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+    networks: [commerce]
+    logging: *default-logging
+
+  openfga:
+    image: openfga/openfga:${OPENFGA_TAG}
+    command: ["run"]
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/openfga?sslmode=disable
+      OPENFGA_LOG_FORMAT: json
+      OPENFGA_PLAYGROUND_ENABLED: "false"
+    ports:
+      - "8083:8080" # HTTP API
+      - "8082:8081" # gRPC API
+    depends_on:
+      postgres: { condition: service_healthy }
+      openfga-migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=localhost:8081"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [commerce]
+    logging: *default-logging
+
   minio:
     image: minio/minio:${MINIO_TAG}
     command: ["server", "/data", "--console-address", ":9001"]
@@ -468,11 +504,14 @@ services:
       PRICING_ADDR: pricing:50051
       INVENTORY_ADDR: inventory:50051
       PAYMENT_ADDR: payment:50051
+      OPENFGA_API_URL: http://openfga:8080 # delegated order sharing (ADR-035)
+      OPENFGA_STORE_NAME: commerce
     ports: ["50060:50051"]
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
       keycloak: { condition: service_healthy }
+      openfga: { condition: service_healthy }
       cart: { condition: service_started }
       pricing: { condition: service_started }
       inventory: { condition: service_started }

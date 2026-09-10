@@ -1384,3 +1384,77 @@ tracks it. The `cid` cookie is a new first-party identifier (documented; no
 consent banner in this project, which a real deployment in the EU would need).
 Clickstream volume is ~10–100× funnel volume — hence the separate group, the
 higher lag threshold, and `clickstream`'s shorter TTL.
+
+---
+
+## ADR-035 — Fine-grained authz: OpenFGA (ReBAC), additive, first used for order sharing
+
+**Status:** accepted · Phase 5
+
+**Context:** the platform's authorization is (1) Keycloak realm roles checked by
+`pkg/auth` (`RequireRole`) and (2) owner-scoping in each repository
+(`owner_id == principal.Subject`). That covers "customers see their own orders,
+operators see all" but not relationship rules: *this* customer lets *that*
+person view *this* order; later, a shop's staff manage that shop's catalog; a
+household shares an order history. §7.3 always flagged OpenFGA/Casbin as the
+"phase 2" layer for this.
+
+**Decision:**
+- **OpenFGA** (Zanzibar-style ReBAC), Postgres-backed, as a platform infra
+  component (compose service + app-of-apps `Application` in k8s). Not Casbin:
+  OpenFGA's tuple/relationship model and `list-objects` fit "who can see what"
+  directly, and it's a standalone service so the model isn't recompiled into
+  every binary.
+- **`pkg/fga` is a hand-rolled `net/http` client**, not the OpenFGA Go SDK. The
+  surface the platform needs — `Check` / `Write` / `Delete` / `Read` /
+  `ListObjects` plus a store+model bootstrap — is ~250 lines; the SDK would pull
+  a large dependency tree into the shared `pkg` module that every service
+  compiles. `pkg` deliberately stays lean (cf. `pkg/kafka` wrapping franz-go
+  rather than re-exporting it).
+- **Additive, never a bypass.** A `Check` only ever *grants* access on top of the
+  role gate and owner-scoping. Concretely for `GetOrder`: the owner/operator DB
+  path runs first; only if it returns `NotFound` and the caller is a plain
+  customer do we consult `order#viewer`. Any FGA error there leaves the
+  `NotFound` in place — **delegated access fails closed; a resource owner is
+  never blocked by an FGA outage.**
+- **The model lives with the service that owns it** (`services/order/internal/authz/`
+  — `model.fga` for humans, `model.json` for the server), not in `pkg`. `pkg/fga`
+  is model-agnostic. First model is deliberately tiny:
+  `type user` + `type order { define viewer: [user] }` — ownership is **not**
+  modelled in FGA, it stays in the order DB.
+- **First feature: order sharing.** `OrderService.ShareOrder(order_id,
+  grantee_subject)` / `RevokeOrderShare` / `ListOrderShares`, all **owner-only**
+  (operators don't bypass — sharing is a customer action on their own order),
+  all idempotent (re-share / re-revoke succeed). BFF exposes
+  `POST /api/v1/orders/:id/share`, `DELETE /api/v1/orders/:id/share/:grantee`,
+  `GET /api/v1/orders/:id/shares`.
+- **Bootstrap is best-effort-idempotent for the dev path:** `pkg/fga.New`
+  ensures a store named `commerce` and writes the embedded model if the store
+  has none. Production provisions the store + model out of band and the config
+  can pin a model id. Two order replicas racing to create the store is possible
+  and harmless (a duplicate empty store).
+
+**Alternatives:**
+- *Casbin embedded in the order service* — a policy file per service, recompiled
+  in; no `list-objects`; harder to share a model across services later.
+- *Model ownership in FGA too* (`define owner: [user]` + write a tuple on
+  `OrderCreated`) — couples order creation to an FGA write on the hot checkout
+  path for no gain; the DB already has `owner_id`.
+- *Fold sharing into `ListOrders`* (merge `ListObjects` results into the
+  paginated DB query) — messy pagination across two sources; a shared order is
+  fetched by id instead (like a shared link), `GetOrder` honours it.
+- *Put `pkg/fga` on the OpenFGA SDK* — dependency weight in the shared module;
+  revisit if a second service needs richer features (contextual tuples,
+  assertions).
+
+**Consequences:** a new infra dependency (OpenFGA + its Postgres database;
+`openfga` compose service with a one-shot `migrate`). The order service degrades
+gracefully without it (`OPENFGA_API_URL` unset → sharing RPCs return
+`Unavailable`, `GetOrder` is owner/operator-only). `SECURITY.md §2` records that
+FGA is additive and fails closed. The authorization model is now a second source
+of truth for a slice of access decisions — kept minimal and versioned in-repo to
+contain that. Building this also surfaced a latent WAF bug: CRS rule 911100
+blocked **every** `DELETE` (and `PUT`) at the edge — cart-item removal included,
+masked in compose only because the storefront's nginx proxies straight to the
+BFF. Fixed by widening `tx.allowed_methods` in both Coraza configs
+(`SECURITY.md §5.5`).

@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
@@ -93,6 +94,10 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	v1.POST("/checkout/confirm", s.confirmCheckout)
 	v1.GET("/orders", s.listOrders)
 	v1.GET("/orders/:id", s.getOrder)
+	// delegated read access (OpenFGA-backed) — owner-only
+	v1.POST("/orders/:id/share", s.shareOrder)
+	v1.DELETE("/orders/:id/share/:grantee", s.revokeOrderShare)
+	v1.GET("/orders/:id/shares", s.listOrderShares)
 
 	// --- admin (bearer/cookie forwarded; services enforce the role) ---
 	adm := v1.Group("/admin")
@@ -287,6 +292,17 @@ func (s *Server) confirmUpload(c echo.Context) error {
 		return fail(c, err)
 	}
 	return writeProto(c, 200, res)
+}
+
+func bindJSON(c echo.Context, v any) error {
+	body, err := readBody(c)
+	if err != nil {
+		return c.JSON(400, errs.HTTPError{Status: 400, Code: "INVALID_ARGUMENT", Reason: "BODY_READ"})
+	}
+	if err := json.Unmarshal(body, v); err != nil {
+		return c.JSON(400, errs.HTTPError{Status: 400, Code: "INVALID_ARGUMENT", Reason: "BAD_JSON"})
+	}
+	return nil
 }
 
 func bindProto(c echo.Context, m proto.Message) error {
