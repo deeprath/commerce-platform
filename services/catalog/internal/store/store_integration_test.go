@@ -177,3 +177,78 @@ func TestListKeysetPagination(t *testing.T) {
 		t.Fatalf("page3 should be the last one: len=%d next=%v", len(page3), next3)
 	}
 }
+
+func newShopDraft(t *testing.T, slug, shopID string) *domain.Product {
+	t.Helper()
+	p, err := domain.NewProduct(domain.NewProductInput{
+		Slug: slug, Title: "T " + slug, CategoryID: "cat-a",
+		Price: domain.Money{CurrencyCode: "USD", Units: 999}, ShopID: shopID, CreatedBy: "mgr-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestListByShop_AllStatusesFilteredAndPaginated(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+	const shopA, shopB = "aaaaaaaa-0000-0000-0000-000000000001", "bbbbbbbb-0000-0000-0000-000000000002"
+
+	// shop A: 3 products, mixed statuses. shop B: 1 (must not leak).
+	var aIDs []string
+	for i, sl := range []string{"sa-1", "sa-2", "sa-3"} {
+		c, err := st.Create(ctx, newShopDraft(t, sl, shopA))
+		if err != nil {
+			t.Fatalf("create %d: %v", i, err)
+		}
+		aIDs = append(aIDs, c.ID)
+		time.Sleep(2 * time.Millisecond)
+	}
+	if _, err := st.Create(ctx, newShopDraft(t, "sb-1", shopB)); err != nil {
+		t.Fatal(err)
+	}
+	// activate one, archive another.
+	act, _ := st.Get(ctx, aIDs[0])
+	_ = act.ApplyUpdate(act.Title, act.Description, act.CategoryID, act.ListPrice, act.MediaKeys, act.Attributes, domain.StatusActive)
+	if _, err := st.Update(ctx, act); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Archive(ctx, aIDs[1]); err != nil {
+		t.Fatal(err)
+	}
+
+	all, next, err := st.ListByShop(ctx, shopA, 10, nil)
+	if err != nil || len(all) != 3 || next != nil {
+		t.Fatalf("ListByShop(A): len=%d next=%v err=%v", len(all), next, err)
+	}
+	seen := map[domain.Status]int{}
+	for _, p := range all {
+		seen[p.Status]++
+		if p.ShopID != shopA {
+			t.Fatalf("shop B product leaked into A's list: %+v", p)
+		}
+	}
+	if seen[domain.StatusDraft] != 1 || seen[domain.StatusActive] != 1 || seen[domain.StatusArchived] != 1 {
+		t.Fatalf("status mix = %v, want one of each", seen)
+	}
+
+	// keyset pagination
+	p1, n1, err := st.ListByShop(ctx, shopA, 2, nil)
+	if err != nil || len(p1) != 2 || n1 == nil {
+		t.Fatalf("page 1: len=%d next=%v err=%v", len(p1), n1, err)
+	}
+	p2, n2, err := st.ListByShop(ctx, shopA, 2, n1)
+	if err != nil || len(p2) != 1 || n2 != nil {
+		t.Fatalf("page 2: len=%d next=%v err=%v", len(p2), n2, err)
+	}
+	if p1[0].ID == p2[0].ID {
+		t.Fatal("pages overlap")
+	}
+
+	// unknown shop -> empty
+	empty, _, err := st.ListByShop(ctx, "cccccccc-0000-0000-0000-000000000003", 10, nil)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("unknown shop: len=%d err=%v", len(empty), err)
+	}
+}
