@@ -196,6 +196,45 @@ func newClient(t *testing.T) *fga.Client {
 	return c
 }
 
+func TestCommerceModel_IsValidAndHasExpectedTypes(t *testing.T) {
+	var m struct {
+		SchemaVersion   string `json:"schema_version"`
+		TypeDefinitions []struct {
+			Type      string                     `json:"type"`
+			Relations map[string]json.RawMessage `json:"relations"`
+		} `json:"type_definitions"`
+	}
+	if err := json.Unmarshal([]byte(fga.CommerceModel), &m); err != nil {
+		t.Fatalf("CommerceModel is not valid JSON: %v", err)
+	}
+	if m.SchemaVersion != "1.1" {
+		t.Fatalf("schema_version = %q", m.SchemaVersion)
+	}
+	got := map[string][]string{}
+	for _, td := range m.TypeDefinitions {
+		var rels []string
+		for r := range td.Relations {
+			rels = append(rels, r)
+		}
+		got[td.Type] = rels
+	}
+	for _, typ := range []string{"user", "order", "shop"} {
+		if _, ok := got[typ]; !ok {
+			t.Errorf("model is missing type %q", typ)
+		}
+	}
+	if _, ok := got["order"]; !ok {
+		t.Fatal("no order type")
+	}
+	shopRels := map[string]bool{}
+	for _, r := range got["shop"] {
+		shopRels[r] = true
+	}
+	if !shopRels["owner"] || !shopRels["staff"] {
+		t.Fatalf("shop relations = %v, want owner+staff", got["shop"])
+	}
+}
+
 func TestNew_BootstrapsStoreAndModel(t *testing.T) {
 	c := newClient(t)
 	if c.StoreID() == "" || c.ModelID() == "" {

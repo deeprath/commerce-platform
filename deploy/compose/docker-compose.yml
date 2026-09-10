@@ -624,11 +624,14 @@ services:
       KAFKA_BROKERS: kafka:9092
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
       KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+      OPENFGA_API_URL: http://openfga:8080 # shop staff relationships (ADR-039)
+      OPENFGA_STORE_NAME: commerce
     ports: ["50065:50051"]
     depends_on:
       postgres: { condition: service_healthy }
       kafka: { condition: service_healthy }
       keycloak: { condition: service_healthy }
+      openfga: { condition: service_healthy }
       otel-collector: { condition: service_started }
     networks: [commerce]
     logging: *default-logging

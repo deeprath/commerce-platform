@@ -27,7 +27,6 @@ import (
 	"github.com/deeprath/commerce-platform/pkg/kafka"
 	"github.com/deeprath/commerce-platform/pkg/pgx"
 	"github.com/deeprath/commerce-platform/pkg/telemetry"
-	"github.com/deeprath/commerce-platform/services/order/internal/authz"
 	"github.com/deeprath/commerce-platform/services/order/internal/consumer"
 	"github.com/deeprath/commerce-platform/services/order/internal/grpcsvc"
 	"github.com/deeprath/commerce-platform/services/order/internal/saga"
@@ -115,12 +114,12 @@ func run() error {
 
 	// Delegated order sharing (OpenFGA). Optional: without an endpoint the
 	// sharing RPCs report Unavailable and GetOrder is owner/operator-only.
-	var sharer authz.Sharer
+	var sharer fga.API
 	if apiURL := config.String("OPENFGA_API_URL", ""); apiURL != "" {
 		fgaClient, ferr := fga.New(ctx, fga.Config{
 			APIURL:    apiURL,
-			StoreName: config.String("OPENFGA_STORE_NAME", authz.StoreName),
-			Model:     authz.Model,
+			StoreName: config.String("OPENFGA_STORE_NAME", fga.StoreName),
+			Model:     fga.CommerceModel,
 		})
 		if ferr != nil {
 			return ferr

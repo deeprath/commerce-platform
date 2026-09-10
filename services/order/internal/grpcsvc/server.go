@@ -9,7 +9,7 @@ import (
 	orderv1 "github.com/deeprath/commerce-platform/gen/go/commerce/order/v1"
 	"github.com/deeprath/commerce-platform/pkg/auth"
 	"github.com/deeprath/commerce-platform/pkg/errs"
-	"github.com/deeprath/commerce-platform/services/order/internal/authz"
+	"github.com/deeprath/commerce-platform/pkg/fga"
 	"github.com/deeprath/commerce-platform/services/order/internal/domain"
 	"github.com/deeprath/commerce-platform/services/order/internal/saga"
 	"github.com/deeprath/commerce-platform/services/order/internal/store"
@@ -22,11 +22,11 @@ type Server struct {
 	// fga grants delegated read access on top of owner-scoping. nil when no
 	// OpenFGA endpoint is configured — sharing RPCs then report Unavailable and
 	// GetOrder falls back to owner/operator access only.
-	fga authz.Sharer
+	fgac fga.API
 }
 
-func New(sg *saga.Orchestrator, st *store.Store, fgaClient authz.Sharer) *Server {
-	return &Server{saga: sg, store: st, fga: fgaClient}
+func New(sg *saga.Orchestrator, st *store.Store, fgaClient fga.API) *Server {
+	return &Server{saga: sg, store: st, fgac: fgaClient}
 }
 
 func (s *Server) CreateOrder(ctx context.Context, req *orderv1.CreateOrderRequest) (*orderv1.CreateOrderResponse, error) {
@@ -71,8 +71,8 @@ func (s *Server) GetOrder(ctx context.Context, req *orderv1.GetOrderRequest) (*o
 	// Not the owner and not an operator — allow it only if the order has been
 	// explicitly shared with this user (OpenFGA `viewer`). Any FGA failure
 	// leaves the original NotFound in place (fail closed).
-	if owner != "" && errs.Is(err, errs.KindNotFound) && s.fga != nil {
-		if allowed, cerr := s.fga.Check(ctx, authz.UserObject(p.Subject), authz.RelationViewer, authz.OrderObject(req.GetId())); cerr == nil && allowed {
+	if owner != "" && errs.Is(err, errs.KindNotFound) && s.fgac != nil {
+		if allowed, cerr := s.fgac.Check(ctx, fga.UserObject(p.Subject), fga.RelationViewer, fga.OrderObject(req.GetId())); cerr == nil && allowed {
 			shared, serr := s.store.Get(ctx, req.GetId(), "")
 			if serr != nil {
 				return nil, serr

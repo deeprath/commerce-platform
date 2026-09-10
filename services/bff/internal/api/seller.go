@@ -69,6 +69,56 @@ func (s *Server) getShop(c echo.Context) error {
 	return writeProto(c, 200, res)
 }
 
+type staffBody struct {
+	Subject string `json:"subject"`
+}
+
+// addShopStaff — POST /api/v1/seller/shops/me/staff {"subject":"<sub>"}
+func (s *Server) addShopStaff(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	var in staffBody
+	if err := bindJSON(c, &in); err != nil {
+		return err
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Seller.AddShopStaff(ctx, &sellerv1.AddShopStaffRequest{StaffSubject: in.Subject})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// removeShopStaff — DELETE /api/v1/seller/shops/me/staff/:subject
+func (s *Server) removeShopStaff(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Seller.RemoveShopStaff(ctx, &sellerv1.RemoveShopStaffRequest{StaffSubject: c.Param("subject")})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// listShopStaff — GET /api/v1/seller/shops/me/staff
+func (s *Server) listShopStaff(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Seller.ListShopStaff(ctx, &sellerv1.ListShopStaffRequest{})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
 // adminListShops — GET /api/v1/admin/seller/shops?status=
 func (s *Server) adminListShops(c echo.Context) error {
 	ctx, cancel := outCtx(c)

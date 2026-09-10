@@ -1639,3 +1639,57 @@ build on — a shop has to exist before anything can belong to it.
 realm role, and three new `commerce.shop.*` topics with no consumer yet — the
 downstream slices (catalog, search, analytics) will subscribe. `ARCHITECTURE.md
 §3` and `§14` track the arc.
+
+---
+
+## ADR-039 — Marketplace, slice 2: centralize the OpenFGA model; shop staff (`shop#staff`)
+
+**Status:** accepted · Phase 5 · builds on ADR-035, ADR-038
+
+**Context:** ADR-035 put the OpenFGA authorization model in
+`services/order/internal/authz/` — fine while `order` was the only service using
+FGA. Now `seller` needs `shop#staff` (a shop owner delegating catalog-management
+access to teammates), and later slices add `product#manager`. An OpenFGA store
+has exactly **one** authorization model (versioned); two services each writing
+their own on startup would fight — `pkg/fga.New` takes "latest", so whichever
+service booted last wins and the other's types vanish.
+
+**Decision:**
+- **One canonical model, in `pkg/fga`** (`pkg/fga/model.json`, embedded as
+  `fga.CommerceModel`), the union of every service's needs, grown additively as
+  slices land. `services/order/internal/authz/` is deleted; the shared
+  `fga.API` interface, `fga.StoreName`, object-id builders (`UserObject`,
+  `OrderObject`, `ShopObject`) and relation constants move to `pkg/fga`. `order`
+  is unchanged in behaviour — the model just gains `shop` alongside `order`.
+- **Model addition:**
+  ```
+  type shop
+    relations
+      define owner: [user]
+      define staff: [user] or owner
+  ```
+  `staff` unions the direct grant with `owner`, so the owner is implicitly staff
+  and a single `Check(user, staff, shop:X)` covers both — which is what the
+  per-shop catalog slice will call.
+- **`seller` wires `pkg/fga`** (optional, like `order` — no `OPENFGA_API_URL` ⇒
+  the staff RPCs return `Unavailable`). `CreateShop` writes `shop#owner`
+  best-effort (a lost write self-heals on the owner's next staff op).
+  `AddShopStaff` / `RemoveShopStaff` / `ListShopStaff` are **owner-only** actions
+  on the caller's *own* shop (resolved via the DB `owner_id`, operators don't
+  bypass), idempotent. BFF: `GET/POST /api/v1/seller/shops/me/staff`,
+  `DELETE …/staff/:subject`.
+
+**Alternatives:**
+- *A store per service* — loses the whole point of ReBAC (cross-type relations:
+  `product#manager` needs both `product#shop` and `shop#staff` in one model).
+- *Keep the model in `order` and have `seller` import it* — makes `order` a
+  dependency of `seller` for no reason; `pkg/fga` is already the shared home.
+- *Model ownership without the `or owner` union* (`seller` writes both an
+  `owner` and a `staff` tuple for the owner) — two tuples to keep in sync; the
+  union is one line and self-consistent.
+
+**Consequences:** `pkg/fga` now carries the model (a `//go:embed`), so a model
+change is a `pkg` change that every FGA-using service picks up on its next
+deploy — intentional: the model is one artifact. Model edits are still
+append-only in practice (OpenFGA versions them; `New` takes the latest). The
+`seller` service gains an OpenFGA dependency and degrades without it.

@@ -636,6 +636,254 @@ func (x *SuspendShopRequest) GetReason() string {
 	return ""
 }
 
+type AddShopStaffRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StaffSubject  string                 `protobuf:"bytes,1,opt,name=staff_subject,json=staffSubject,proto3" json:"staff_subject,omitempty"` // Keycloak sub of the user to add
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddShopStaffRequest) Reset() {
+	*x = AddShopStaffRequest{}
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddShopStaffRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddShopStaffRequest) ProtoMessage() {}
+
+func (x *AddShopStaffRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddShopStaffRequest.ProtoReflect.Descriptor instead.
+func (*AddShopStaffRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *AddShopStaffRequest) GetStaffSubject() string {
+	if x != nil {
+		return x.StaffSubject
+	}
+	return ""
+}
+
+type AddShopStaffResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AddShopStaffResponse) Reset() {
+	*x = AddShopStaffResponse{}
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AddShopStaffResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AddShopStaffResponse) ProtoMessage() {}
+
+func (x *AddShopStaffResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AddShopStaffResponse.ProtoReflect.Descriptor instead.
+func (*AddShopStaffResponse) Descriptor() ([]byte, []int) {
+	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{10}
+}
+
+type RemoveShopStaffRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StaffSubject  string                 `protobuf:"bytes,1,opt,name=staff_subject,json=staffSubject,proto3" json:"staff_subject,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveShopStaffRequest) Reset() {
+	*x = RemoveShopStaffRequest{}
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveShopStaffRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveShopStaffRequest) ProtoMessage() {}
+
+func (x *RemoveShopStaffRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveShopStaffRequest.ProtoReflect.Descriptor instead.
+func (*RemoveShopStaffRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *RemoveShopStaffRequest) GetStaffSubject() string {
+	if x != nil {
+		return x.StaffSubject
+	}
+	return ""
+}
+
+type RemoveShopStaffResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveShopStaffResponse) Reset() {
+	*x = RemoveShopStaffResponse{}
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveShopStaffResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveShopStaffResponse) ProtoMessage() {}
+
+func (x *RemoveShopStaffResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveShopStaffResponse.ProtoReflect.Descriptor instead.
+func (*RemoveShopStaffResponse) Descriptor() ([]byte, []int) {
+	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{12}
+}
+
+type ListShopStaffRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListShopStaffRequest) Reset() {
+	*x = ListShopStaffRequest{}
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListShopStaffRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListShopStaffRequest) ProtoMessage() {}
+
+func (x *ListShopStaffRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListShopStaffRequest.ProtoReflect.Descriptor instead.
+func (*ListShopStaffRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{13}
+}
+
+type ListShopStaffResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OwnerSubject  string                 `protobuf:"bytes,1,opt,name=owner_subject,json=ownerSubject,proto3" json:"owner_subject,omitempty"`
+	StaffSubjects []string               `protobuf:"bytes,2,rep,name=staff_subjects,json=staffSubjects,proto3" json:"staff_subjects,omitempty"` // does not include the owner
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListShopStaffResponse) Reset() {
+	*x = ListShopStaffResponse{}
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListShopStaffResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListShopStaffResponse) ProtoMessage() {}
+
+func (x *ListShopStaffResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListShopStaffResponse.ProtoReflect.Descriptor instead.
+func (*ListShopStaffResponse) Descriptor() ([]byte, []int) {
+	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListShopStaffResponse) GetOwnerSubject() string {
+	if x != nil {
+		return x.OwnerSubject
+	}
+	return ""
+}
+
+func (x *ListShopStaffResponse) GetStaffSubjects() []string {
+	if x != nil {
+		return x.StaffSubjects
+	}
+	return nil
+}
+
 type ShopCreated struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ShopId        string                 `protobuf:"bytes,1,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
@@ -649,7 +897,7 @@ type ShopCreated struct {
 
 func (x *ShopCreated) Reset() {
 	*x = ShopCreated{}
-	mi := &file_commerce_seller_v1_seller_proto_msgTypes[9]
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -661,7 +909,7 @@ func (x *ShopCreated) String() string {
 func (*ShopCreated) ProtoMessage() {}
 
 func (x *ShopCreated) ProtoReflect() protoreflect.Message {
-	mi := &file_commerce_seller_v1_seller_proto_msgTypes[9]
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -674,7 +922,7 @@ func (x *ShopCreated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShopCreated.ProtoReflect.Descriptor instead.
 func (*ShopCreated) Descriptor() ([]byte, []int) {
-	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{9}
+	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ShopCreated) GetShopId() string {
@@ -724,7 +972,7 @@ type ShopActivated struct {
 
 func (x *ShopActivated) Reset() {
 	*x = ShopActivated{}
-	mi := &file_commerce_seller_v1_seller_proto_msgTypes[10]
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -736,7 +984,7 @@ func (x *ShopActivated) String() string {
 func (*ShopActivated) ProtoMessage() {}
 
 func (x *ShopActivated) ProtoReflect() protoreflect.Message {
-	mi := &file_commerce_seller_v1_seller_proto_msgTypes[10]
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -749,7 +997,7 @@ func (x *ShopActivated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShopActivated.ProtoReflect.Descriptor instead.
 func (*ShopActivated) Descriptor() ([]byte, []int) {
-	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{10}
+	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ShopActivated) GetShopId() string {
@@ -792,7 +1040,7 @@ type ShopSuspended struct {
 
 func (x *ShopSuspended) Reset() {
 	*x = ShopSuspended{}
-	mi := &file_commerce_seller_v1_seller_proto_msgTypes[11]
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -804,7 +1052,7 @@ func (x *ShopSuspended) String() string {
 func (*ShopSuspended) ProtoMessage() {}
 
 func (x *ShopSuspended) ProtoReflect() protoreflect.Message {
-	mi := &file_commerce_seller_v1_seller_proto_msgTypes[11]
+	mi := &file_commerce_seller_v1_seller_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -817,7 +1065,7 @@ func (x *ShopSuspended) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShopSuspended.ProtoReflect.Descriptor instead.
 func (*ShopSuspended) Descriptor() ([]byte, []int) {
-	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{11}
+	return file_commerce_seller_v1_seller_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ShopSuspended) GetShopId() string {
@@ -891,7 +1139,17 @@ const file_commerce_seller_v1_seller_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"<\n" +
 	"\x12SuspendShopRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x8a\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\":\n" +
+	"\x13AddShopStaffRequest\x12#\n" +
+	"\rstaff_subject\x18\x01 \x01(\tR\fstaffSubject\"\x16\n" +
+	"\x14AddShopStaffResponse\"=\n" +
+	"\x16RemoveShopStaffRequest\x12#\n" +
+	"\rstaff_subject\x18\x01 \x01(\tR\fstaffSubject\"\x19\n" +
+	"\x17RemoveShopStaffResponse\"\x16\n" +
+	"\x14ListShopStaffRequest\"c\n" +
+	"\x15ListShopStaffResponse\x12#\n" +
+	"\rowner_subject\x18\x01 \x01(\tR\fownerSubject\x12%\n" +
+	"\x0estaff_subjects\x18\x02 \x03(\tR\rstaffSubjects\"\x8a\x01\n" +
 	"\vShopCreated\x12\x17\n" +
 	"\ashop_id\x18\x01 \x01(\tR\x06shopId\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\x12\x12\n" +
@@ -916,7 +1174,7 @@ const file_commerce_seller_v1_seller_proto_rawDesc = "" +
 	"\x17SHOP_STATUS_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aSHOP_STATUS_PENDING_REVIEW\x10\x01\x12\x16\n" +
 	"\x12SHOP_STATUS_ACTIVE\x10\x02\x12\x19\n" +
-	"\x15SHOP_STATUS_SUSPENDED\x10\x032\xc1\x04\n" +
+	"\x15SHOP_STATUS_SUSPENDED\x10\x032\xf6\x06\n" +
 	"\rSellerService\x12M\n" +
 	"\n" +
 	"CreateShop\x12%.commerce.seller.v1.CreateShopRequest\x1a\x18.commerce.seller.v1.Shop\x12K\n" +
@@ -926,7 +1184,10 @@ const file_commerce_seller_v1_seller_proto_rawDesc = "" +
 	"UpdateShop\x12%.commerce.seller.v1.UpdateShopRequest\x1a\x18.commerce.seller.v1.Shop\x12X\n" +
 	"\tListShops\x12$.commerce.seller.v1.ListShopsRequest\x1a%.commerce.seller.v1.ListShopsResponse\x12Q\n" +
 	"\fActivateShop\x12'.commerce.seller.v1.ActivateShopRequest\x1a\x18.commerce.seller.v1.Shop\x12O\n" +
-	"\vSuspendShop\x12&.commerce.seller.v1.SuspendShopRequest\x1a\x18.commerce.seller.v1.ShopB\xd9\x01\n" +
+	"\vSuspendShop\x12&.commerce.seller.v1.SuspendShopRequest\x1a\x18.commerce.seller.v1.Shop\x12a\n" +
+	"\fAddShopStaff\x12'.commerce.seller.v1.AddShopStaffRequest\x1a(.commerce.seller.v1.AddShopStaffResponse\x12j\n" +
+	"\x0fRemoveShopStaff\x12*.commerce.seller.v1.RemoveShopStaffRequest\x1a+.commerce.seller.v1.RemoveShopStaffResponse\x12d\n" +
+	"\rListShopStaff\x12(.commerce.seller.v1.ListShopStaffRequest\x1a).commerce.seller.v1.ListShopStaffResponseB\xd9\x01\n" +
 	"\x16com.commerce.seller.v1B\vSellerProtoP\x01ZHgithub.com/deeprath/commerce-platform/gen/go/commerce/seller/v1;sellerv1\xa2\x02\x03CSX\xaa\x02\x12Commerce.Seller.V1\xca\x02\x12Commerce\\Seller\\V1\xe2\x02\x1eCommerce\\Seller\\V1\\GPBMetadata\xea\x02\x14Commerce::Seller::V1b\x06proto3"
 
 var (
@@ -942,30 +1203,36 @@ func file_commerce_seller_v1_seller_proto_rawDescGZIP() []byte {
 }
 
 var file_commerce_seller_v1_seller_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_commerce_seller_v1_seller_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_commerce_seller_v1_seller_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_commerce_seller_v1_seller_proto_goTypes = []any{
-	(ShopStatus)(0),             // 0: commerce.seller.v1.ShopStatus
-	(*Shop)(nil),                // 1: commerce.seller.v1.Shop
-	(*CreateShopRequest)(nil),   // 2: commerce.seller.v1.CreateShopRequest
-	(*GetMyShopRequest)(nil),    // 3: commerce.seller.v1.GetMyShopRequest
-	(*GetShopRequest)(nil),      // 4: commerce.seller.v1.GetShopRequest
-	(*UpdateShopRequest)(nil),   // 5: commerce.seller.v1.UpdateShopRequest
-	(*ListShopsRequest)(nil),    // 6: commerce.seller.v1.ListShopsRequest
-	(*ListShopsResponse)(nil),   // 7: commerce.seller.v1.ListShopsResponse
-	(*ActivateShopRequest)(nil), // 8: commerce.seller.v1.ActivateShopRequest
-	(*SuspendShopRequest)(nil),  // 9: commerce.seller.v1.SuspendShopRequest
-	(*ShopCreated)(nil),         // 10: commerce.seller.v1.ShopCreated
-	(*ShopActivated)(nil),       // 11: commerce.seller.v1.ShopActivated
-	(*ShopSuspended)(nil),       // 12: commerce.seller.v1.ShopSuspended
-	(*v1.PageRequest)(nil),      // 13: commerce.common.v1.PageRequest
-	(*v1.PageResponse)(nil),     // 14: commerce.common.v1.PageResponse
+	(ShopStatus)(0),                 // 0: commerce.seller.v1.ShopStatus
+	(*Shop)(nil),                    // 1: commerce.seller.v1.Shop
+	(*CreateShopRequest)(nil),       // 2: commerce.seller.v1.CreateShopRequest
+	(*GetMyShopRequest)(nil),        // 3: commerce.seller.v1.GetMyShopRequest
+	(*GetShopRequest)(nil),          // 4: commerce.seller.v1.GetShopRequest
+	(*UpdateShopRequest)(nil),       // 5: commerce.seller.v1.UpdateShopRequest
+	(*ListShopsRequest)(nil),        // 6: commerce.seller.v1.ListShopsRequest
+	(*ListShopsResponse)(nil),       // 7: commerce.seller.v1.ListShopsResponse
+	(*ActivateShopRequest)(nil),     // 8: commerce.seller.v1.ActivateShopRequest
+	(*SuspendShopRequest)(nil),      // 9: commerce.seller.v1.SuspendShopRequest
+	(*AddShopStaffRequest)(nil),     // 10: commerce.seller.v1.AddShopStaffRequest
+	(*AddShopStaffResponse)(nil),    // 11: commerce.seller.v1.AddShopStaffResponse
+	(*RemoveShopStaffRequest)(nil),  // 12: commerce.seller.v1.RemoveShopStaffRequest
+	(*RemoveShopStaffResponse)(nil), // 13: commerce.seller.v1.RemoveShopStaffResponse
+	(*ListShopStaffRequest)(nil),    // 14: commerce.seller.v1.ListShopStaffRequest
+	(*ListShopStaffResponse)(nil),   // 15: commerce.seller.v1.ListShopStaffResponse
+	(*ShopCreated)(nil),             // 16: commerce.seller.v1.ShopCreated
+	(*ShopActivated)(nil),           // 17: commerce.seller.v1.ShopActivated
+	(*ShopSuspended)(nil),           // 18: commerce.seller.v1.ShopSuspended
+	(*v1.PageRequest)(nil),          // 19: commerce.common.v1.PageRequest
+	(*v1.PageResponse)(nil),         // 20: commerce.common.v1.PageResponse
 }
 var file_commerce_seller_v1_seller_proto_depIdxs = []int32{
 	0,  // 0: commerce.seller.v1.Shop.status:type_name -> commerce.seller.v1.ShopStatus
-	13, // 1: commerce.seller.v1.ListShopsRequest.page:type_name -> commerce.common.v1.PageRequest
+	19, // 1: commerce.seller.v1.ListShopsRequest.page:type_name -> commerce.common.v1.PageRequest
 	0,  // 2: commerce.seller.v1.ListShopsRequest.status:type_name -> commerce.seller.v1.ShopStatus
 	1,  // 3: commerce.seller.v1.ListShopsResponse.shops:type_name -> commerce.seller.v1.Shop
-	14, // 4: commerce.seller.v1.ListShopsResponse.page:type_name -> commerce.common.v1.PageResponse
+	20, // 4: commerce.seller.v1.ListShopsResponse.page:type_name -> commerce.common.v1.PageResponse
 	2,  // 5: commerce.seller.v1.SellerService.CreateShop:input_type -> commerce.seller.v1.CreateShopRequest
 	3,  // 6: commerce.seller.v1.SellerService.GetMyShop:input_type -> commerce.seller.v1.GetMyShopRequest
 	4,  // 7: commerce.seller.v1.SellerService.GetShop:input_type -> commerce.seller.v1.GetShopRequest
@@ -973,15 +1240,21 @@ var file_commerce_seller_v1_seller_proto_depIdxs = []int32{
 	6,  // 9: commerce.seller.v1.SellerService.ListShops:input_type -> commerce.seller.v1.ListShopsRequest
 	8,  // 10: commerce.seller.v1.SellerService.ActivateShop:input_type -> commerce.seller.v1.ActivateShopRequest
 	9,  // 11: commerce.seller.v1.SellerService.SuspendShop:input_type -> commerce.seller.v1.SuspendShopRequest
-	1,  // 12: commerce.seller.v1.SellerService.CreateShop:output_type -> commerce.seller.v1.Shop
-	1,  // 13: commerce.seller.v1.SellerService.GetMyShop:output_type -> commerce.seller.v1.Shop
-	1,  // 14: commerce.seller.v1.SellerService.GetShop:output_type -> commerce.seller.v1.Shop
-	1,  // 15: commerce.seller.v1.SellerService.UpdateShop:output_type -> commerce.seller.v1.Shop
-	7,  // 16: commerce.seller.v1.SellerService.ListShops:output_type -> commerce.seller.v1.ListShopsResponse
-	1,  // 17: commerce.seller.v1.SellerService.ActivateShop:output_type -> commerce.seller.v1.Shop
-	1,  // 18: commerce.seller.v1.SellerService.SuspendShop:output_type -> commerce.seller.v1.Shop
-	12, // [12:19] is the sub-list for method output_type
-	5,  // [5:12] is the sub-list for method input_type
+	10, // 12: commerce.seller.v1.SellerService.AddShopStaff:input_type -> commerce.seller.v1.AddShopStaffRequest
+	12, // 13: commerce.seller.v1.SellerService.RemoveShopStaff:input_type -> commerce.seller.v1.RemoveShopStaffRequest
+	14, // 14: commerce.seller.v1.SellerService.ListShopStaff:input_type -> commerce.seller.v1.ListShopStaffRequest
+	1,  // 15: commerce.seller.v1.SellerService.CreateShop:output_type -> commerce.seller.v1.Shop
+	1,  // 16: commerce.seller.v1.SellerService.GetMyShop:output_type -> commerce.seller.v1.Shop
+	1,  // 17: commerce.seller.v1.SellerService.GetShop:output_type -> commerce.seller.v1.Shop
+	1,  // 18: commerce.seller.v1.SellerService.UpdateShop:output_type -> commerce.seller.v1.Shop
+	7,  // 19: commerce.seller.v1.SellerService.ListShops:output_type -> commerce.seller.v1.ListShopsResponse
+	1,  // 20: commerce.seller.v1.SellerService.ActivateShop:output_type -> commerce.seller.v1.Shop
+	1,  // 21: commerce.seller.v1.SellerService.SuspendShop:output_type -> commerce.seller.v1.Shop
+	11, // 22: commerce.seller.v1.SellerService.AddShopStaff:output_type -> commerce.seller.v1.AddShopStaffResponse
+	13, // 23: commerce.seller.v1.SellerService.RemoveShopStaff:output_type -> commerce.seller.v1.RemoveShopStaffResponse
+	15, // 24: commerce.seller.v1.SellerService.ListShopStaff:output_type -> commerce.seller.v1.ListShopStaffResponse
+	15, // [15:25] is the sub-list for method output_type
+	5,  // [5:15] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -1002,7 +1275,7 @@ func file_commerce_seller_v1_seller_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_commerce_seller_v1_seller_proto_rawDesc), len(file_commerce_seller_v1_seller_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

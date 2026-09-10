@@ -87,10 +87,11 @@ replication (for Debezium CDC) are worth more here.
 
 - **Keycloak** — OIDC provider, user store, RBAC source of truth. See §7.
 - **OpenFGA** *(Phase 5)* — relationship-based (ReBAC / Zanzibar-style) authorization
-  store, Postgres-backed. Holds fine-grained grants that don't fit realm roles or
-  owner-scoping — currently order sharing (`order#viewer`). Consulted by the `order` service
-  via `pkg/fga`; **additive only**, never a bypass. Provisioned by the platform app-of-apps
-  in k8s. See §7.3 and [DECISIONS.md ADR-035](DECISIONS.md).
+  store, Postgres-backed. One shared store, **one canonical model** (`pkg/fga/model.json`)
+  grown additively. Holds fine-grained grants that don't fit realm roles or owner-scoping:
+  order sharing (`order#viewer`) and marketplace shop staff (`shop#staff`). Consulted by the
+  `order` and `seller` services via `pkg/fga`; **additive only**, never a bypass. Provisioned
+  by the platform app-of-apps in k8s. See §7.3 and [DECISIONS.md ADR-035 / ADR-039](DECISIONS.md).
 - **CDN** *(Phase 5)* — product-media reads are served through a caching edge, not from
   MinIO directly. `media` builds canonical URLs from `MEDIA_PUBLIC_BASE_URL`, so this is a
   config seam: production points it at a managed CDN (CloudFront / Fastly) with the object
@@ -135,7 +136,7 @@ are drawn so that the **critical checkout path** touches as few services as poss
 | **fulfillment** | Shipments (one per order in v1), sandbox carrier, tracking | `GetShipment`, `ListShipments`, `MarkShipped`, `MarkDelivered`, `CancelShipment` | `fulfillment.shipment_created`, `fulfillment.shipped`, `fulfillment.delivered`, `fulfillment.cancelled` | `order.confirmed` |
 | **notification** | Transactional notifications: templates, delivery history, sandbox channel | `ListNotifications`, `SendTest` | `notification.sent` | `order.created`, `order.confirmed`, `order.cancelled`, `order.fulfilled`, `fulfillment.shipped`, `fulfillment.delivered` |
 | **review** | Product ratings & reviews, verified-purchase index, moderation | `CreateReview`, `ListReviews`, `GetRatingSummary`, `ModerateReview` | `review.published`, `review.hidden` | `order.confirmed` (verified-purchase index) |
-| **seller** | Marketplace **shop aggregate** + onboarding lifecycle (PENDING_REVIEW → ACTIVE → SUSPENDED). One shop per user; operator (`shop_admin`) activates / suspends. | `CreateShop`, `GetMyShop`, `GetShop`, `UpdateShop`, `ListShops`, `ActivateShop`, `SuspendShop` | `shop.created`, `shop.activated`, `shop.suspended` | — |
+| **seller** | Marketplace **shop aggregate** + onboarding lifecycle (PENDING_REVIEW → ACTIVE → SUSPENDED) + **shop staff** (OpenFGA `shop#staff`). One shop per user; operator (`shop_admin`) activates / suspends. | `CreateShop`, `GetMyShop`, `GetShop`, `UpdateShop`, `ListShops`, `ActivateShop`, `SuspendShop`, `AddShopStaff`, `RemoveShopStaff`, `ListShopStaff` | `shop.created`, `shop.activated`, `shop.suspended` | — |
 | **analytics** | OLAP sink — flattens domain events into ClickHouse for funnel + revenue analytics, and browser `clickstream.tracked` events into the `clickstream` table. Consumer-only (no gRPC API); two consumer groups. | — (health only) | — | `order.{created,confirmed,cancelled,fulfilled}`, `payment.{authorized,failed,refunded}`, `clickstream.tracked` |
 | **media** | Upload intake (MinIO), image derivatives, AV scan, CDN origin | `CreateUploadURL`, `GetAsset` | `media.asset_ready`, `media.asset_rejected` | — |
 
@@ -385,15 +386,18 @@ BFF  ──sets httpOnly, Secure, SameSite=Lax cookie (access+refresh)──▶ 
   - `RequireRole("order_manager")` / `RequireAnyRole(...)` guards per RPC / route.
 - **Resource-level** checks (e.g. "a customer may only read *their own* order") are enforced
   in each repository layer by `owner_id == principal.Subject`, never by role alone.
-- **Fine-grained layer (OpenFGA, ReBAC):** relationship tuples in an OpenFGA store
-  (`pkg/fga` — a thin `net/http` client; the model lives with the service that owns it).
-  It is strictly **additive** — a `Check` only ever grants access *on top of* the role gate
-  and owner-scoping above, so an OpenFGA outage fails closed for delegated access and never
-  blocks a resource owner. First use (Phase 5): **order sharing** — an order's owner grants
-  another user `viewer` on `order:<id>` (`OrderService.ShareOrder` / `RevokeOrderShare` /
-  `ListOrderShares`); `GetOrder` consults the tuple only after owner/operator access has
-  already been denied. Same mechanism generalises to team accounts / a marketplace's
-  per-shop staff. See [DECISIONS.md ADR-035](DECISIONS.md).
+- **Fine-grained layer (OpenFGA, ReBAC):** relationship tuples in one shared OpenFGA store
+  (`pkg/fga` — a thin `net/http` client; **one canonical model**, `pkg/fga/model.json`,
+  grown additively as slices land). It is strictly **additive** — a `Check` only ever grants
+  access *on top of* the role gate and owner-scoping above, so an OpenFGA outage fails
+  closed for delegated access and never blocks a resource owner. Uses so far:
+  - **order sharing** — an order's owner grants another user `order#viewer`
+    (`OrderService.ShareOrder` / `RevokeOrderShare` / `ListOrderShares`); `GetOrder` consults
+    the tuple only after owner/operator access has been denied. [ADR-035](DECISIONS.md).
+  - **shop staff** — a shop owner grants `shop#staff` (`= [user] or owner`) to teammates
+    (`SellerService.AddShopStaff` / `RemoveShopStaff` / `ListShopStaff`); `seller` writes
+    `shop#owner` on `CreateShop`. Per-shop catalog authorization keys off `shop#staff` in a
+    later marketplace slice. [ADR-039](DECISIONS.md).
 - The **ingress gateway + `ext-authz` service** do coarse edge checks (is there a token at
   all, is it structurally valid and unexpired, is the route admin-only) and the mesh's
   `AuthorizationPolicy` enforces which service may call which — but the **authoritative**
@@ -809,4 +813,4 @@ See [`SECURITY.md`](SECURITY.md) for job-by-job policy and the "did it actually 
 | **2 — Cart & checkout** | `cart`, `pricing`, `inventory`, `order`, `payment` (PSP sandbox), the saga; `waypoint` proxies + `AuthorizationPolicy` for `order`/`payment`/`inventory`; ✅ checkout-funnel dashboard *(Phase 4)*; ✅ k6 load test (`perf/checkout-funnel.js` + weekly `perf.yml`). |
 | **3 — Fulfillment & comms** | ✅ `fulfillment`, `notification`, `review`; ✅ RMA/returns + partial refunds; ✅ admin API (operator mode on the list RPCs + BFF `/admin/*`); ✅ admin **SPA** (`web/admin`) + admin `HTTPRoute` on `admin.*` restricted by a source-IP `AuthorizationPolicy`. |
 | **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; ✅ per-service **NetworkPolicies** (default-deny + call-graph-derived allows) + tightened per-service **`AuthorizationPolicy`** (SPIFFE identity, method-scoped for `payment`); ✅ **KEDA `ScaledObject`s** (gRPC RPS / Kafka lag / CPU per service); ✅ **progressive delivery** — Argo Rollouts canary for the BFF: weighted `bff-storefront` `HTTPRoute` via the Gateway API traffic-router plugin, traffic-mirror shadow step, background `AnalysisRun` on checkout health that auto-aborts; ✅ **DR runbooks** ([`RUNBOOKS.md`](RUNBOOKS.md) + `infra/dr/` scripts; Postgres + MinIO drills run against the live stack); pen-test remediation *(needs an engagement)*. |
-| **5 — Scale/optional** | ✅ ClickHouse analytics (`analytics` service → `events` + funnel MVs; Grafana ClickHouse datasource + funnel dashboard); ✅ browser clickstream ingestion (storefront beacon → BFF `POST /api/v1/events` → `commerce.clickstream.tracked` → `analytics` second consumer group → `clickstream` table + dashboard); ✅ OpenFGA fine-grained authz (ReBAC store + `pkg/fga`; delegated order sharing — `OrderService.ShareOrder`/`RevokeOrderShare`/`ListOrderShares`, additive over role + owner checks); ✅ CDN for product media (served-URL host = caching edge; nginx `proxy_cache` stand-in in compose + `cdn-cache` dashboard; managed CDN in prod); ✅ multi-zone (zone-spread pods with `DoNotSchedule` for bff/order/payment, `maxUnavailable: 34%` PDBs, per-service Istio locality-LB `DestinationRule` with zone failover; RB-9); **marketplace/multi-seller model** — *in progress*: ✅ `seller` service (shop aggregate + onboarding, `shop.*` events, `shop_admin` role); then per-shop catalog ownership + OpenFGA shop-staff, split orders, split payments/payouts, seller dashboard. |
+| **5 — Scale/optional** | ✅ ClickHouse analytics (`analytics` service → `events` + funnel MVs; Grafana ClickHouse datasource + funnel dashboard); ✅ browser clickstream ingestion (storefront beacon → BFF `POST /api/v1/events` → `commerce.clickstream.tracked` → `analytics` second consumer group → `clickstream` table + dashboard); ✅ OpenFGA fine-grained authz (ReBAC store + `pkg/fga`; delegated order sharing — `OrderService.ShareOrder`/`RevokeOrderShare`/`ListOrderShares`, additive over role + owner checks); ✅ CDN for product media (served-URL host = caching edge; nginx `proxy_cache` stand-in in compose + `cdn-cache` dashboard; managed CDN in prod); ✅ multi-zone (zone-spread pods with `DoNotSchedule` for bff/order/payment, `maxUnavailable: 34%` PDBs, per-service Istio locality-LB `DestinationRule` with zone failover; RB-9); **marketplace/multi-seller model** — *in progress*: ✅ `seller` service (shop aggregate + onboarding, `shop.*` events, `shop_admin` role); ✅ OpenFGA shop-staff (`shop#owner`/`shop#staff`, canonical model centralised in `pkg/fga`); then per-shop catalog ownership, split orders, split payments/payouts, seller dashboard. |
