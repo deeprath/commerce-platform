@@ -293,6 +293,13 @@ services:
     callers: [bff] # BFF review client is wired; storefront routes land next
     env: { GRPC_ADDR: ":50051" }
 
+  seller:
+    db: seller
+    kafka: true # commerce.shop.* via the transactional outbox
+    auth: true
+    callers: [bff]
+    env: { GRPC_ADDR: ":50051" }
+
   analytics:
     kafka: true
     callers: [] # consumer-only sink (order.* / payment.* -> ClickHouse)

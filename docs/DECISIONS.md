@@ -1583,3 +1583,59 @@ are usable (RB-9 step 4 relaxes it). `payment` goes from 2 → 3 replicas. 14 ne
 catalog). No app or compose change — this is k8s topology only, validated with
 `helm template | kubeconform -strict` for both `values.yaml` and
 `values-dev.yaml`.
+
+---
+
+## ADR-038 — Marketplace, slice 1: the `seller` service (shop aggregate + onboarding)
+
+**Status:** accepted · Phase 5 · first of a multi-slice arc
+
+**Context:** the platform is single-vendor — every product is the platform's,
+every order's revenue is the platform's. The last Phase 5 line is a
+marketplace / multi-seller model: independent sellers operating shops that own
+catalog listings and receive their share of order revenue. That is several
+coherent units (per-shop catalog + OpenFGA staff, split orders, split
+payments/payouts, a seller dashboard); this ADR is the **foundation** they all
+build on — a shop has to exist before anything can belong to it.
+
+**Decision:**
+- **A new `seller` service** owning the `Shop` aggregate: `id`, `owner_id`
+  (Keycloak sub), `name`, `slug` (URL-safe, derived from the name, **stable** —
+  renaming doesn't move the URL), `description`, `contact_email`, `status`,
+  `suspension_reason`. Same shape as every other domain service (Postgres
+  DB-per-service, gRPC, transactional-outbox relay for `commerce.shop.*`).
+- **Lifecycle:** `PENDING_REVIEW → ACTIVE → SUSPENDED` (and back). Any signed-in
+  user can `CreateShop` (self-service onboarding) — it starts `PENDING_REVIEW`.
+  A platform operator with the **new `shop_admin` realm role** (composite into
+  `admin`) runs `ListShops` / `ActivateShop` / `SuspendShop`. `SuspendShop`
+  requires a reason. Transitions are idempotent and emit an event only on an
+  actual change.
+- **One shop per user in v1** — a DB `UNIQUE (owner_id)`. Multi-shop sellers are
+  a later concern; the `owner_id` column already carries the relationship.
+- **Visibility:** `GetShop` (by slug or id) is **public**, but a non-owner /
+  non-operator only ever sees an `ACTIVE` shop — a `PENDING_REVIEW` or
+  `SUSPENDED` shop returns `NOT_FOUND` to everyone else. `GetMyShop` always
+  returns the caller's own, any status.
+- **Authz is role + owner scoping** (consistent with the rest of the platform) —
+  **no OpenFGA yet**. The next slice adds `type shop { staff }` to the
+  `commerce` model and per-shop staff; keeping this slice role-only avoids
+  coupling the aggregate to the ReBAC store before there's a relationship worth
+  modelling.
+- **BFF:** `POST/GET/PUT /api/v1/seller/shops[/me]` (auth), public
+  `GET /api/v1/shops/:slug`, and `GET/POST /api/v1/admin/seller/shops…` for
+  operators. `ext-authz` allow-lists `/api/v1/shops`.
+
+**Alternatives:**
+- *Fold shops into `identity`* — `identity` is about *who you are* (Keycloak
+  brokering, roles); a shop is a *business entity* with its own lifecycle,
+  events, and later its own catalog/payout data. Separate service, separate DB.
+- *No `PENDING_REVIEW` — shops go live immediately* — a marketplace needs a
+  gate against fraud/abuse before a shop can list; the operator step is the
+  minimum viable version of onboarding review.
+- *Slug mutable with the name* — breaks bookmarks / shared links / the eventual
+  `shop.example.com/<slug>` routing. Names change; identity shouldn't.
+
+**Consequences:** a new service (`seller` DB, image, CI matrix rows), a new
+realm role, and three new `commerce.shop.*` topics with no consumer yet — the
+downstream slices (catalog, search, analytics) will subscribe. `ARCHITECTURE.md
+§3` and `§14` track the arc.
