@@ -38,3 +38,4 @@ kubectl apply -f deploy/istio/
 | `authorization-policy.yaml` | default-deny + the Phase 0 allow-list; `CUSTOM` ext-authz on the gateway |
 | `telemetry.yaml` | traces + metrics to the `otel` provider |
 | `ratelimit-envoyfilter.yaml` | global edge rate limit via the `edge-ratelimit` provider |
+| `waf-wasmplugin.yaml` | OWASP CRS WAF (Coraza proxy-wasm) on the gateway, `phase: AUTHN` |

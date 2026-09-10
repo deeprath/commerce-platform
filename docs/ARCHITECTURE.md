@@ -454,11 +454,15 @@ verify the RS256 signature as the source of truth.
 
 ### 8.4 WAF
 
-Envoy has no built-in WAF. Options, in preference order:
-1. **Coraza (OWASP CRS) as an Envoy Wasm/`ext_proc` filter** on the ingress gateway — runs
-   the CRS ruleset in the gateway itself. Recommended.
-2. A managed WAF at the cloud LB in front of the gateway (AWS WAF / Cloudflare) if already on
-   that cloud.
+**Coraza (OWASP CRS v4) as an Envoy proxy-wasm filter on the ingress gateway** — the CRS
+ruleset runs in the gateway itself, `phase: AUTHN` so it precedes ext-authz and the rate
+limiter. Cluster: `deploy/istio/waf-wasmplugin.yaml` (`WasmPlugin`, module from
+`oci://ghcr.io/corazawaf/coraza-proxy-wasm`). Local: the same `.wasm` baked into the edge
+Envoy image (`deploy/docker/envoy.Dockerfile`) and wired in `deploy/compose/envoy/envoy.yaml`,
+so `task up` exercises the real rules. Anomaly-scoring blocking mode, paranoia 1 — verified
+against the checkout funnel (no false positives) and against SQLi / XSS / traversal / RCE
+probes (all blocked). A managed WAF at the cloud LB (AWS WAF / Cloudflare) is a fine
+alternative or an additional layer if already on that cloud.
 
 ### 8.5 BFF (`services/bff`, Echo)
 
@@ -732,5 +736,5 @@ See [`SECURITY.md`](SECURITY.md) for job-by-job policy and the "did it actually 
 | **1 — Catalog & browse** | `catalog`, `media`, `search`, `bff`; `HTTPRoute`s for storefront; storefront browse + PDP; MinIO upload flow; Grafana platform + service dashboards (incl. mesh + gateway metrics). |
 | **2 — Cart & checkout** | `cart`, `pricing`, `inventory`, `order`, `payment` (PSP sandbox), the saga; `waypoint` proxies + `AuthorizationPolicy` for `order`/`payment`/`inventory`; ✅ checkout-funnel dashboard *(Phase 4)*; ✅ k6 load test (`perf/checkout-funnel.js` + weekly `perf.yml`). |
 | **3 — Fulfillment & comms** | ✅ `fulfillment`, `notification`, `review`; ✅ RMA/returns + partial refunds; ✅ admin API (operator mode on the list RPCs + BFF `/admin/*`); ✅ admin **SPA** (`web/admin`) + admin `HTTPRoute` on `admin.*` restricted by a source-IP `AuthorizationPolicy`. |
-| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; KEDA autoscaling; NetworkPolicies + tightened `AuthorizationPolicy` (default-deny everywhere); PSS `restricted`; **progressive delivery — Argo Rollouts + weighted `HTTPRoute` + traffic mirroring**; Coraza WAF filter; DR runbooks; ZAP full authenticated scan; pen-test remediation. |
+| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); KEDA autoscaling; NetworkPolicies + tightened `AuthorizationPolicy` (default-deny everywhere); PSS `restricted`; **progressive delivery — Argo Rollouts + weighted `HTTPRoute` + traffic mirroring**; DR runbooks; pen-test remediation. |
 | **5 — Scale/optional** | ClickHouse analytics, CDN, multi-zone, OpenFGA fine-grained authz, marketplace/multi-seller model. |

@@ -919,3 +919,56 @@ authenticated scan.
 current (a stale entry only means that path isn't scanned — fail-safe). The
 admin surface (`/api/v1/admin/**`, operator role + source-IP gated) is not in
 this scan; an operator-context pass is a follow-up.
+
+---
+
+## ADR-027 — WAF: Coraza (OWASP CRS v4) as a proxy-wasm filter at the edge
+
+**Status:** Accepted (Phase 4).
+
+**Context:** ARCHITECTURE §8.4 called for a WAF on the ingress gateway. Envoy
+has no built-in WAF; the request-filtering layer (SQLi / XSS / traversal / RCE
+heuristics) was designed-in but not implemented.
+
+**Decision:**
+- **Coraza proxy-wasm** (`ghcr.io/corazawaf/coraza-proxy-wasm`, v0.6.0) running
+  the **OWASP CRS v4.14.0** ruleset that the module bundles — no separate rule
+  files to ship or version. Anomaly-scoring **blocking** mode, paranoia level 1.
+- **At the edge, first.** `phase: AUTHN` on the gateway (cluster) / first HTTP
+  filter (compose) — before ext-authz and the rate limiter, so a malicious
+  payload is dropped before anything downstream, including the WAF's own audit
+  sink's neighbours, processes it.
+- **One module, two wirings, identical directives:**
+  - compose: the `.wasm` is fetched from the pinned GitHub release and
+    checksum-verified in `deploy/docker/envoy.Dockerfile`, then referenced by a
+    local file in `deploy/compose/envoy/envoy.yaml`. Baked into the image, not a
+    git blob (~18 MB) and not a fetch at container start.
+  - cluster: `deploy/istio/waf-wasmplugin.yaml` — an Istio `WasmPlugin` with
+    `url: oci://ghcr.io/corazawaf/coraza-proxy-wasm:0.6.0`, `failStrategy:
+    FAIL_CLOSE`.
+- **Audit to stdout as JSON** (`SecAuditLog /dev/stdout` + `SecAuditLogFormat
+  JSON`) so CRS events flow through the same Alloy → Loki path as every other
+  container log; no new sink.
+- **No tuning.** CRS 4 at PL1 produced zero false positives against the checkout
+  funnel and realistic input (apostrophe / ampersand / unicode addresses,
+  punctuated search terms). If an exclusion is ever needed it goes in the
+  `directives_map` (`SecRuleRemoveById` / `ctl:ruleRemoveTargetById`), scoped —
+  never a blanket rule disable.
+
+**Alternatives:**
+- *Managed WAF at the cloud LB (AWS WAF / Cloudflare)* — fine as an additional
+  layer or when already on that cloud, but ties the ruleset to a provider and
+  doesn't run locally; the in-gateway filter is portable and `task up` exercises
+  the real rules.
+- *`ext_proc` callout to a Coraza sidecar* — an extra hop and a process to run
+  per gateway pod; the wasm module is in-process.
+- *ModSecurity + the Envoy `ext_authz`/Lua bridge* — heavier, and ModSecurity v3
+  is EOL in favour of Coraza.
+- *Higher paranoia level* — PL2+ starts flagging normal free-text; revisit per
+  route if a stricter posture is wanted on, say, `/admin`.
+
+**Consequences:** the edge Envoy is now a built image, not a stock one (one more
+thing in `build-images`; the Dockerfile pins both the Envoy tag and the wasm
+release + sha256). The CRS version advances only when the module version is
+bumped — deliberate, and the bump is one ARG + one checksum + the OCI tag. First
+request after a cold start pays the wasm VM init (~tens of ms, once per worker).

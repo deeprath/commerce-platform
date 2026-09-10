@@ -602,7 +602,11 @@ services:
     logging: *default-logging
 
   envoy:
-    image: envoyproxy/envoy:${ENVOY_TAG}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/envoy.Dockerfile
+      args:
+        ENVOY_TAG: ${ENVOY_TAG:-v1.32-latest}
     command: ["-c", "/etc/envoy/envoy.yaml", "-l", "info"]
     volumes: ["./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro"]
     ports: ["8080:8080", "9901:9901"]

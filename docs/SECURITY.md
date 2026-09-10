@@ -228,6 +228,30 @@ The tool most prone to "configured but never actually scanned anything." Guardra
   role + is source-IP gated — a second operator-context scan is a follow-up. Staging runs
   the same plan against the real ingress gateway.
 
+### 5.5 Coraza WAF (OWASP CRS v4) — edge request filtering
+
+- **Where:** the ingress gateway / edge Envoy, *before* ext-authz and the rate limiter
+  (`phase: AUTHN`), so a malicious payload is dropped before anything downstream sees it.
+- **What:** the [coraza-proxy-wasm](https://github.com/corazawaf/coraza-proxy-wasm) module
+  (v0.6.0, CRS **v4.14.0** bundled) in anomaly-scoring **blocking** mode, paranoia level 1.
+  Denies with `403` when the inbound anomaly score crosses the CRS threshold.
+- **Local == cluster:** the `.wasm` is baked into the edge Envoy image
+  (`deploy/docker/envoy.Dockerfile`, checksum-pinned) and wired in
+  `deploy/compose/envoy/envoy.yaml`; the cluster runs the identical directives as an Istio
+  `WasmPlugin` (`deploy/istio/waf-wasmplugin.yaml`, module from
+  `oci://ghcr.io/corazawaf/coraza-proxy-wasm`). `task up` exercises the real ruleset.
+- **Audit:** CRS events are written to stdout as JSON (`SecAuditLog /dev/stdout`,
+  `SecAuditLogFormat JSON`) → picked up by Alloy/Loki like every other container log.
+- **Verified (2026-09-10, live compose stack):**
+  - **Blocks:** boolean/`UNION` SQLi, `<script>` XSS, `../etc/passwd` traversal, `; cat
+    /etc/passwd` + Shellshock UA — all `403` (CRS 930/932/941/942, blocking rule 949111).
+  - **No false positives** on the checkout funnel: k6 through the WAF edge, 112/112
+    checkouts, 0 failures; plus hand-checked apostrophe/ampersand/unicode addresses
+    (`Sean O'Brien`, `Smith & Sons`, `Düsseldorf`) and search terms (`25% off`, `C++ book`,
+    `men's shirt (blue)`) — all pass.
+- **Tuning:** none needed at PL1 with CRS 4; exclusions would go in the `directives_map`
+  (`SecRuleRemoveById` / `ctl:ruleRemoveTargetById`), never a blanket rule disable.
+
 ---
 
 ## 6. Data protection & compliance

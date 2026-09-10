@@ -1,10 +1,13 @@
 # Local edge proxy. Mirrors what the Istio ingress gateway does in Kubernetes:
 #  - terminates HTTP on :8080
+#  - runs the Coraza (OWASP CRS) WAF proxy-wasm filter first
 #  - calls the ext-authz gRPC service for a shallow pre-check on every request
 #  - applies a global rate limit via the ratelimit service
 #  - routes /api/v1/* to the BFF (added in Phase 1; until then these 503)
 #
-# In Kubernetes this same behaviour is expressed as Gateway API + Istio
+# The .wasm is baked into the image by deploy/docker/envoy.Dockerfile. In
+# Kubernetes the same WAF is an Istio WasmPlugin on the ingress gateway
+# (deploy/istio/waf-wasmplugin.yaml) and the rest is Gateway API + Istio
 # resources under deploy/istio/ — see docs/ARCHITECTURE.md §8.
 
 admin:
@@ -40,6 +43,39 @@ static_resources:
                       response_headers_to_add:
                         - header: { key: "x-edge", value: "envoy-local" }
                 http_filters:
+                  # WAF first — a malicious payload never reaches ext-authz,
+                  # the rate limiter, or the BFF. Coraza runs OWASP CRS v4
+                  # (bundled in the wasm) in anomaly-scoring blocking mode.
+                  - name: envoy.filters.http.wasm
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+                      config:
+                        name: coraza
+                        root_id: coraza
+                        vm_config:
+                          runtime: envoy.wasm.runtime.v8
+                          code:
+                            local: { filename: /etc/envoy/coraza-proxy-wasm.wasm }
+                        configuration:
+                          "@type": type.googleapis.com/google.protobuf.StringValue
+                          value: |
+                            {
+                              "directives_map": {
+                                "edge": [
+                                  "Include @demo-conf",
+                                  "Include @crs-setup-conf",
+                                  "Include @owasp_crs/*.conf",
+                                  "SecRuleEngine On",
+                                  "SecRequestBodyAccess On",
+                                  "SecResponseBodyAccess Off",
+                                  "SecAuditEngine RelevantOnly",
+                                  "SecAuditLogParts ABIJDEFHZ",
+                                  "SecAuditLog /dev/stdout",
+                                  "SecAuditLogFormat JSON"
+                                ]
+                              },
+                              "default_directives": "edge"
+                            }
                   - name: envoy.filters.http.ext_authz
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
