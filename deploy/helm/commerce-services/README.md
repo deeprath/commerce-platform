@@ -11,6 +11,7 @@ entry in `.Values.services` it emits:
 | `PodDisruptionBudget` | `minAvailable: 1` (toggle with `podDisruptionBudget.enabled`). |
 | `NetworkPolicy` (×2) | `<svc>-ingress` (only the callers) + `<svc>-egress` (infra per flags + downstream services, *derived* from every service's `callers`). Plus a one-time namespace `default-deny-all` and `allow-egress-common` (DNS + otel). Toggle with `networkPolicy.enabled`. |
 | `AuthorizationPolicy` | `allow-to-<svc>` — Istio L7, keyed on the caller's SPIFFE identity; method-scoped where `callers[].methods` is set. `callers: []` → `rules: []` = deny all L7. Toggle with `authorizationPolicy.enabled`. |
+| `ScaledObject` (KEDA) | only when `autoscaling.enabled`. Triggers: `rps` (Prometheus `rpc_server_*` rate), `kafkaLag` (consumer group lag), `cpu`/`memory` (utilization). The Deployment then omits `spec.replicas` so the HPA owns it. |
 
 The namespace-wide Istio `default-deny` and the gateway-scoped policies stay in
 `deploy/istio/authorization-policy.yaml`. Secrets (External Secrets Operator), HPA/KEDA,
@@ -32,6 +33,7 @@ flags:
 | `callers: [...]` | who may call this service — drives `NetworkPolicy` ingress **and** `AuthorizationPolicy`. Entry = a service name, `"gateway"`, or `{name, methods: [<rpc>...]}`. Service X's egress to Y is derived: Y lists X in `callers`. |
 | `egressExtra: [...]` | extra L3/L4 egress targets (`{selector, port, namespace?}`) — e.g. `media` → MinIO, `search` → OpenSearch |
 | `grpcService` | proto service name (e.g. `commerce.payment.v1.PaymentService`) — required only for method-scoped `callers` |
+| `autoscaling` | `{enabled, minReplicas, maxReplicas, triggers: [{type: rps\|kafkaLag\|cpu\|memory, threshold, group?}]}` — renders a KEDA `ScaledObject` and drops `spec.replicas` from the Deployment |
 | `envFromSecret: true` | also `envFrom` the shared secret (BFF client secret, MinIO keys) |
 | `env: {…}` | literal env, wins over `global.commonEnv` |
 | `replicas`, `resources`, `podDisruptionBudget`, `topologySpread`, `networkPolicy`, `authorizationPolicy` | standard overrides |

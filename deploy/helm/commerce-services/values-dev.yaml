@@ -3,6 +3,8 @@
 #   helm upgrade --install commerce-services deploy/helm/commerce-services \
 #     -n commerce -f deploy/helm/commerce-services/values-dev.yaml
 global:
+  autoscaling:
+    enabled: false # no KEDA / Prometheus in a bare kind cluster
   image:
     tag: dev
     pullPolicy: Never

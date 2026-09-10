@@ -1,0 +1,58 @@
+{{- $g := .Values.global -}}
+{{- range $name, $rawSvc := .Values.services }}
+{{- $svc := mergeOverwrite (deepCopy $.Values.defaults) $rawSvc }}
+{{- $a := $svc.autoscaling }}
+{{- if and $g.autoscaling.enabled $a.enabled }}
+# {{ $name }}: KEDA drives an HPA between {{ $a.minReplicas }} and {{ $a.maxReplicas }}
+# replicas from the triggers below. The Deployment omits spec.replicas so the
+# HPA owns it (see deployment.yaml).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $name }}
+  namespace: {{ $g.namespace }}
+  labels:
+    {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ $name }}
+  minReplicaCount: {{ $a.minReplicas }}
+  maxReplicaCount: {{ $a.maxReplicas }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: {{ $a.scaleDownStabilizationSeconds }}
+  triggers:
+    {{- range $a.triggers }}
+    {{- if eq .type "cpu" }}
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: {{ .threshold | quote }}
+    {{- else if eq .type "memory" }}
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: {{ .threshold | quote }}
+    {{- else if eq .type "rps" }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $g.prometheusURL }}
+        # gRPC server request rate for this service; threshold is req/s per replica.
+        query: sum(rate(rpc_server_call_duration_seconds_count{job="{{ $name }}"}[2m]))
+        threshold: {{ .threshold | quote }}
+    {{- else if eq .type "kafkaLag" }}
+    - type: kafka
+      metadata:
+        bootstrapServers: {{ $g.kafkaBrokers }}
+        consumerGroup: {{ .group }}
+        lagThreshold: {{ .threshold | quote }}
+        # Don't scale to zero — minReplicaCount keeps a warm consumer.
+        activationLagThreshold: "1"
+        offsetResetPolicy: latest
+    {{- end }}
+    {{- end }}
+---
+{{- end }}
+{{- end }}

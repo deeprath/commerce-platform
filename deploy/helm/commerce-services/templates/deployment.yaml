@@ -11,7 +11,9 @@ metadata:
   labels:
     {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
 spec:
+  {{- if not (and $g.autoscaling.enabled $svc.autoscaling.enabled) }}
   replicas: {{ $svc.replicas }}
+  {{- end }}
   revisionHistoryLimit: {{ $svc.revisionHistoryLimit }}
   selector:
     matchLabels:
