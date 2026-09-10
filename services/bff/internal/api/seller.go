@@ -3,7 +3,9 @@ package api
 import (
 	"github.com/labstack/echo/v4"
 
+	catalogv1 "github.com/deeprath/commerce-platform/gen/go/commerce/catalog/v1"
 	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
+	"github.com/deeprath/commerce-platform/pkg/errs"
 )
 
 // createShop — POST /api/v1/seller/shops
@@ -113,6 +115,68 @@ func (s *Server) listShopStaff(c echo.Context) error {
 	ctx, cancel := outCtx(c)
 	defer cancel()
 	res, err := s.cl.Seller.ListShopStaff(ctx, &sellerv1.ListShopStaffRequest{})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// createShopProduct — POST /api/v1/seller/products
+// The BFF resolves the caller's shop and creates the product under it; the
+// catalog service then enforces `shop#staff`.
+func (s *Server) createShopProduct(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	var in catalogv1.CreateProductRequest
+	if err := bindProto(c, &in); err != nil {
+		return err
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+
+	shop, err := s.cl.Seller.GetMyShop(ctx, &sellerv1.GetMyShopRequest{})
+	if err != nil {
+		return fail(c, err) // NOT_FOUND when the caller has no shop
+	}
+	if shop.GetStatus() != sellerv1.ShopStatus_SHOP_STATUS_ACTIVE {
+		return c.JSON(409, errs.HTTPError{Status: 409, Code: "SHOP_NOT_ACTIVE", Reason: "SHOP_NOT_ACTIVE"})
+	}
+	in.ShopId = shop.GetId() // caller cannot spoof another shop
+	res, err := s.cl.Catalog.CreateProduct(ctx, &in)
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 201, res)
+}
+
+// updateShopProduct — PUT /api/v1/seller/products/:id (catalog checks product#manager)
+func (s *Server) updateShopProduct(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	var in catalogv1.UpdateProductRequest
+	if err := bindProto(c, &in); err != nil {
+		return err
+	}
+	in.Id = c.Param("id")
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Catalog.UpdateProduct(ctx, &in)
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// archiveShopProduct — POST /api/v1/seller/products/:id/archive
+func (s *Server) archiveShopProduct(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Catalog.ArchiveProduct(ctx, &catalogv1.ArchiveProductRequest{Id: c.Param("id")})
 	if err != nil {
 		return fail(c, err)
 	}

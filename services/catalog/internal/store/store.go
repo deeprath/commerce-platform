@@ -32,7 +32,7 @@ func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
 const productCols = `id, slug, title, description, category_id,
 	price_currency, price_units, price_nanos, media_keys, status, attributes,
-	created_by, created_at, updated_at`
+	shop_id, created_by, created_at, updated_at`
 
 // Create inserts p (status DRAFT) and its product_changed outbox row atomically.
 func (s *Store) Create(ctx context.Context, p *domain.Product) (*domain.Product, error) {
@@ -40,12 +40,12 @@ func (s *Store) Create(ctx context.Context, p *domain.Product) (*domain.Product,
 		row := tx.QueryRow(ctx, `
 			INSERT INTO products
 				(slug, title, description, category_id,
-				 price_currency, price_units, price_nanos, media_keys, status, attributes, created_by)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+				 price_currency, price_units, price_nanos, media_keys, status, attributes, shop_id, created_by)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 			RETURNING `+productCols,
 			p.Slug, p.Title, p.Description, p.CategoryID,
 			p.ListPrice.CurrencyCode, p.ListPrice.Units, p.ListPrice.Nanos,
-			nonNil(p.MediaKeys), string(p.Status), mustJSON(p.Attributes), p.CreatedBy)
+			nonNil(p.MediaKeys), string(p.Status), mustJSON(p.Attributes), nullUUID(p.ShopID), p.CreatedBy)
 		return scanProduct(row)
 	})
 }
@@ -205,17 +205,21 @@ func scanProduct(row scanner) (*domain.Product, error) {
 		p         domain.Product
 		status    string
 		attrsJSON []byte
+		shopID    *string
 	)
 	err := row.Scan(
 		&p.ID, &p.Slug, &p.Title, &p.Description, &p.CategoryID,
 		&p.ListPrice.CurrencyCode, &p.ListPrice.Units, &p.ListPrice.Nanos,
-		&p.MediaKeys, &status, &attrsJSON, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
+		&p.MediaKeys, &status, &attrsJSON, &shopID, &p.CreatedBy, &p.CreatedAt, &p.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, pkgerrs.New(pkgerrs.KindNotFound, "PRODUCT_NOT_FOUND", "no such product")
 	}
 	if err != nil {
 		return nil, wrapPG(err)
+	}
+	if shopID != nil {
+		p.ShopID = *shopID
 	}
 	p.Status = domain.Status(status)
 	if len(attrsJSON) > 0 {
@@ -245,6 +249,14 @@ func wrapPG(err error) error {
 }
 
 // nonNil turns a nil slice into an empty one so pgx encodes '{}' not NULL.
+// nullUUID maps "" -> NULL for a nullable uuid column.
+func nullUUID(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 func nonNil(s []string) []string {
 	if s == nil {
 		return []string{}

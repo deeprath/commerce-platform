@@ -37,13 +37,14 @@ type Product struct {
 	MediaKeys   []string
 	Status      Status
 	Attributes  map[string]string
-	CreatedBy   string // Keycloak sub of the catalog_manager who created it
+	ShopID      string // owning marketplace shop; "" => first-party
+	CreatedBy   string // Keycloak sub of the creator
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
 // NewProduct validates inputs and returns a DRAFT product (id/timestamps set by the store).
-func NewProduct(slug, title, description, categoryID string, price Money, mediaKeys []string, attrs map[string]string, createdBy string) (*Product, error) {
+func NewProduct(slug, title, description, categoryID string, price Money, mediaKeys []string, attrs map[string]string, shopID, createdBy string) (*Product, error) {
 	slug = normaliseSlug(slug)
 	if err := validateSlug(slug); err != nil {
 		return nil, err
@@ -66,6 +67,7 @@ func NewProduct(slug, title, description, categoryID string, price Money, mediaK
 		MediaKeys:   mediaKeys,
 		Status:      StatusDraft,
 		Attributes:  attrs,
+		ShopID:      strings.TrimSpace(shopID),
 		CreatedBy:   createdBy,
 	}, nil
 }

@@ -57,7 +57,7 @@ func newDraft(t *testing.T, slug string) *domain.Product {
 	t.Helper()
 	p, err := domain.NewProduct(slug, "T "+slug, "d", "cat-a",
 		domain.Money{CurrencyCode: "USD", Units: 1999}, []string{"m1"},
-		map[string]string{"color": "blue"}, "mgr-1")
+		map[string]string{"color": "blue"}, "", "mgr-1")
 	if err != nil {
 		t.Fatal(err)
 	}

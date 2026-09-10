@@ -46,6 +46,10 @@ message Product {
   ProductStatus status = 8;
   // Free-form attributes (colour, size chart, material, ...). Stored as JSONB.
   map<string, string> attributes = 9;
+  // Owning marketplace shop (commerce.seller.v1). Empty => a first-party
+  // (platform-owned) product. A seller may only write their own shop's
+  // products; the catalog enforces this via OpenFGA `shop#staff` (ADR-040).
+  string shop_id = 10;
 }
 
 enum ProductStatus {
@@ -92,6 +96,9 @@ message CreateProductRequest {
   commerce.common.v1.Money list_price = 5;
   repeated string media_keys = 6;
   map<string, string> attributes = 7;
+  // Create under this marketplace shop. Empty => first-party. Requires the
+  // caller to be `shop#staff` of shop_id (or hold catalog_manager).
+  string shop_id = 8;
 }
 
 message UpdateProductRequest {

@@ -218,7 +218,7 @@ func TestCommerceModel_IsValidAndHasExpectedTypes(t *testing.T) {
 		}
 		got[td.Type] = rels
 	}
-	for _, typ := range []string{"user", "order", "shop"} {
+	for _, typ := range []string{"user", "order", "shop", "product"} {
 		if _, ok := got[typ]; !ok {
 			t.Errorf("model is missing type %q", typ)
 		}
@@ -226,13 +226,19 @@ func TestCommerceModel_IsValidAndHasExpectedTypes(t *testing.T) {
 	if _, ok := got["order"]; !ok {
 		t.Fatal("no order type")
 	}
-	shopRels := map[string]bool{}
-	for _, r := range got["shop"] {
-		shopRels[r] = true
+	has := func(typ string, rels ...string) {
+		set := map[string]bool{}
+		for _, r := range got[typ] {
+			set[r] = true
+		}
+		for _, r := range rels {
+			if !set[r] {
+				t.Fatalf("%s relations = %v, want %v", typ, got[typ], rels)
+			}
+		}
 	}
-	if !shopRels["owner"] || !shopRels["staff"] {
-		t.Fatalf("shop relations = %v, want owner+staff", got["shop"])
-	}
+	has("shop", "owner", "staff")
+	has("product", "shop", "manager")
 }
 
 func TestNew_BootstrapsStoreAndModel(t *testing.T) {

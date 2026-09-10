@@ -24,8 +24,12 @@ import (
 
 type fakeCatalog struct {
 	catalogv1.CatalogServiceClient
-	resp   *catalogv1.BatchGetProductsResponse
-	gotIDs []string
+	resp       *catalogv1.BatchGetProductsResponse
+	gotIDs     []string
+	lastCreate *catalogv1.CreateProductRequest
+	lastUpdate *catalogv1.UpdateProductRequest
+	lastArch   *catalogv1.ArchiveProductRequest
+	err        error
 }
 
 func (f *fakeCatalog) BatchGetProducts(
@@ -33,6 +37,36 @@ func (f *fakeCatalog) BatchGetProducts(
 ) (*catalogv1.BatchGetProductsResponse, error) {
 	f.gotIDs = in.GetIds()
 	return f.resp, nil
+}
+
+func (f *fakeCatalog) CreateProduct(
+	_ context.Context, in *catalogv1.CreateProductRequest, _ ...grpc.CallOption,
+) (*catalogv1.CreateProductResponse, error) {
+	f.lastCreate = in
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &catalogv1.CreateProductResponse{Product: &catalogv1.Product{Id: "prod-1", Slug: in.GetSlug(), ShopId: in.GetShopId()}}, nil
+}
+
+func (f *fakeCatalog) UpdateProduct(
+	_ context.Context, in *catalogv1.UpdateProductRequest, _ ...grpc.CallOption,
+) (*catalogv1.UpdateProductResponse, error) {
+	f.lastUpdate = in
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &catalogv1.UpdateProductResponse{Product: &catalogv1.Product{Id: in.GetId(), Title: in.GetTitle()}}, nil
+}
+
+func (f *fakeCatalog) ArchiveProduct(
+	_ context.Context, in *catalogv1.ArchiveProductRequest, _ ...grpc.CallOption,
+) (*catalogv1.ArchiveProductResponse, error) {
+	f.lastArch = in
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &catalogv1.ArchiveProductResponse{Product: &catalogv1.Product{Id: in.GetId()}}, nil
 }
 
 type fakePricing struct {

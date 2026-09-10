@@ -89,9 +89,10 @@ replication (for Debezium CDC) are worth more here.
 - **OpenFGA** *(Phase 5)* — relationship-based (ReBAC / Zanzibar-style) authorization
   store, Postgres-backed. One shared store, **one canonical model** (`pkg/fga/model.json`)
   grown additively. Holds fine-grained grants that don't fit realm roles or owner-scoping:
-  order sharing (`order#viewer`) and marketplace shop staff (`shop#staff`). Consulted by the
-  `order` and `seller` services via `pkg/fga`; **additive only**, never a bypass. Provisioned
-  by the platform app-of-apps in k8s. See §7.3 and [DECISIONS.md ADR-035 / ADR-039](DECISIONS.md).
+  order sharing (`order#viewer`), marketplace shop staff (`shop#staff`) and per-shop catalog
+  ownership (`product#manager`). Consulted by the `order`, `seller` and `catalog` services
+  via `pkg/fga`; **additive only**, never a bypass. Provisioned
+  by the platform app-of-apps in k8s. See §7.3 and [DECISIONS.md ADR-035 / ADR-039 / ADR-040](DECISIONS.md).
 - **CDN** *(Phase 5)* — product-media reads are served through a caching edge, not from
   MinIO directly. `media` builds canonical URLs from `MEDIA_PUBLIC_BASE_URL`, so this is a
   config seam: production points it at a managed CDN (CloudFront / Fastly) with the object
@@ -126,7 +127,7 @@ are drawn so that the **critical checkout path** touches as few services as poss
 |---|---|---|---|---|
 | **bff** | Nothing — aggregation + auth cookie + gRPC-Web bridge | — | — | — |
 | **identity** | Users↔roles mapping, custom-login flows, Keycloak brokering, API-key issuance for webhooks | `Login`, `Refresh`, `Register`, `StartRecovery`, `GetPrincipal` | `user.registered`, `user.role_changed` | — |
-| **catalog** | Products, variants, categories, attributes, media references | `GetProduct`, `ListProducts`, `BatchGetProducts` | `catalog.product_changed`, `catalog.category_changed` | `media.asset_ready` |
+| **catalog** | Products, variants, categories, attributes, media references, **per-shop ownership** (`shop_id`; a seller's writes are authz'd via OpenFGA `product#manager`, `catalog_manager` still covers any listing) | `GetProduct`, `ListProducts`, `BatchGetProducts`, `CreateProduct`, `UpdateProduct`, `ArchiveProduct` | `catalog.product_changed`, `catalog.category_changed` | `media.asset_ready` |
 | **search** | Search index (OpenSearch), query + autocomplete | `Search`, `Autocomplete`, `Facets` | — | `catalog.*`, `inventory.stock_changed`, `pricing.price_changed` |
 | **inventory** | Stock levels per warehouse, reservations, backorders | `CheckAvailability`, `Reserve`, `Release`, `Commit` | `inventory.stock_changed`, `inventory.reservation_expired` | `order.cancelled` |
 | **cart** | Active carts (Redis), merge on login | `GetCart`, `AddItem`, `UpdateItem`, `RemoveItem`, `Clear` | `cart.checked_out` | `catalog.product_changed` (price/label refresh) |
@@ -396,8 +397,11 @@ BFF  ──sets httpOnly, Secure, SameSite=Lax cookie (access+refresh)──▶ 
     the tuple only after owner/operator access has been denied. [ADR-035](DECISIONS.md).
   - **shop staff** — a shop owner grants `shop#staff` (`= [user] or owner`) to teammates
     (`SellerService.AddShopStaff` / `RemoveShopStaff` / `ListShopStaff`); `seller` writes
-    `shop#owner` on `CreateShop`. Per-shop catalog authorization keys off `shop#staff` in a
-    later marketplace slice. [ADR-039](DECISIONS.md).
+    `shop#owner` on `CreateShop`. [ADR-039](DECISIONS.md).
+  - **per-shop catalog** — `product#manager = staff from shop`. The catalog authorizes a
+    seller's `CreateProduct` / `UpdateProduct` / `ArchiveProduct` on a `shop_id`'d product via
+    `Check(user, staff, shop:X)` / `product#manager` (the `catalog_manager` role still covers
+    any listing). [ADR-040](DECISIONS.md).
 - The **ingress gateway + `ext-authz` service** do coarse edge checks (is there a token at
   all, is it structurally valid and unexpired, is the route admin-only) and the mesh's
   `AuthorizationPolicy` enforces which service may call which — but the **authoritative**
@@ -813,4 +817,4 @@ See [`SECURITY.md`](SECURITY.md) for job-by-job policy and the "did it actually 
 | **2 — Cart & checkout** | `cart`, `pricing`, `inventory`, `order`, `payment` (PSP sandbox), the saga; `waypoint` proxies + `AuthorizationPolicy` for `order`/`payment`/`inventory`; ✅ checkout-funnel dashboard *(Phase 4)*; ✅ k6 load test (`perf/checkout-funnel.js` + weekly `perf.yml`). |
 | **3 — Fulfillment & comms** | ✅ `fulfillment`, `notification`, `review`; ✅ RMA/returns + partial refunds; ✅ admin API (operator mode on the list RPCs + BFF `/admin/*`); ✅ admin **SPA** (`web/admin`) + admin `HTTPRoute` on `admin.*` restricted by a source-IP `AuthorizationPolicy`. |
 | **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; ✅ per-service **NetworkPolicies** (default-deny + call-graph-derived allows) + tightened per-service **`AuthorizationPolicy`** (SPIFFE identity, method-scoped for `payment`); ✅ **KEDA `ScaledObject`s** (gRPC RPS / Kafka lag / CPU per service); ✅ **progressive delivery** — Argo Rollouts canary for the BFF: weighted `bff-storefront` `HTTPRoute` via the Gateway API traffic-router plugin, traffic-mirror shadow step, background `AnalysisRun` on checkout health that auto-aborts; ✅ **DR runbooks** ([`RUNBOOKS.md`](RUNBOOKS.md) + `infra/dr/` scripts; Postgres + MinIO drills run against the live stack); pen-test remediation *(needs an engagement)*. |
-| **5 — Scale/optional** | ✅ ClickHouse analytics (`analytics` service → `events` + funnel MVs; Grafana ClickHouse datasource + funnel dashboard); ✅ browser clickstream ingestion (storefront beacon → BFF `POST /api/v1/events` → `commerce.clickstream.tracked` → `analytics` second consumer group → `clickstream` table + dashboard); ✅ OpenFGA fine-grained authz (ReBAC store + `pkg/fga`; delegated order sharing — `OrderService.ShareOrder`/`RevokeOrderShare`/`ListOrderShares`, additive over role + owner checks); ✅ CDN for product media (served-URL host = caching edge; nginx `proxy_cache` stand-in in compose + `cdn-cache` dashboard; managed CDN in prod); ✅ multi-zone (zone-spread pods with `DoNotSchedule` for bff/order/payment, `maxUnavailable: 34%` PDBs, per-service Istio locality-LB `DestinationRule` with zone failover; RB-9); **marketplace/multi-seller model** — *in progress*: ✅ `seller` service (shop aggregate + onboarding, `shop.*` events, `shop_admin` role); ✅ OpenFGA shop-staff (`shop#owner`/`shop#staff`, canonical model centralised in `pkg/fga`); then per-shop catalog ownership, split orders, split payments/payouts, seller dashboard. |
+| **5 — Scale/optional** | ✅ ClickHouse analytics (`analytics` service → `events` + funnel MVs; Grafana ClickHouse datasource + funnel dashboard); ✅ browser clickstream ingestion (storefront beacon → BFF `POST /api/v1/events` → `commerce.clickstream.tracked` → `analytics` second consumer group → `clickstream` table + dashboard); ✅ OpenFGA fine-grained authz (ReBAC store + `pkg/fga`; delegated order sharing — `OrderService.ShareOrder`/`RevokeOrderShare`/`ListOrderShares`, additive over role + owner checks); ✅ CDN for product media (served-URL host = caching edge; nginx `proxy_cache` stand-in in compose + `cdn-cache` dashboard; managed CDN in prod); ✅ multi-zone (zone-spread pods with `DoNotSchedule` for bff/order/payment, `maxUnavailable: 34%` PDBs, per-service Istio locality-LB `DestinationRule` with zone failover; RB-9); **marketplace/multi-seller model** — *in progress*: ✅ `seller` service (shop aggregate + onboarding, `shop.*` events, `shop_admin` role); ✅ OpenFGA shop-staff (`shop#owner`/`shop#staff`, canonical model centralised in `pkg/fga`); ✅ per-shop catalog ownership (`products.shop_id` + `product#manager`, catalog enforces seller writes; BFF `/seller/products`); then storefront "sold by" + seller product list, split orders, split payments/payouts, seller dashboard. |
