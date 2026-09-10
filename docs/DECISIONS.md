@@ -1458,3 +1458,64 @@ blocked **every** `DELETE` (and `PUT`) at the edge — cart-item removal include
 masked in compose only because the storefront's nginx proxies straight to the
 BFF. Fixed by widening `tx.allowed_methods` in both Coraza configs
 (`SECURITY.md §5.5`).
+
+---
+
+## ADR-036 — CDN for product media: a caching edge in front of the object store
+
+**Status:** accepted · Phase 5
+
+**Context:** `media` writes product images to MinIO (`product-media`, public-read,
+content-addressed keys → immutable) and the storefront fetches them by key. So
+far the served-URL host was MinIO itself (`MEDIA_PUBLIC_BASE_URL`). That puts
+every image request on the object store, from wherever the shopper is, with no
+edge caching.
+
+**Decision:**
+- **The served-URL host becomes a CDN**, not the object store. The seam already
+  existed: `media` builds canonical URLs from `MEDIA_PUBLIC_BASE_URL` and signs
+  *upload* URLs against a separate `MINIO_PUBLIC_ENDPOINT` — so pointing reads at
+  a CDN is a config change, no code change. `AssetReady` events now carry
+  CDN URLs.
+- **In production** this is a managed CDN (CloudFront / Fastly / Cloudflare) with
+  the object store (or the `media` service) as origin — not something we run.
+- **Locally** (`deploy/compose/cdn/`) it's an **nginx caching reverse proxy**, so
+  `task up` exercises the real behaviour: `proxy_cache` (500 MB, 30-day validity
+  for `200`), `Cache-Control: public, max-age=31536000, immutable` set by the
+  edge, `X-Cache-Status` exposed, `GET`/`HEAD` only (`limit_except … deny`),
+  and **only** the `/product-media/` prefix proxied — bucket listings, other
+  buckets and the MinIO console are refused at the edge.
+- **The cache key drops the query string** (`$scheme$request_method$host$uri`).
+  Content-addressed keys never need a cache-buster, and keying on the query
+  string would let `?x=1` variants poison or balloon the cache.
+- **`proxy_ignore_headers`** for the origin's `Set-Cookie` / `Cache-Control` /
+  `Expires`, and `proxy_hide_header` for `Set-Cookie` and `x-amz-*` — the edge's
+  policy wins and no origin cookie is ever cached or forwarded.
+- **Observability:** an nginx JSON access log with `$upstream_cache_status`
+  → Alloy → Loki (hit ratio, disposition, origin offload in the
+  `cdn-cache` Grafana dashboard), plus `stub_status` →
+  `nginx-prometheus-exporter` → Prometheus (request rate, connections). The
+  stub-status exporter has no per-cache counters, hence the log-based hit ratio.
+- The demo seeder now uploads one placeholder image
+  (`deploy/compose/seed/media/placeholder.png`, put in the bucket by
+  `minio-init`) and every seeded product references it, so the storefront PDP
+  and the cache actually have bytes to serve.
+
+**Alternatives:**
+- *Keep serving straight from MinIO* — every image hit lands on the object
+  store; no geo-distribution, no offload, versioning/lifecycle churn.
+- *nginx cache as a first-class workload in the k8s chart* — a cache pod doesn't
+  fit the "one Go binary per service" chart shape (ConfigMap mount, different
+  image and probes). In-cluster the CDN is external managed infra; the compose
+  `cdn` service is the local stand-in, the same way compose runs plain Envoy
+  where the cluster runs the mesh.
+- *Varnish instead of nginx* — nginx `proxy_cache` covers immutable static media
+  fully and the image is already in the stack's mental model (the storefront/
+  admin SPAs are nginx).
+
+**Consequences:** a new `cdn` (+ `cdn-exporter`) compose service and two new
+image tags. `MEDIA_ORIGIN` in the storefront/admin CSP and `VITE_MEDIA_BASE_URL`
+now point at the CDN host. `SECURITY.md §3` notes the edge is read-only,
+query-string-independent, and strips cookies. Hotlink protection
+(`valid_referers`) is left off in dev (so `curl` / tests work) and is a
+one-line enable for a real deployment.

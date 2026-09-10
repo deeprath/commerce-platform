@@ -189,6 +189,7 @@ services:
     image: minio/mc:${MC_TAG}
     depends_on:
       minio: { condition: service_healthy }
+    volumes: ["./seed/media:/seed-media:ro"]
     entrypoint: >
       /bin/sh -c "
       mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
@@ -197,7 +198,33 @@ services:
         mc version enable local/$$b;
       done &&
       mc anonymous set download local/product-media &&
+      mc cp /seed-media/placeholder.png local/product-media/seed/placeholder.png &&
       echo 'minio buckets ready'"
+    networks: [commerce]
+    logging: *default-logging
+
+  # Local stand-in for the production CDN: a caching reverse proxy in front of
+  # the product-media bucket. Prod is a managed CDN with the object store as
+  # origin; the media service already serves CDN-based URLs (MEDIA_PUBLIC_BASE_URL).
+  cdn:
+    image: nginx:${NGINX_TAG}
+    volumes: ["./cdn/nginx.conf:/etc/nginx/nginx.conf:ro"]
+    ports: ["8086:80"]
+    depends_on:
+      minio: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [commerce]
+    logging: *default-logging
+
+  cdn-exporter:
+    image: nginx/nginx-prometheus-exporter:${NGINX_EXPORTER_TAG}
+    command: ["--nginx.scrape-uri=http://cdn:80/nginx_status"]
+    depends_on:
+      cdn: { condition: service_started }
     networks: [commerce]
     logging: *default-logging
 
@@ -379,7 +406,9 @@ services:
       MINIO_PUBLIC_ENDPOINT: localhost:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-      MEDIA_PUBLIC_BASE_URL: http://localhost:9000
+      # Canonical served URL host = the CDN edge (see the `cdn` service), not
+      # MinIO directly. Presigned *upload* URLs still target MINIO_PUBLIC_ENDPOINT.
+      MEDIA_PUBLIC_BASE_URL: http://localhost:8086
     ports: ["50054:50051"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -662,10 +691,10 @@ services:
       context: ../..
       dockerfile: deploy/docker/storefront.Dockerfile
       args:
-        VITE_MEDIA_BASE_URL: http://localhost:9000
+        VITE_MEDIA_BASE_URL: http://localhost:8086
     environment:
       BFF_UPSTREAM: http://bff:8080
-      MEDIA_ORIGIN: http://localhost:9000
+      MEDIA_ORIGIN: http://localhost:8086
     ports: ["5173:8080"]
     depends_on: [bff]
     networks: [commerce]
@@ -677,7 +706,7 @@ services:
       dockerfile: deploy/docker/admin.Dockerfile
     environment:
       BFF_UPSTREAM: http://bff:8080
-      MEDIA_ORIGIN: http://localhost:9000
+      MEDIA_ORIGIN: http://localhost:8086
     ports: ["5174:8080"]
     depends_on: [bff]
     networks: [commerce]

@@ -90,6 +90,14 @@ the *what*, this is the *how it's enforced and verified*.
 
 ## 3. Infrastructure & runtime hardening
 
+- **Media CDN edge:** product-media reads are served through a caching edge, not the object
+  store. It is **read-only** (`GET`/`HEAD` only, `limit_except … deny`), scoped to the
+  `/product-media/` prefix (no bucket listings, no other buckets, no MinIO console), and its
+  cache key **excludes the query string** so `?x=…` variants can't poison or balloon the
+  cache. The origin's `Set-Cookie` / `Cache-Control` are ignored and `Set-Cookie` is
+  stripped, so nothing per-user is ever cached. Content is immutable (content-addressed
+  keys) → long `Cache-Control: immutable`. Hotlink protection (`valid_referers`) is a
+  one-line enable, left off in dev. See [DECISIONS.md ADR-036](DECISIONS.md).
 - **Images:** multi-stage → distroless/Chainguard; single static binary; `USER 65532`;
   `readOnlyRootFilesystem: true`; no shell, no package manager in the final layer.
 - **Pod Security Standards:** namespaces labelled `restricted`. `runAsNonRoot`,

@@ -3,6 +3,9 @@
   "title": "Canvas Tote Bag",
   "description": "Heavyweight 16 oz cotton canvas tote, reinforced handles, inner pocket.",
   "category_id": "gear",
+  "media_keys": [
+    "product-media/seed/placeholder.png"
+  ],
   "list_price": {
     "currency_code": "USD",
     "units": "18",

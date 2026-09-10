@@ -3,6 +3,9 @@
   "title": "Desk Lamp",
   "description": "Adjustable LED desk lamp with three colour temperatures and a USB-C charging port in the base.",
   "category_id": "home",
+  "media_keys": [
+    "product-media/seed/placeholder.png"
+  ],
   "list_price": {
     "currency_code": "USD",
     "units": "34",
