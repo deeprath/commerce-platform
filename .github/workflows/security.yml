@@ -44,8 +44,18 @@ jobs:
         # that gets rate-limited when the whole trivy matrix runs at once.
         run: |
           ver="${TRIVY_VERSION#v}"
-          curl -sfL --retry 3 --retry-delay 5 -o /tmp/trivy.tar.gz \
-            "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${ver}_Linux-64bit.tar.gz"
+          url="https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${ver}_Linux-64bit.tar.gz"
+          # The GitHub release CDN intermittently drops the TLS handshake
+          # (curl exit 35) when ~17 trivy-image matrix jobs pull at once.
+          # curl's own --retry covers that; an outer loop with backoff is the
+          # last resort before failing the job.
+          for attempt in 1 2 3 4 5; do
+            curl -sfL --connect-timeout 15 --retry 5 --retry-delay 5 \
+              --retry-connrefused --retry-all-errors \
+              -o /tmp/trivy.tar.gz "$url" && break
+            echo "trivy download attempt ${attempt} failed; retrying in $((attempt * 10))s" >&2
+            sleep $((attempt * 10))
+          done
           sudo tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
           trivy --version
       - name: trivy fs (vuln + secret) — blocking
@@ -67,8 +77,18 @@ jobs:
       - name: install trivy
         run: |
           ver="${TRIVY_VERSION#v}"
-          curl -sfL --retry 3 --retry-delay 5 -o /tmp/trivy.tar.gz \
-            "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${ver}_Linux-64bit.tar.gz"
+          url="https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${ver}_Linux-64bit.tar.gz"
+          # The GitHub release CDN intermittently drops the TLS handshake
+          # (curl exit 35) when ~17 trivy-image matrix jobs pull at once.
+          # curl's own --retry covers that; an outer loop with backoff is the
+          # last resort before failing the job.
+          for attempt in 1 2 3 4 5; do
+            curl -sfL --connect-timeout 15 --retry 5 --retry-delay 5 \
+              --retry-connrefused --retry-all-errors \
+              -o /tmp/trivy.tar.gz "$url" && break
+            echo "trivy download attempt ${attempt} failed; retrying in $((attempt * 10))s" >&2
+            sleep $((attempt * 10))
+          done
           sudo tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
           trivy --version
       - name: trivy config — informational
@@ -99,8 +119,18 @@ jobs:
       - name: install trivy
         run: |
           ver="${TRIVY_VERSION#v}"
-          curl -sfL --retry 3 --retry-delay 5 -o /tmp/trivy.tar.gz \
-            "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${ver}_Linux-64bit.tar.gz"
+          url="https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${ver}_Linux-64bit.tar.gz"
+          # The GitHub release CDN intermittently drops the TLS handshake
+          # (curl exit 35) when ~17 trivy-image matrix jobs pull at once.
+          # curl's own --retry covers that; an outer loop with backoff is the
+          # last resort before failing the job.
+          for attempt in 1 2 3 4 5; do
+            curl -sfL --connect-timeout 15 --retry 5 --retry-delay 5 \
+              --retry-connrefused --retry-all-errors \
+              -o /tmp/trivy.tar.gz "$url" && break
+            echo "trivy download attempt ${attempt} failed; retrying in $((attempt * 10))s" >&2
+            sleep $((attempt * 10))
+          done
           sudo tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
           trivy --version
       - name: trivy image — our libraries (blocking)

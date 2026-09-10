@@ -142,8 +142,11 @@ rows whenever the pipeline changes.
 Run the **raw `trivy` CLI** (pinned `v0.74.0`), installed from the pinned GitHub
 release tarball — not a wrapper action, and not the upstream `install.sh` (its
 unauthenticated "check for latest tag" API call gets rate-limited when the whole
-`trivy-image` matrix runs at once). Every flag is explicit and behaviour doesn't
-drift. Four invocations,
+`trivy-image` matrix runs at once). The tarball download itself uses
+`curl --retry 5 --retry-connrefused --retry-all-errors` inside an outer
+backoff loop, because the release CDN occasionally drops the TLS handshake
+(curl exit 35) under the same ~17-way parallel pull. Every flag is explicit and
+behaviour doesn't drift. Four invocations,
 **different policies on purpose** (per the skill's guidance):
 
 | Scan | What | Policy | First run (2026-09-09) |
