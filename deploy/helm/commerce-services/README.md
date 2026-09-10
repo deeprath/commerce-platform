@@ -41,8 +41,8 @@ flags:
 | `replicas`, `resources`, `podDisruptionBudget`, `topologySpread`, `networkPolicy`, `authorizationPolicy` | standard overrides |
 
 Secrets (`global.secretName`, default `commerce-services`) hold the per-service
-`<SERVICE>_DATABASE_URL` keys, `KEYCLOAK_CLIENT_SECRET`, MinIO keys — provisioned by the
-External Secrets Operator, never by this chart.
+`<SERVICE>_DATABASE_URL` keys, `KEYCLOAK_CLIENT_SECRET`, MinIO keys, `CLICKHOUSE_DSN` —
+provisioned by the External Secrets Operator, never by this chart.
 
 ## Use
 

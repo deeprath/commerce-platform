@@ -250,6 +250,19 @@ services:
     callers: [bff] # BFF review client is wired; storefront routes land next
     env: { GRPC_ADDR: ":50051" }
 
+  analytics:
+    kafka: true
+    callers: [] # consumer-only sink (order.* / payment.* -> ClickHouse)
+    egressExtra:
+      - { selector: { app: clickhouse }, port: 9000 } # OLAP store
+    envFromSecret: true # CLICKHOUSE_DSN (full clickhouse:// URL incl. password)
+    autoscaling:
+      enabled: true
+      maxReplicas: 6
+      triggers: [{ type: kafkaLag, group: analytics, threshold: 500 }]
+    env:
+      GRPC_ADDR: ":50051"
+
   bff:
     protocol: http
     port: 8080

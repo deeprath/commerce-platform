@@ -85,7 +85,7 @@ jobs:
     env: { TRIVY_VERSION: v0.74.0 }
     strategy:
       matrix:
-        service: [ext-authz, catalog, media, search, bff, storefront, admin, cart, pricing, inventory, payment, order, fulfillment, notification, review]
+        service: [ext-authz, catalog, media, search, bff, storefront, admin, cart, pricing, inventory, payment, order, fulfillment, notification, review, analytics]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

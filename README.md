@@ -81,7 +81,8 @@ commerce-platform/
 │   ├── fulfillment/            # shipments + sandbox carrier; closes CONFIRMED → FULFILLED
 │   ├── notification/           # lifecycle events → templated notifications (sandbox channel)
 │   ├── review/                 # verified-purchase ratings & reviews + moderation
-│   └── media/                  # MinIO uploads, image derivatives, virus scan
+│   ├── media/                  # MinIO uploads, image derivatives, virus scan
+│   └── analytics/              # Kafka → ClickHouse OLAP sink (funnel + revenue)
 ├── web/
 │   ├── storefront/             # React + TS customer app (Vite)
 │   ├── admin/                  # React + TS operator dashboard (Vite)
