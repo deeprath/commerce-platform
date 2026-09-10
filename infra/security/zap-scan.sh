@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
 # OWASP ZAP scan for the commerce platform.
 #
-# Phase 0: a passive baseline scan against the edge gateway (:8080). It proves
-# security headers, cookie flags, TLS hints and information-disclosure checks on
-# whatever the edge serves. The OpenAPI-driven scan is wired in Phase 1 once the
-# BFF serves /api/v1/openapi.json; the authenticated context is Phase 4.
+# Two passes:
+#   1. Passive baseline against the Envoy edge (:8080) — security headers, cookie
+#      flags, cache hints, info-disclosure on whatever the edge serves.
+#   2. Authenticated active scan of the BFF API, driven by the ZAP Automation
+#      Framework plan (infra/security/zap/api-scan.yaml) + a hand-maintained
+#      OpenAPI description (infra/security/openapi/bff.yaml). ZAP logs in as a
+#      seeded shopper and actively scans every endpoint/method/param.
 #
 # Usage:
-#   task up          # bring up deploy/compose first
-#   ./infra/security/zap-scan.sh
+#   task up                       # bring up deploy/compose first
+#   ./infra/security/zap-scan.sh                 # both passes
+#   ZAP_SKIP_ACTIVE=1 ./infra/security/zap-scan.sh   # baseline only (fast)
 #
 # Reports land in ./reports/ (gitignored).
 #
-# IMPORTANT: do NOT set GATEWAY_URL to "localhost" from CI. ZAP runs inside its
-# own container; "localhost" there is the ZAP container, not the host publishing
-# port 8080. The host.docker.internal default below is what makes it reachable.
+# IMPORTANT: do NOT target "localhost" from CI. ZAP runs inside its own
+# container; "localhost" there is the ZAP container, not the host publishing the
+# port. host.docker.internal (added via --add-host on native Linux Docker) is
+# what makes the host reachable.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,31 +30,41 @@ mkdir -p "$REPORT_DIR"
 # write fails with EACCES against the bind mount even when the scan succeeded.
 chmod 777 "$REPORT_DIR"
 
-ZAP_IMAGE="ghcr.io/zaproxy/zaproxy:stable"
+ZAP_IMAGE="${ZAP_IMAGE:-ghcr.io/zaproxy/zaproxy:stable}"
 GATEWAY_URL="${GATEWAY_URL:-http://host.docker.internal:8080}"
-API_SPEC_URL="${API_SPEC_URL:-}" # e.g. http://host.docker.internal:8080/api/v1/openapi.json (Phase 1)
+ZAP_AUTH_USERNAME="${ZAP_AUTH_USERNAME:-testuser}"
+ZAP_AUTH_PASSWORD="${ZAP_AUTH_PASSWORD:-testuser123}"
 
 echo "==> Pulling $ZAP_IMAGE"
-docker pull "$ZAP_IMAGE"
+docker pull -q "$ZAP_IMAGE"
 
 # --add-host makes host.docker.internal resolve on native Linux Docker
 # (GitHub Actions runners included); harmless on Docker Desktop.
 HOST_GATEWAY=(--add-host host.docker.internal:host-gateway)
 
-echo "==> Baseline scan: $GATEWAY_URL"
+echo "==> [1/2] Passive baseline: $GATEWAY_URL"
 docker run --rm "${HOST_GATEWAY[@]}" -v "$REPORT_DIR:/zap/wrk:rw" "$ZAP_IMAGE" \
   zap-baseline.py -t "$GATEWAY_URL" \
   -r edge-baseline-report.html -J edge-baseline-report.json \
   -I || true # baseline exits non-zero on WARN too; the CI job parses the JSON for HIGH
 
-if [[ -n "$API_SPEC_URL" ]]; then
-  echo "==> API scan (OpenAPI-driven): $API_SPEC_URL"
-  docker run --rm "${HOST_GATEWAY[@]}" -v "$REPORT_DIR:/zap/wrk:rw" "$ZAP_IMAGE" \
-    zap-api-scan.py -t "$API_SPEC_URL" -f openapi \
-    -r api-scan-report.html -J api-scan-report.json \
-    -I || true
-else
-  echo "==> Skipping API scan (API_SPEC_URL unset — wired in Phase 1)"
+if [[ "${ZAP_SKIP_ACTIVE:-0}" == "1" ]]; then
+  echo "==> [2/2] Skipping authenticated active scan (ZAP_SKIP_ACTIVE=1)"
+  echo "==> Reports in $REPORT_DIR"
+  exit 0
 fi
 
+echo "==> [2/2] Authenticated active scan (Automation Framework)"
+# The plan lives at /zap/wrk/zap/api-scan.yaml and imports /zap/wrk/openapi/bff.yaml;
+# reports are written to /zap/wrk/reports (-> ./reports on the host).
+docker run --rm "${HOST_GATEWAY[@]}" \
+  -e ZAP_AUTH_USERNAME="$ZAP_AUTH_USERNAME" \
+  -e ZAP_AUTH_PASSWORD="$ZAP_AUTH_PASSWORD" \
+  -v "$REPORT_DIR:/zap/wrk/reports:rw" \
+  -v "$SCRIPT_DIR/zap:/zap/wrk/zap:ro" \
+  -v "$SCRIPT_DIR/openapi:/zap/wrk/openapi:ro" \
+  "$ZAP_IMAGE" \
+  zap.sh -cmd -autorun /zap/wrk/zap/api-scan.yaml || true # gate is the JSON parse in CI
+
 echo "==> Reports in $REPORT_DIR"
+ls -1 "$REPORT_DIR"

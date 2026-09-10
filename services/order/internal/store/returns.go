@@ -51,6 +51,9 @@ func (s *Store) GetReturn(ctx context.Context, id, ownerID string) (*domain.Retu
 }
 
 func (s *Store) getReturn(ctx context.Context, q querier, id, ownerID string) (*domain.Return, error) {
+	if err := notFoundID(id, "RETURN_NOT_FOUND"); err != nil {
+		return nil, err
+	}
 	var (
 		r   domain.Return
 		st  string
@@ -160,6 +163,9 @@ func (s *Store) ReturnedQty(ctx context.Context, orderID, productID string) (int
 // and emits order.return_approved / order.return_rejected on a status change.
 // Idempotent: deciding a return the same way twice is a no-op.
 func (s *Store) DecideReturn(ctx context.Context, id, decidedBy string, approve bool, note string) (*domain.Return, error) {
+	if err := notFoundID(id, "RETURN_NOT_FOUND"); err != nil {
+		return nil, err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, wrap(err)

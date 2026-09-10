@@ -15,6 +15,7 @@ import (
 
 	fulfillmentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/fulfillment/v1"
 	orderv1 "github.com/deeprath/commerce-platform/gen/go/commerce/order/v1"
+	"github.com/deeprath/commerce-platform/pkg/errs"
 	"github.com/deeprath/commerce-platform/pkg/kafka"
 	"github.com/deeprath/commerce-platform/pkg/pgx"
 	"github.com/deeprath/commerce-platform/services/order/internal/consumer"
@@ -103,6 +104,22 @@ func TestList_OperatorScopeAndStatusFilter(t *testing.T) {
 	mine, _, _ := st.List(ctx, "cust-b", "", 50, "")
 	if len(mine) != 1 || mine[0].OwnerID != "cust-b" {
 		t.Fatalf("owner-scoped list leaked: %+v", mine)
+	}
+}
+
+// A syntactically invalid id must be a clean NotFound, not a Postgres
+// uuid-cast error surfacing as 500 (ZAP "Application Error Disclosure").
+func TestGet_MalformedID_IsNotFoundNot500(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+
+	_, err := st.Get(ctx, "id", "")
+	if !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("Get(malformed): got %v, want NotFound", err)
+	}
+	_, err = st.GetReturn(ctx, "not-a-uuid", "")
+	if !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("GetReturn(malformed): got %v, want NotFound", err)
 	}
 }
 

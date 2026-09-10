@@ -150,38 +150,54 @@ jobs:
         run: echo "::notice::SonarCloud skipped — add the SONAR_TOKEN repo secret to enable (docs/SECURITY.md §5.3)"
 
   # ---- dynamic scanning (live stack) ---------------------------------
-  zap-baseline:
+  zap:
     # Needs the whole stack up, so: schedule + manual only.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: pkg/go.mod
-          cache-dependency-path: "**/go.sum"
       - name: bring up the stack
         run: |
           cp deploy/compose/.env.example deploy/compose/.env
           docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env up -d --build
-          # wait for the edge to answer
+      - name: wait for the BFF and a seeded catalog
+        run: ./perf/wait-ready.sh
+        env:
+          TIMEOUT: "240"
+      - name: wait for the Envoy edge
+        run: |
           for i in $(seq 1 60); do
-            curl -sf -o /dev/null http://localhost:8080/api/v1/catalog/ping && break || sleep 5
+            curl -sf -o /dev/null http://localhost:8080/api/v1/catalog/products && exit 0
+            sleep 5
           done
-      - name: ZAP baseline
+          echo "edge never answered"; exit 1
+      - name: ZAP passive baseline + authenticated active scan
         run: ./infra/security/zap-scan.sh
+        env:
+          ZAP_AUTH_USERNAME: testuser
+          ZAP_AUTH_PASSWORD: testuser123
       - name: fail on HIGH alerts
         run: |
           python3 - <<'PY'
           import json, sys, glob
-          highs = 0
-          for f in glob.glob("reports/*-report.json"):
-              data = json.load(open(f))
+          RISK = {"0": "info", "1": "low", "2": "medium", "3": "high"}
+          counts = {}
+          highs = []
+          for f in sorted(glob.glob("reports/*.json")):
+              try:
+                  data = json.load(open(f))
+              except (ValueError, OSError):
+                  continue
               for site in data.get("site", []):
                   for a in site.get("alerts", []):
-                      if a.get("riskcode") == "3":
-                          highs += 1
-                          print(f"HIGH: {a.get('alert')} ({f})")
+                      rc = a.get("riskcode", "0")
+                      counts[RISK.get(rc, rc)] = counts.get(RISK.get(rc, rc), 0) + 1
+                      if rc == "3":
+                          highs.append(f"HIGH: {a.get('alert')} [{a.get('pluginid')}] ({f})")
+          print("alert counts by risk:", counts or "none")
+          for h in highs:
+              print(h)
           sys.exit(1 if highs else 0)
           PY
       - uses: actions/upload-artifact@v4
@@ -189,6 +205,9 @@ jobs:
         with:
           name: zap-reports
           path: reports/
+      - name: stack logs (on failure)
+        if: failure()
+        run: docker compose -f deploy/compose/docker-compose.yml logs --tail=150 bff envoy ext-authz
       - name: tear down
         if: always()
         run: docker compose -f deploy/compose/docker-compose.yml down -v
