@@ -17,6 +17,7 @@ import (
 	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
 	"github.com/deeprath/commerce-platform/pkg/auth"
 	"github.com/deeprath/commerce-platform/pkg/config"
+	"github.com/deeprath/commerce-platform/pkg/fga"
 	"github.com/deeprath/commerce-platform/pkg/grpcx"
 	"github.com/deeprath/commerce-platform/pkg/kafka"
 	"github.com/deeprath/commerce-platform/pkg/pgx"
@@ -73,13 +74,29 @@ func run() error {
 	defer producer.Close()
 	relay := kafka.NewOutboxRelay(pool, producer, 0, 0)
 
+	// Shop staff relationships (OpenFGA). Optional: without an endpoint the
+	// AddShopStaff / RemoveShopStaff / ListShopStaff RPCs report Unavailable.
+	var fgaClient fga.API
+	if apiURL := config.String("OPENFGA_API_URL", ""); apiURL != "" {
+		c, ferr := fga.New(ctx, fga.Config{
+			APIURL:    apiURL,
+			StoreName: config.String("OPENFGA_STORE_NAME", fga.StoreName),
+			Model:     fga.CommerceModel,
+		})
+		if ferr != nil {
+			return ferr
+		}
+		slog.Info("openfga ready", slog.String("store", c.StoreID()), slog.String("model", c.ModelID()))
+		fgaClient = c
+	}
+
 	srv := grpcx.NewServer(
 		grpcx.WithAuth(verifier, "/grpc.health.v1.Health/Check", "/grpc.health.v1.Health/Watch"),
 		// A shop's public page is reachable without a token; the handler still
 		// hides non-ACTIVE shops from non-owners.
 		grpcx.WithOptionalAuthMethods("/commerce.seller.v1.SellerService/GetShop"),
 	)
-	sellerv1.RegisterSellerServiceServer(srv, grpcsvc.New(st))
+	sellerv1.RegisterSellerServiceServer(srv, grpcsvc.New(st, fgaClient))
 	healthgrpc.RegisterHealthServer(srv, health.NewServer())
 	if svc.Environment == "local" {
 		reflection.Register(srv)

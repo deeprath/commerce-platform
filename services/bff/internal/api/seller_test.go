@@ -17,12 +17,14 @@ import (
 
 type fakeSeller struct {
 	sellerv1.SellerServiceClient
-	lastCreate   *sellerv1.CreateShopRequest
-	lastGetShop  *sellerv1.GetShopRequest
-	lastList     *sellerv1.ListShopsRequest
-	lastActivate *sellerv1.ActivateShopRequest
-	lastSuspend  *sellerv1.SuspendShopRequest
-	err          error
+	lastCreate      *sellerv1.CreateShopRequest
+	lastGetShop     *sellerv1.GetShopRequest
+	lastList        *sellerv1.ListShopsRequest
+	lastActivate    *sellerv1.ActivateShopRequest
+	lastSuspend     *sellerv1.SuspendShopRequest
+	lastAddStaff    *sellerv1.AddShopStaffRequest
+	lastRemoveStaff *sellerv1.RemoveShopStaffRequest
+	err             error
 }
 
 func (f *fakeSeller) CreateShop(_ context.Context, in *sellerv1.CreateShopRequest, _ ...grpc.CallOption) (*sellerv1.Shop, error) {
@@ -65,6 +67,20 @@ func (f *fakeSeller) ActivateShop(_ context.Context, in *sellerv1.ActivateShopRe
 func (f *fakeSeller) SuspendShop(_ context.Context, in *sellerv1.SuspendShopRequest, _ ...grpc.CallOption) (*sellerv1.Shop, error) {
 	f.lastSuspend = in
 	return &sellerv1.Shop{Id: in.GetId(), Status: sellerv1.ShopStatus_SHOP_STATUS_SUSPENDED}, f.err
+}
+func (f *fakeSeller) AddShopStaff(_ context.Context, in *sellerv1.AddShopStaffRequest, _ ...grpc.CallOption) (*sellerv1.AddShopStaffResponse, error) {
+	f.lastAddStaff = in
+	return &sellerv1.AddShopStaffResponse{}, f.err
+}
+func (f *fakeSeller) RemoveShopStaff(_ context.Context, in *sellerv1.RemoveShopStaffRequest, _ ...grpc.CallOption) (*sellerv1.RemoveShopStaffResponse, error) {
+	f.lastRemoveStaff = in
+	return &sellerv1.RemoveShopStaffResponse{}, f.err
+}
+func (f *fakeSeller) ListShopStaff(_ context.Context, _ *sellerv1.ListShopStaffRequest, _ ...grpc.CallOption) (*sellerv1.ListShopStaffResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &sellerv1.ListShopStaffResponse{OwnerSubject: "owner-1", StaffSubjects: []string{"helper-a"}}, nil
 }
 
 func sellerReq(t *testing.T, s *Server, method, path, body string, authed bool) *httptest.ResponseRecorder {
@@ -166,6 +182,31 @@ func TestUpdateShop_AuthGateAndForward(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Renamed Shop") {
 		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
+func TestShopStaff_Routes(t *testing.T) {
+	fs := &fakeSeller{}
+	s := &Server{cl: &clients.Set{Seller: fs}}
+
+	if rec := sellerReq(t, s, http.MethodPost, "/api/v1/seller/shops/me/staff", `{"subject":"helper"}`, false); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anon add-staff = %d, want 401", rec.Code)
+	}
+	if rec := sellerReq(t, s, http.MethodPost, "/api/v1/seller/shops/me/staff", `{"subject":"helper"}`, true); rec.Code != http.StatusOK {
+		t.Fatalf("add-staff = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if fs.lastAddStaff.GetStaffSubject() != "helper" {
+		t.Fatalf("add-staff forwarded %+v", fs.lastAddStaff)
+	}
+	if rec := sellerReq(t, s, http.MethodDelete, "/api/v1/seller/shops/me/staff/ex-helper", "", true); rec.Code != http.StatusOK {
+		t.Fatalf("remove-staff = %d", rec.Code)
+	}
+	if fs.lastRemoveStaff.GetStaffSubject() != "ex-helper" {
+		t.Fatalf("remove-staff forwarded %+v", fs.lastRemoveStaff)
+	}
+	rec := sellerReq(t, s, http.MethodGet, "/api/v1/seller/shops/me/staff", "", true)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "helper-a") {
+		t.Fatalf("list-staff = %d body %s", rec.Code, rec.Body.String())
 	}
 }
 

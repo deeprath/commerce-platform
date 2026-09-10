@@ -104,6 +104,9 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	v1.POST("/seller/shops", s.createShop)
 	v1.GET("/seller/shops/me", s.getMyShop)
 	v1.PUT("/seller/shops/me", s.updateShop)
+	v1.GET("/seller/shops/me/staff", s.listShopStaff)
+	v1.POST("/seller/shops/me/staff", s.addShopStaff)
+	v1.DELETE("/seller/shops/me/staff/:subject", s.removeShopStaff)
 
 	// --- admin (bearer/cookie forwarded; services enforce the role) ---
 	adm := v1.Group("/admin")

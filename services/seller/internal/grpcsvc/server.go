@@ -6,12 +6,14 @@ package grpcsvc
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	commonv1 "github.com/deeprath/commerce-platform/gen/go/commerce/common/v1"
 	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
 	"github.com/deeprath/commerce-platform/pkg/auth"
 	"github.com/deeprath/commerce-platform/pkg/errs"
+	"github.com/deeprath/commerce-platform/pkg/fga"
 	"github.com/deeprath/commerce-platform/pkg/grpcx"
 	"github.com/deeprath/commerce-platform/services/seller/internal/domain"
 	"github.com/deeprath/commerce-platform/services/seller/internal/store"
@@ -22,9 +24,12 @@ const roleShopAdmin = "shop_admin"
 type Server struct {
 	sellerv1.UnimplementedSellerServiceServer
 	store *store.Store
+	// fga records shop staff relationships. nil when no OpenFGA endpoint is
+	// configured — the staff RPCs then report Unavailable.
+	fga fga.API
 }
 
-func New(s *store.Store) *Server { return &Server{store: s} }
+func New(s *store.Store, fgaClient fga.API) *Server { return &Server{store: s, fga: fgaClient} }
 
 func (s *Server) CreateShop(ctx context.Context, req *sellerv1.CreateShopRequest) (*sellerv1.Shop, error) {
 	p := auth.FromContext(ctx)
@@ -38,6 +43,15 @@ func (s *Server) CreateShop(ctx context.Context, req *sellerv1.CreateShopRequest
 	saved, err := s.store.Create(ctx, sh)
 	if err != nil {
 		return nil, err
+	}
+	// Record the owner in OpenFGA so `shop#staff` resolves for them and other
+	// services can key off it. Best-effort: a missing owner tuple is re-written
+	// on the owner's next staff operation.
+	if s.fga != nil {
+		if werr := s.fga.Write(ctx, fga.UserObject(p.Subject), fga.RelationOwner, fga.ShopObject(saved.ID)); werr != nil && !fga.IsAlreadyExists(werr) {
+			slog.ErrorContext(ctx, "shop owner tuple write failed",
+				slog.String("shop", saved.ID), slog.Any("err", werr))
+		}
 	}
 	return toProto(saved), nil
 }

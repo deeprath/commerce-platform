@@ -298,7 +298,12 @@ services:
     kafka: true # commerce.shop.* via the transactional outbox
     auth: true
     callers: [bff]
-    env: { GRPC_ADDR: ":50051" }
+    egressExtra:
+      - { selector: { app: openfga }, port: 8080 } # shop staff relationships (ADR-039)
+    env:
+      GRPC_ADDR: ":50051"
+      OPENFGA_API_URL: http://openfga.commerce.svc.cluster.local:8080
+      OPENFGA_STORE_NAME: commerce
 
   analytics:
     kafka: true

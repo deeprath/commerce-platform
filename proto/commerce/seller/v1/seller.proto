@@ -38,6 +38,18 @@ service SellerService {
   // SuspendShop moves an ACTIVE shop to SUSPENDED with a reason. Requires the
   // shop_admin role. Idempotent.
   rpc SuspendShop(SuspendShopRequest) returns (Shop);
+
+  // AddShopStaff grants another user staff access to the caller's own shop
+  // (a `shop#staff` relationship tuple in OpenFGA). Owner only; idempotent.
+  // Staff will be able to manage the shop's catalog listings (a later slice).
+  rpc AddShopStaff(AddShopStaffRequest) returns (AddShopStaffResponse);
+
+  // RemoveShopStaff revokes a grant from AddShopStaff. Owner only; idempotent.
+  rpc RemoveShopStaff(RemoveShopStaffRequest) returns (RemoveShopStaffResponse);
+
+  // ListShopStaff lists the caller's own shop's staff (plus the owner).
+  // Owner only.
+  rpc ListShopStaff(ListShopStaffRequest) returns (ListShopStaffResponse);
 }
 
 enum ShopStatus {
@@ -98,6 +110,25 @@ message ActivateShopRequest {
 message SuspendShopRequest {
   string id = 1;
   string reason = 2;
+}
+
+message AddShopStaffRequest {
+  string staff_subject = 1; // Keycloak sub of the user to add
+}
+
+message AddShopStaffResponse {}
+
+message RemoveShopStaffRequest {
+  string staff_subject = 1;
+}
+
+message RemoveShopStaffResponse {}
+
+message ListShopStaffRequest {}
+
+message ListShopStaffResponse {
+  string owner_subject = 1;
+  repeated string staff_subjects = 2; // does not include the owner
 }
 
 // --- events (topic: commerce.shop.<event>) ---

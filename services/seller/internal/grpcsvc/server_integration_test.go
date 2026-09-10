@@ -13,12 +13,64 @@ import (
 	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
 	"github.com/deeprath/commerce-platform/pkg/auth"
 	"github.com/deeprath/commerce-platform/pkg/errs"
+	"github.com/deeprath/commerce-platform/pkg/fga"
 	"github.com/deeprath/commerce-platform/pkg/pgx"
 	"github.com/deeprath/commerce-platform/services/seller/internal/grpcsvc"
 	"github.com/deeprath/commerce-platform/services/seller/internal/store"
 )
 
-func newSrv(t *testing.T) *grpcsvc.Server {
+// fakeFGA is an in-memory fga.API — exact-tuple only (no userset resolution),
+// which is enough for the seller service's Write/Delete/Read paths.
+type fakeFGA struct{ tuples map[string]bool }
+
+func newFakeFGA() *fakeFGA { return &fakeFGA{tuples: map[string]bool{}} }
+
+func fk(u, r, o string) string { return u + "|" + r + "|" + o }
+
+func (f *fakeFGA) Check(_ context.Context, u, r, o string) (bool, error) {
+	return f.tuples[fk(u, r, o)], nil
+}
+func (f *fakeFGA) Write(_ context.Context, u, r, o string) error {
+	if f.tuples[fk(u, r, o)] {
+		return &fga.Error{Status: 400, Message: "tuple already exists"}
+	}
+	f.tuples[fk(u, r, o)] = true
+	return nil
+}
+func (f *fakeFGA) Delete(_ context.Context, u, r, o string) error {
+	if !f.tuples[fk(u, r, o)] {
+		return &fga.Error{Status: 400, Message: "tuple not found"}
+	}
+	delete(f.tuples, fk(u, r, o))
+	return nil
+}
+func (f *fakeFGA) Read(_ context.Context, o string) ([]fga.Tuple, error) {
+	var out []fga.Tuple
+	for k := range f.tuples {
+		p := splitKey(k)
+		if p[2] == o {
+			out = append(out, fga.Tuple{User: p[0], Relation: p[1], Object: p[2]})
+		}
+	}
+	return out, nil
+}
+
+func splitKey(k string) [3]string {
+	var out [3]string
+	i, start := 0, 0
+	for j := 0; j < len(k) && i < 2; j++ {
+		if k[j] == '|' {
+			out[i] = k[start:j]
+			i, start = i+1, j+1
+		}
+	}
+	out[2] = k[start:]
+	return out
+}
+
+func newSrv(t *testing.T) *grpcsvc.Server { return newSrvFGA(t, newFakeFGA()) }
+
+func newSrvFGA(t *testing.T, f fga.API) *grpcsvc.Server {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("integration test needs Docker; skipped with -short")
@@ -47,7 +99,7 @@ func newSrv(t *testing.T) *grpcsvc.Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	return grpcsvc.New(store.New(pool))
+	return grpcsvc.New(store.New(pool), f)
 }
 
 func user(sub string) context.Context {
@@ -121,6 +173,81 @@ func TestSeller_OnboardingLifecycle(t *testing.T) {
 	other, _ := s.CreateShop(user("seller-2"), &sellerv1.CreateShopRequest{Name: "Second Shop"})
 	if _, err := s.SuspendShop(admin("op"), &sellerv1.SuspendShopRequest{Id: other.GetId(), Reason: "  "}); !errs.Is(err, errs.KindInvalidArgument) {
 		t.Fatalf("SuspendShop(no reason) err = %v, want InvalidArgument", err)
+	}
+}
+
+func TestSeller_ShopStaff(t *testing.T) {
+	f := newFakeFGA()
+	s := newSrvFGA(t, f)
+
+	// no shop yet -> NotFound
+	if _, err := s.AddShopStaff(user("owner-s"), &sellerv1.AddShopStaffRequest{StaffSubject: "helper"}); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("AddShopStaff(no shop) err = %v, want NotFound", err)
+	}
+
+	sh, err := s.CreateShop(user("owner-s"), &sellerv1.CreateShopRequest{Name: "Staffed Shop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// CreateShop wrote the owner tuple.
+	if ok, _ := f.Check(context.Background(), fga.UserObject("owner-s"), fga.RelationOwner, fga.ShopObject(sh.GetId())); !ok {
+		t.Fatal("CreateShop did not record the shop#owner tuple")
+	}
+
+	// owner adds a staff member (idempotent)
+	for i := 0; i < 2; i++ {
+		if _, err := s.AddShopStaff(user("owner-s"), &sellerv1.AddShopStaffRequest{StaffSubject: "helper"}); err != nil {
+			t.Fatalf("AddShopStaff #%d: %v", i, err)
+		}
+	}
+	if ok, _ := f.Check(context.Background(), fga.UserObject("helper"), fga.RelationStaff, fga.ShopObject(sh.GetId())); !ok {
+		t.Fatal("staff tuple not written")
+	}
+
+	// can't add yourself
+	if _, err := s.AddShopStaff(user("owner-s"), &sellerv1.AddShopStaffRequest{StaffSubject: "owner-s"}); !errs.Is(err, errs.KindInvalidArgument) {
+		t.Fatalf("self-add err = %v, want InvalidArgument", err)
+	}
+	// empty subject
+	if _, err := s.AddShopStaff(user("owner-s"), &sellerv1.AddShopStaffRequest{StaffSubject: "  "}); !errs.Is(err, errs.KindInvalidArgument) {
+		t.Fatalf("empty subject err = %v, want InvalidArgument", err)
+	}
+
+	// list shows the staff + names the owner
+	lst, err := s.ListShopStaff(user("owner-s"), &sellerv1.ListShopStaffRequest{})
+	if err != nil {
+		t.Fatalf("ListShopStaff: %v", err)
+	}
+	if lst.GetOwnerSubject() != "owner-s" || len(lst.GetStaffSubjects()) != 1 || lst.GetStaffSubjects()[0] != "helper" {
+		t.Fatalf("list = %+v", lst)
+	}
+
+	// a different user can't manage this shop's staff (they have no shop)
+	if _, err := s.AddShopStaff(user("stranger"), &sellerv1.AddShopStaffRequest{StaffSubject: "x"}); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("stranger AddShopStaff err = %v, want NotFound", err)
+	}
+
+	// remove (idempotent)
+	for i := 0; i < 2; i++ {
+		if _, err := s.RemoveShopStaff(user("owner-s"), &sellerv1.RemoveShopStaffRequest{StaffSubject: "helper"}); err != nil {
+			t.Fatalf("RemoveShopStaff #%d: %v", i, err)
+		}
+	}
+	if ok, _ := f.Check(context.Background(), fga.UserObject("helper"), fga.RelationStaff, fga.ShopObject(sh.GetId())); ok {
+		t.Fatal("staff tuple still present after remove")
+	}
+}
+
+func TestSeller_StaffRPCsNeedAuthAndFGA(t *testing.T) {
+	// nil FGA -> Unavailable
+	nofga := newSrvFGA(t, nil)
+	if _, err := nofga.AddShopStaff(user("u"), &sellerv1.AddShopStaffRequest{StaffSubject: "x"}); !errs.Is(err, errs.KindUnavailable) {
+		t.Fatalf("nil-FGA AddShopStaff err = %v, want Unavailable", err)
+	}
+	// anon -> Unauthenticated
+	s := newSrv(t)
+	if _, err := s.ListShopStaff(context.Background(), &sellerv1.ListShopStaffRequest{}); !errs.Is(err, errs.KindUnauthenticated) {
+		t.Fatalf("anon ListShopStaff err = %v, want Unauthenticated", err)
 	}
 }
 

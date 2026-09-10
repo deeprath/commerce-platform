@@ -27,13 +27,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SellerService_CreateShop_FullMethodName   = "/commerce.seller.v1.SellerService/CreateShop"
-	SellerService_GetMyShop_FullMethodName    = "/commerce.seller.v1.SellerService/GetMyShop"
-	SellerService_GetShop_FullMethodName      = "/commerce.seller.v1.SellerService/GetShop"
-	SellerService_UpdateShop_FullMethodName   = "/commerce.seller.v1.SellerService/UpdateShop"
-	SellerService_ListShops_FullMethodName    = "/commerce.seller.v1.SellerService/ListShops"
-	SellerService_ActivateShop_FullMethodName = "/commerce.seller.v1.SellerService/ActivateShop"
-	SellerService_SuspendShop_FullMethodName  = "/commerce.seller.v1.SellerService/SuspendShop"
+	SellerService_CreateShop_FullMethodName      = "/commerce.seller.v1.SellerService/CreateShop"
+	SellerService_GetMyShop_FullMethodName       = "/commerce.seller.v1.SellerService/GetMyShop"
+	SellerService_GetShop_FullMethodName         = "/commerce.seller.v1.SellerService/GetShop"
+	SellerService_UpdateShop_FullMethodName      = "/commerce.seller.v1.SellerService/UpdateShop"
+	SellerService_ListShops_FullMethodName       = "/commerce.seller.v1.SellerService/ListShops"
+	SellerService_ActivateShop_FullMethodName    = "/commerce.seller.v1.SellerService/ActivateShop"
+	SellerService_SuspendShop_FullMethodName     = "/commerce.seller.v1.SellerService/SuspendShop"
+	SellerService_AddShopStaff_FullMethodName    = "/commerce.seller.v1.SellerService/AddShopStaff"
+	SellerService_RemoveShopStaff_FullMethodName = "/commerce.seller.v1.SellerService/RemoveShopStaff"
+	SellerService_ListShopStaff_FullMethodName   = "/commerce.seller.v1.SellerService/ListShopStaff"
 )
 
 // SellerServiceClient is the client API for SellerService service.
@@ -60,6 +63,15 @@ type SellerServiceClient interface {
 	// SuspendShop moves an ACTIVE shop to SUSPENDED with a reason. Requires the
 	// shop_admin role. Idempotent.
 	SuspendShop(ctx context.Context, in *SuspendShopRequest, opts ...grpc.CallOption) (*Shop, error)
+	// AddShopStaff grants another user staff access to the caller's own shop
+	// (a `shop#staff` relationship tuple in OpenFGA). Owner only; idempotent.
+	// Staff will be able to manage the shop's catalog listings (a later slice).
+	AddShopStaff(ctx context.Context, in *AddShopStaffRequest, opts ...grpc.CallOption) (*AddShopStaffResponse, error)
+	// RemoveShopStaff revokes a grant from AddShopStaff. Owner only; idempotent.
+	RemoveShopStaff(ctx context.Context, in *RemoveShopStaffRequest, opts ...grpc.CallOption) (*RemoveShopStaffResponse, error)
+	// ListShopStaff lists the caller's own shop's staff (plus the owner).
+	// Owner only.
+	ListShopStaff(ctx context.Context, in *ListShopStaffRequest, opts ...grpc.CallOption) (*ListShopStaffResponse, error)
 }
 
 type sellerServiceClient struct {
@@ -140,6 +152,36 @@ func (c *sellerServiceClient) SuspendShop(ctx context.Context, in *SuspendShopRe
 	return out, nil
 }
 
+func (c *sellerServiceClient) AddShopStaff(ctx context.Context, in *AddShopStaffRequest, opts ...grpc.CallOption) (*AddShopStaffResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddShopStaffResponse)
+	err := c.cc.Invoke(ctx, SellerService_AddShopStaff_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sellerServiceClient) RemoveShopStaff(ctx context.Context, in *RemoveShopStaffRequest, opts ...grpc.CallOption) (*RemoveShopStaffResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveShopStaffResponse)
+	err := c.cc.Invoke(ctx, SellerService_RemoveShopStaff_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sellerServiceClient) ListShopStaff(ctx context.Context, in *ListShopStaffRequest, opts ...grpc.CallOption) (*ListShopStaffResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListShopStaffResponse)
+	err := c.cc.Invoke(ctx, SellerService_ListShopStaff_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SellerServiceServer is the server API for SellerService service.
 // All implementations must embed UnimplementedSellerServiceServer
 // for forward compatibility.
@@ -164,6 +206,15 @@ type SellerServiceServer interface {
 	// SuspendShop moves an ACTIVE shop to SUSPENDED with a reason. Requires the
 	// shop_admin role. Idempotent.
 	SuspendShop(context.Context, *SuspendShopRequest) (*Shop, error)
+	// AddShopStaff grants another user staff access to the caller's own shop
+	// (a `shop#staff` relationship tuple in OpenFGA). Owner only; idempotent.
+	// Staff will be able to manage the shop's catalog listings (a later slice).
+	AddShopStaff(context.Context, *AddShopStaffRequest) (*AddShopStaffResponse, error)
+	// RemoveShopStaff revokes a grant from AddShopStaff. Owner only; idempotent.
+	RemoveShopStaff(context.Context, *RemoveShopStaffRequest) (*RemoveShopStaffResponse, error)
+	// ListShopStaff lists the caller's own shop's staff (plus the owner).
+	// Owner only.
+	ListShopStaff(context.Context, *ListShopStaffRequest) (*ListShopStaffResponse, error)
 	mustEmbedUnimplementedSellerServiceServer()
 }
 
@@ -194,6 +245,15 @@ func (UnimplementedSellerServiceServer) ActivateShop(context.Context, *ActivateS
 }
 func (UnimplementedSellerServiceServer) SuspendShop(context.Context, *SuspendShopRequest) (*Shop, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SuspendShop not implemented")
+}
+func (UnimplementedSellerServiceServer) AddShopStaff(context.Context, *AddShopStaffRequest) (*AddShopStaffResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddShopStaff not implemented")
+}
+func (UnimplementedSellerServiceServer) RemoveShopStaff(context.Context, *RemoveShopStaffRequest) (*RemoveShopStaffResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveShopStaff not implemented")
+}
+func (UnimplementedSellerServiceServer) ListShopStaff(context.Context, *ListShopStaffRequest) (*ListShopStaffResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListShopStaff not implemented")
 }
 func (UnimplementedSellerServiceServer) mustEmbedUnimplementedSellerServiceServer() {}
 func (UnimplementedSellerServiceServer) testEmbeddedByValue()                       {}
@@ -342,6 +402,60 @@ func _SellerService_SuspendShop_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SellerService_AddShopStaff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddShopStaffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SellerServiceServer).AddShopStaff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SellerService_AddShopStaff_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SellerServiceServer).AddShopStaff(ctx, req.(*AddShopStaffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SellerService_RemoveShopStaff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveShopStaffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SellerServiceServer).RemoveShopStaff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SellerService_RemoveShopStaff_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SellerServiceServer).RemoveShopStaff(ctx, req.(*RemoveShopStaffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SellerService_ListShopStaff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListShopStaffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SellerServiceServer).ListShopStaff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SellerService_ListShopStaff_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SellerServiceServer).ListShopStaff(ctx, req.(*ListShopStaffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SellerService_ServiceDesc is the grpc.ServiceDesc for SellerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -376,6 +490,18 @@ var SellerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SuspendShop",
 			Handler:    _SellerService_SuspendShop_Handler,
+		},
+		{
+			MethodName: "AddShopStaff",
+			Handler:    _SellerService_AddShopStaff_Handler,
+		},
+		{
+			MethodName: "RemoveShopStaff",
+			Handler:    _SellerService_RemoveShopStaff_Handler,
+		},
+		{
+			MethodName: "ListShopStaff",
+			Handler:    _SellerService_ListShopStaff_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

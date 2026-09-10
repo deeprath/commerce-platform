@@ -14,7 +14,7 @@ import (
 	"github.com/deeprath/commerce-platform/services/order/internal/store"
 )
 
-// fakeSharer is an in-memory authz.Sharer.
+// fakeSharer is an in-memory fga.API.
 type fakeSharer struct {
 	mu     sync.Mutex
 	tuples map[string]bool // "user|relation|object"
