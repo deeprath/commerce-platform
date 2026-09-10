@@ -1,0 +1,11 @@
+{
+  "slug": "ceramic-mug",
+  "title": "Ceramic Mug",
+  "description": "350 ml stoneware mug with a matte glaze. Dishwasher and microwave safe.",
+  "category_id": "home",
+  "list_price": {
+    "currency_code": "USD",
+    "units": "14",
+    "nanos": 500000000
+  }
+}

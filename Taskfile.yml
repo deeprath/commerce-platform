@@ -88,6 +88,13 @@ tasks:
     desc: Tail logs (task logs -- ext-authz)
     cmds: ["{{.COMPOSE}} logs -f --tail=100 {{.CLI_ARGS}}"]
 
+  seed:
+    desc: (Re)run the idempotent demo-catalog seeder against the running stack
+    cmds:
+      - "{{.COMPOSE}} up -d --force-recreate --no-deps catalog-seed"
+      - "{{.COMPOSE}} wait catalog-seed"
+      - "{{.COMPOSE}} logs catalog-seed"
+
   # ---- performance --------------------------------------------------
   perf:load:
     desc: k6 checkout-funnel load test against the running local stack

@@ -702,6 +702,10 @@ Full posture, current findings, and the CI verification checklist live in
   auto-provisioned).
 - `task up:full` additionally starts **OpenSearch** and **Schema Registry** (large images,
   first needed in Phase 1 / Phase 2).
+- a one-shot **`catalog-seed`** container (`deploy/compose/seed/`) that creates + publishes
+  a small demo catalog via the BFF admin API on every `up`. Publishing emits
+  `product_changed`, so the search index and per-product stock rows populate from it too.
+  Idempotent; re-run standalone with `task seed`. The `perf` and `zap` CI jobs rely on it.
 
 `task proto` runs `buf generate` (Go stubs + TS `connect-es` clients). `task test` runs unit
 tests plus integration tests that spin up real Postgres/Kafka/MinIO via **testcontainers**

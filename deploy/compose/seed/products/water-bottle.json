@@ -1,0 +1,11 @@
+{
+  "slug": "water-bottle",
+  "title": "Steel Water Bottle",
+  "description": "750 ml double-walled stainless steel bottle, keeps drinks cold 24h / hot 12h.",
+  "category_id": "gear",
+  "list_price": {
+    "currency_code": "USD",
+    "units": "25",
+    "nanos": 0
+  }
+}
