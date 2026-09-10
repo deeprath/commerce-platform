@@ -11,7 +11,8 @@ entry in `.Values.services` it emits:
 | `PodDisruptionBudget` | `minAvailable: 1` (toggle with `podDisruptionBudget.enabled`). |
 | `NetworkPolicy` (×2) | `<svc>-ingress` (only the callers) + `<svc>-egress` (infra per flags + downstream services, *derived* from every service's `callers`). Plus a one-time namespace `default-deny-all` and `allow-egress-common` (DNS + otel). Toggle with `networkPolicy.enabled`. |
 | `AuthorizationPolicy` | `allow-to-<svc>` — Istio L7, keyed on the caller's SPIFFE identity; method-scoped where `callers[].methods` is set. `callers: []` → `rules: []` = deny all L7. Toggle with `authorizationPolicy.enabled`. |
-| `ScaledObject` (KEDA) | only when `autoscaling.enabled`. Triggers: `rps` (Prometheus `rpc_server_*` rate), `kafkaLag` (consumer group lag), `cpu`/`memory` (utilization). The Deployment then omits `spec.replicas` so the HPA owns it. |
+| `ScaledObject` (KEDA) | only when `autoscaling.enabled`. Triggers: `rps` (Prometheus `rpc_server_*` rate), `kafkaLag` (consumer group lag), `cpu`/`memory` (utilization). The Deployment then omits `spec.replicas` so the HPA owns it; `scaleTargetRef` points at the `Rollout` if there is one. |
+| `Rollout` + `<svc>-canary` Service + `AnalysisTemplate` (Argo Rollouts) | only when `rollout.enabled`. Canary via the Gateway API plugin on `global.rollout.httpRoute`; `workloadRef` → the Deployment (no template duplication); background analysis on checkout health. |
 
 The namespace-wide Istio `default-deny` and the gateway-scoped policies stay in
 `deploy/istio/authorization-policy.yaml`. Secrets (External Secrets Operator), HPA/KEDA,
@@ -34,6 +35,7 @@ flags:
 | `egressExtra: [...]` | extra L3/L4 egress targets (`{selector, port, namespace?}`) — e.g. `media` → MinIO, `search` → OpenSearch |
 | `grpcService` | proto service name (e.g. `commerce.payment.v1.PaymentService`) — required only for method-scoped `callers` |
 | `autoscaling` | `{enabled, minReplicas, maxReplicas, triggers: [{type: rps\|kafkaLag\|cpu\|memory, threshold, group?}]}` — renders a KEDA `ScaledObject` and drops `spec.replicas` from the Deployment |
+| `rollout` | `{enabled, mirror, analysis, steps: [...]}` — renders an Argo `Rollout` (canary via the Gateway API plugin), a `<svc>-canary` Service and, if `analysis`, an `AnalysisTemplate`. Only meaningful for a service behind an `HTTPRoute` (the BFF). |
 | `envFromSecret: true` | also `envFrom` the shared secret (BFF client secret, MinIO keys) |
 | `env: {…}` | literal env, wins over `global.commonEnv` |
 | `replicas`, `resources`, `podDisruptionBudget`, `topologySpread`, `networkPolicy`, `authorizationPolicy` | standard overrides |

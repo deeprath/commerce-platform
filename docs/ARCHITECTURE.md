@@ -566,8 +566,8 @@ available — the app doesn't care.
 ### 9.3 Helm
 
 - `deploy/helm/platform/` is the **app-of-apps**: one Argo CD `Application` per third-party
-  chart (istio, KEDA, kube-prometheus-stack, loki, tempo, otel-collector, Gateway API CRDs)
-  **and** one for `deploy/helm/commerce-services`.
+  chart (istio, KEDA, Argo Rollouts, kube-prometheus-stack, loki, tempo, otel-collector,
+  Gateway API CRDs) **and** one for `deploy/helm/commerce-services`.
 - `deploy/helm/commerce-services/` is **one templated chart** that renders
   `ServiceAccount` + `Deployment` + `Service` + `PodDisruptionBudget` per service by
   iterating a `services:` map in `values.yaml` — instead of ~13 near-identical subcharts.
@@ -578,9 +578,17 @@ available — the app doesn't care.
 - `values.yaml` (production-shaped defaults) + `values-dev.yaml` (kind: 1 replica, images
   side-loaded, no PDB). Rendered manifests are schema-checked in CI (`helm template |
   kubeconform -strict`).
-- HPA/KEDA `ScaledObject`s, `NetworkPolicy`, and the tightened per-service
-  `AuthorizationPolicy` are separate manifests layered on top (they key off the `app: <svc>`
-  label and the `sa/<svc>` identity this chart creates).
+- KEDA `ScaledObject`s, `NetworkPolicy` / `AuthorizationPolicy`, and the Argo `Rollout` +
+  `AnalysisTemplate` are separate templates in the same chart, each gated by a per-service
+  toggle (`autoscaling` / `networkPolicy` / `authorizationPolicy` / `rollout`) and keyed off
+  the `app: <svc>` label + `sa/<svc>` identity.
+- **Progressive delivery** (`rollout.enabled`, BFF only for now): the `Rollout` takes its pod
+  template from the Deployment (`workloadRef`) and canaries via the **Gateway API
+  traffic-router plugin** on the `bff-storefront` `HTTPRoute` — a `RequestMirror` shadow step
+  (100% mirror, 0 weight), then `10 → 30 → 60 → 100` weight with `pause`s, a background
+  `AnalysisRun` (`bff-canary`) querying checkout success-rate + `job:grpc_error_ratio:5m` that
+  auto-aborts on two consecutive failures. KEDA's `scaleTargetRef` points at the `Rollout`
+  when both are on. Internal gRPC canary needs mesh waypoints (deferred).
 - Secrets come from **External Secrets Operator** (`SecretStore` → Vault), never from
   `values`.
 - **Argo CD** watches `deploy/helm/` on `main` → auto-sync to `staging`, manual promote to
@@ -763,5 +771,5 @@ See [`SECURITY.md`](SECURITY.md) for job-by-job policy and the "did it actually 
 | **1 — Catalog & browse** | `catalog`, `media`, `search`, `bff`; `HTTPRoute`s for storefront; storefront browse + PDP; MinIO upload flow; Grafana platform + service dashboards (incl. mesh + gateway metrics). |
 | **2 — Cart & checkout** | `cart`, `pricing`, `inventory`, `order`, `payment` (PSP sandbox), the saga; `waypoint` proxies + `AuthorizationPolicy` for `order`/`payment`/`inventory`; ✅ checkout-funnel dashboard *(Phase 4)*; ✅ k6 load test (`perf/checkout-funnel.js` + weekly `perf.yml`). |
 | **3 — Fulfillment & comms** | ✅ `fulfillment`, `notification`, `review`; ✅ RMA/returns + partial refunds; ✅ admin API (operator mode on the list RPCs + BFF `/admin/*`); ✅ admin **SPA** (`web/admin`) + admin `HTTPRoute` on `admin.*` restricted by a source-IP `AuthorizationPolicy`. |
-| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; ✅ per-service **NetworkPolicies** (default-deny + call-graph-derived allows) + tightened per-service **`AuthorizationPolicy`** (SPIFFE identity, method-scoped for `payment`); ✅ **KEDA `ScaledObject`s** (gRPC RPS / Kafka lag / CPU per service); **progressive delivery — Argo Rollouts + weighted `HTTPRoute` + traffic mirroring**; DR runbooks; pen-test remediation. |
+| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; ✅ per-service **NetworkPolicies** (default-deny + call-graph-derived allows) + tightened per-service **`AuthorizationPolicy`** (SPIFFE identity, method-scoped for `payment`); ✅ **KEDA `ScaledObject`s** (gRPC RPS / Kafka lag / CPU per service); ✅ **progressive delivery** — Argo Rollouts canary for the BFF: weighted `bff-storefront` `HTTPRoute` via the Gateway API traffic-router plugin, traffic-mirror shadow step, background `AnalysisRun` on checkout health that auto-aborts; DR runbooks; pen-test remediation. |
 | **5 — Scale/optional** | ClickHouse analytics, CDN, multi-zone, OpenFGA fine-grained authz, marketplace/multi-seller model. |

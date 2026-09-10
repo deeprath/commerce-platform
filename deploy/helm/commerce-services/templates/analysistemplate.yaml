@@ -1,0 +1,48 @@
+{{- $g := .Values.global -}}
+{{- range $name, $rawSvc := .Values.services }}
+{{- $svc := mergeOverwrite (deepCopy $.Values.defaults) $rawSvc }}
+{{- if and $g.rollout.enabled $svc.rollout.enabled $svc.rollout.analysis }}
+# {{ $name }}-canary: runs as a background AnalysisRun for the whole rollout.
+# Two consecutive failures abort it -> Rollouts shifts weight back to stable.
+#
+# The checks are platform-scoped (checkout health, order error ratio) rather
+# than {{ $name }}-canary-pod-scoped: the BFF has no per-pod request metric yet
+# (no otelecho middleware — see ADR-030). If the new {{ $name }} breaks the
+# funnel, these move regardless of which pod served the request.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: {{ $name }}-canary
+  namespace: {{ $g.namespace }}
+  labels:
+    {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
+spec:
+  args:
+    - name: service
+    - name: namespace
+  metrics:
+    - name: checkout-success-rate
+      interval: 1m
+      count: 20
+      failureLimit: 2
+      successCondition: result[0] >= 0.90
+      provider:
+        prometheus:
+          address: {{ $g.prometheusURL }}
+          query: >
+            sum(rate(rpc_server_call_duration_seconds_count{
+              rpc_method=~".*OrderService/CreateOrder", rpc_response_status_code="OK"}[3m]))
+            /
+            clamp_min(sum(rate(rpc_server_call_duration_seconds_count{
+              rpc_method=~".*OrderService/CreateOrder"}[3m])), 1e-9)
+    - name: order-error-ratio
+      interval: 1m
+      count: 20
+      failureLimit: 2
+      successCondition: result[0] <= 0.02
+      provider:
+        prometheus:
+          address: {{ $g.prometheusURL }}
+          query: job:grpc_error_ratio:5m{job="order"}
+{{- end }}
+{{- end }}

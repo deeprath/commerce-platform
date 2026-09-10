@@ -5,6 +5,8 @@
 global:
   autoscaling:
     enabled: false # no KEDA / Prometheus in a bare kind cluster
+  rollout:
+    enabled: false # no Argo Rollouts controller in a bare kind cluster
   image:
     tag: dev
     pullPolicy: Never

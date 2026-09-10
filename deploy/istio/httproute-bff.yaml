@@ -1,5 +1,10 @@
-# Storefront + admin API traffic -> the BFF. The BFF is added in Phase 1; until
-# then this route resolves to a Service with no endpoints and returns 503.
+# Storefront API traffic -> the BFF.
+#
+# The two weighted backendRefs are managed by Argo Rollouts' Gateway API
+# traffic-router plugin (the `bff` Rollout in deploy/helm/commerce-services):
+# steady state is bff=100 / bff-canary=0; during a rollout the plugin shifts
+# weight to bff-canary per the Rollout's `steps`. Leave them here so the plugin
+# has both to adjust.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -21,6 +26,10 @@ spec:
       backendRefs:
         - name: bff
           port: 8080
+          weight: 100
+        - name: bff-canary
+          port: 8080
+          weight: 0
       timeouts:
         request: 15s
 ---
