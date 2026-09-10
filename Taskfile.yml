@@ -88,6 +88,20 @@ tasks:
     desc: Tail logs (task logs -- ext-authz)
     cmds: ["{{.COMPOSE}} logs -f --tail=100 {{.CLI_ARGS}}"]
 
+  # ---- performance --------------------------------------------------
+  perf:load:
+    desc: k6 checkout-funnel load test against the running local stack
+    vars:
+      K6_IMAGE: grafana/k6:0.54.0
+    cmds:
+      - mkdir -p perf/out
+      - >-
+        docker run --rm --add-host host.docker.internal:host-gateway
+        -v "$PWD/perf:/perf:ro" -v "$PWD/perf/out:/out"
+        -e BASE_URL=http://host.docker.internal:8088/api/v1
+        {{.CLI_ARGS}}
+        {{.K6_IMAGE}} run --summary-export=/out/summary.json /perf/checkout-funnel.js
+
   # ---- security ------------------------------------------------------
   scan:secrets:
     desc: Run gitleaks locally

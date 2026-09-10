@@ -797,3 +797,55 @@ a lint could enforce it later). The error-status exclusion list is a policy choi
 into the recording rules; revisit it if a service starts using one of those codes for a
 server-side fault. Burn-rate multipliers and windows are the standard 2%/1h and 5%/6h
 budget-spend figures for a 30-day window.
+
+---
+
+## ADR-025 — Load testing: k6 against the compose stack, checkout-funnel-shaped
+
+**Status:** Accepted (Phase 2 deliverable, landed in Phase 4).
+
+**Context:** The roadmap called for a k6 load test to feed capacity planning and
+guard checkout-path latency. It needs to run somewhere reproducible, in CI, without
+a standing staging environment.
+
+**Decision:**
+- **k6, scripted as the funnel** (`perf/checkout-funnel.js`): a `browse` scenario
+  (`ramping-vus` — list / autocomplete / PDP) and a `checkout` scenario
+  (`ramping-arrival-rate` — add to cart → `CreateOrder` → `ConfirmPayment`) run
+  together. Arrival-rate for checkout so the offered load is a fixed rate, not a
+  function of how fast the system responds.
+- **Target the BFF directly (`:8088`), not the envoy edge.** The baseline measures
+  the application; the edge's rate-limiter would cap the test and turn a perf run
+  into a rate-limit test. `BASE_URL` points it at `:8080` when the edge *is* the
+  thing under test.
+- **Authenticate once in `setup()`; all checkout VUs share the bearer token.** The
+  funnel models signed-in shoppers. Hammering `/auth/login` with one account just
+  measures Keycloak's brute-force lockout — a separate concern, not this test.
+- **Thresholds are the gate** (k6 exits non-zero on breach): `http_req_failed < 1%`,
+  browse p95 < 400 ms, end-to-end checkout p95 < 2.5 s, checkout success > 95%.
+  `409 INSUFFICIENT_STOCK` is a real funnel outcome (seeded stock is finite) and is
+  excluded from the failure rate via `http.setResponseCallback`.
+- **Runs in CI as its own workflow** (`.github/workflows/perf.yml`): `workflow_dispatch`
+  (with VU / RPS / hold inputs) + weekly cron, an hour after the security run. Brings
+  up the full compose stack on a clean volume (stock freshly seeded to 100/product),
+  runs k6 in the `grafana/k6` container reaching the host via `host.docker.internal`
+  (same pattern as `infra/security/zap-scan.sh`), uploads the JSON summary, tears down.
+  Not on every PR — it needs the whole stack and minutes of wall time.
+- **`task perf:load`** runs the same containerised k6 locally against `task up`.
+
+**Alternatives:**
+- *Vegeta / hey / wrk* — HTTP-rate tools without scenario modelling; the funnel is a
+  multi-step stateful flow (cookies, an order id threaded into the confirm call).
+- *Gatling / Locust* — heavier runtimes; k6 scripts are plain JS and the `grafana/k6`
+  image keeps CI dependency-free.
+- *Run on every PR* — minutes of stack bring-up per PR for a signal that moves slowly;
+  weekly + on-demand is enough to catch regressions.
+- *Hit the envoy edge by default* — see above; the edge rate-limit makes it a
+  different test.
+
+**Consequences:** The latency budgets in the thresholds are the current
+contract — tighten them as the platform is tuned. The seeded-stock ceiling means a
+deliberately long local run against a not-freshly-seeded stack will report
+`checkout_out_of_stock`; that is expected, and CI always starts clean. k6's
+`--summary-export` schema (Rate metrics expose `passes`/`fails`, not `rate`) is a
+minor gotcha when post-processing `summary.json`.
