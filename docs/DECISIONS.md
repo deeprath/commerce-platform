@@ -1120,9 +1120,10 @@ workload chart (ADR-028) is the natural place for the per-service `ScaledObject`
     (`search-indexer`, `notification`, `fulfillment`), so a burst of events adds
     consumers. `activationLagThreshold: 1` + `minReplicaCount ≥ 2` = never scale
     to zero (keep a warm consumer).
-  - `cpu` — for `bff`. Its Echo router has no per-request OTel metric yet (no
-    `otelecho` middleware), so there is no HTTP RPS series to scale on; CPU
-    utilization stands in. Swap to `rps` when the middleware lands.
+  - `bff` scales on `rps` too, against `http_server_request_duration_seconds_count`
+    (from the `otelecho` middleware — the `rps` trigger takes an optional
+    `metric:` override for HTTP servers). *(Originally CPU, until the middleware
+    was added.)*
 - **`scaleDown.stabilizationWindowSeconds: 300`** on every ScaledObject — the
   metric must stay below target for 5 min before a pod is removed, so a spiky
   checkout load doesn't thrash replica count.
@@ -1142,10 +1143,10 @@ workload chart (ADR-028) is the natural place for the per-service `ScaledObject`
 - *Scale everything on CPU* — misses I/O-bound saga / consumer work that pegs
   latency long before CPU; RPS and Kafka lag are the leading indicators.
 
-**Consequences:** the RPS triggers depend on the `rpc_server_*` series being in
-Prometheus (they are — same series the SLO rules use). `bff` autoscaling is a
-CPU proxy until `otelecho` is added — tracked. Thresholds are first guesses;
-tune from the k6 load-test p95 once there's a staging baseline.
+**Consequences:** the RPS triggers depend on the `rpc_server_*` / (for the BFF)
+`http_server_*` series being in Prometheus (they are — the gRPC ones back the SLO
+rules; the BFF one comes from `otelecho`). Thresholds are first guesses; tune from
+the k6 load-test p95 once there's a staging baseline.
 
 ---
 

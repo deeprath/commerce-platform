@@ -44,8 +44,9 @@ spec:
     - type: prometheus
       metadata:
         serverAddress: {{ $g.prometheusURL }}
-        # gRPC server request rate for this service; threshold is req/s per replica.
-        query: sum(rate(rpc_server_call_duration_seconds_count{job="{{ $name }}"}[2m]))
+        # request rate for this service; threshold is req/s per replica. Defaults
+        # to the gRPC server metric; set `metric:` for HTTP servers (the BFF).
+        query: sum(rate({{ .metric | default "rpc_server_call_duration_seconds_count" }}{job="{{ $name }}"}[2m]))
         threshold: {{ .threshold | quote }}
     {{- else if eq .type "kafkaLag" }}
     - type: kafka

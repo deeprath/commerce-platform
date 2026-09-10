@@ -260,9 +260,9 @@ services:
       enabled: true
       minReplicas: 3
       maxReplicas: 20
-      # The Echo router emits no per-request otel metric yet (no otelecho
-      # middleware), so scale on CPU. Switch to an `rps` trigger once it does.
-      triggers: [{ type: cpu, threshold: 70 }] # target 70% CPU utilization
+      # HTTP request rate from the otelecho middleware, ~60 req/s per replica.
+      triggers:
+        - { type: rps, threshold: 60, metric: http_server_request_duration_seconds_count }
     rollout:
       enabled: true # canary via the bff-storefront HTTPRoute
     resources:

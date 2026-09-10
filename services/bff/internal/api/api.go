@@ -13,6 +13,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho" //nolint:staticcheck // replacement is Echo v5; BFF is on v4
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -39,6 +40,14 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	e.HideBanner = true
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestID())
+	// HTTP server spans + http.server.request.duration metric (by http.route),
+	// on the global OTel providers wired in pkg/telemetry. Ahead of the handlers
+	// so it times the whole request; /healthz is not worth a span.
+	// otelecho is marked deprecated in favour of labstack/echo-opentelemetry,
+	// but that one targets Echo v5; revisit when the BFF moves off v4.
+	e.Use(otelecho.Middleware("bff", otelecho.WithSkipper(func(c echo.Context) bool {
+		return c.Path() == "/healthz"
+	})))
 	e.Use(secureHeaders)
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins:     allowedOrigins,
