@@ -54,6 +54,13 @@ global:
   autoscaling:
     enabled: true
 
+  # Master switch for Argo Rollouts progressive delivery (a per-service
+  # rollout.enabled still gates each one).
+  rollout:
+    enabled: true
+    # The Gateway API HTTPRoute a canary shifts weight on (BFF only for now).
+    httpRoute: bff-storefront
+
 # Applied to every service unless overridden in the `services` map.
 defaults:
   replicas: 2
@@ -80,6 +87,19 @@ defaults:
     maxReplicas: 10
     # HPA won't remove a pod until the metric has been below target this long.
     scaleDownStabilizationSeconds: 300
+  rollout:
+    enabled: false
+    mirror: true # shadow 100% of traffic to the canary before shifting any weight
+    analysis: true # a background AnalysisRun (<svc>-canary) aborts on SLO breach
+    # Canary weight schedule; each `pause` waits for a human `promote` (or a
+    # duration). The background analysis runs across all of them.
+    steps:
+      - { setWeight: 10 }
+      - { pause: { duration: 2m } }
+      - { setWeight: 30 }
+      - { pause: { duration: 5m } }
+      - { setWeight: 60 }
+      - { pause: { duration: 5m } }
   # GOMEMLIMIT is set from the memory limit (see _helpers.tpl).
   extraEnv: {}
 
@@ -243,6 +263,8 @@ services:
       # HTTP request rate from the otelecho middleware, ~60 req/s per replica.
       triggers:
         - { type: rps, threshold: 60, metric: http_server_request_duration_seconds_count }
+    rollout:
+      enabled: true # canary via the bff-storefront HTTPRoute
     resources:
       requests: { cpu: 100m, memory: 128Mi }
       limits: { cpu: "1", memory: 384Mi }

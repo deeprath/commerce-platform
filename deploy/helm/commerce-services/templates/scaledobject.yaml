@@ -2,6 +2,7 @@
 {{- range $name, $rawSvc := .Values.services }}
 {{- $svc := mergeOverwrite (deepCopy $.Values.defaults) $rawSvc }}
 {{- $a := $svc.autoscaling }}
+{{- $rollout := and $g.rollout.enabled $svc.rollout.enabled }}
 {{- if and $g.autoscaling.enabled $a.enabled }}
 # {{ $name }}: KEDA drives an HPA between {{ $a.minReplicas }} and {{ $a.maxReplicas }}
 # replicas from the triggers below. The Deployment omits spec.replicas so the
@@ -15,6 +16,10 @@ metadata:
     {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
 spec:
   scaleTargetRef:
+    {{- if $rollout }}
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    {{- end }}
     name: {{ $name }}
   minReplicaCount: {{ $a.minReplicas }}
   maxReplicaCount: {{ $a.maxReplicas }}

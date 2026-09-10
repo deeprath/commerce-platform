@@ -1,6 +1,8 @@
 {{- range $name, $rawSvc := .Values.services }}
 {{- $svc := mergeOverwrite (deepCopy $.Values.defaults) $rawSvc }}
 {{- $isHTTP := eq $svc.protocol "http" }}
+{{- $rollout := and $.Values.global.rollout.enabled $svc.rollout.enabled }}
+{{- $portName := ternary "http" "grpc" $isHTTP }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -13,9 +15,31 @@ spec:
   selector:
     {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 4 }}
   ports:
-    - name: {{ if $isHTTP }}http{{ else }}grpc{{ end }}
+    - name: {{ $portName }}
       port: {{ $svc.port }}
       targetPort: {{ $svc.port }}
-      appProtocol: {{ if $isHTTP }}http{{ else }}grpc{{ end }}
+      appProtocol: {{ $portName }}
+{{- if $rollout }}
+---
+# Canary Service — Argo Rollouts adds the rollouts-pod-template-hash selector so
+# it only ever points at canary pods. The Gateway API plugin splits weight
+# between this and the stable Service above.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-canary
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 4 }}
+  ports:
+    - name: {{ $portName }}
+      port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+      appProtocol: {{ $portName }}
+{{- end }}
 ---
 {{- end }}

@@ -87,6 +87,23 @@ applications:
     targetRevision: 2.16.0
     namespace: keda
 
+  - name: argo-rollouts
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-rollouts
+    targetRevision: 2.37.7
+    namespace: argo-rollouts
+    helmValues: |
+      controller:
+        # Register the Gateway API traffic-router plugin so a Rollout can shift
+        # weight on a Gateway API HTTPRoute (deploy/helm/commerce-services renders
+        # the Rollouts; the BFF route is deploy/istio/httproute-bff.yaml).
+        trafficRouterPlugins:
+          trafficRouterPlugins: |-
+            - name: "argoproj-labs/gatewayAPI"
+              location: "https://github.com/argoproj-labs/rollouts-plugin-trafficrouter-gatewayapi/releases/download/v0.5.0/gatewayapi-plugin-linux-amd64"
+      dashboard:
+        enabled: true
+
   - name: kube-prometheus-stack
     repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
