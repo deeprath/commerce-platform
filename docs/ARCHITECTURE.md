@@ -525,9 +525,15 @@ Per service (rendered by `deploy/helm/commerce-services`, §9.3):
 - ✅ **Probes:** native `grpc` liveness + readiness on the health service (`httpGet
   /healthz` for the BFF).
 - ✅ **Resources:** requests / limits per service; `GOMEMLIMIT` set from the memory limit.
-- **HPA** on CPU + custom metrics. **KEDA** `ScaledObject` on **Kafka consumer lag** for
-  `search`, `notification`, `media`; on **gRPC RPS** for `bff`, `catalog`, `search`.
-  *(KEDA controller is in the app-of-apps; the `ScaledObject`s are a follow-on.)*
+- ✅ **KEDA `ScaledObject`** per autoscaled service (`templates/scaledobject.yaml`), one
+  `autoscaling:` block in values. Triggers: **gRPC RPS** (`prometheus` scaler,
+  `sum(rate(rpc_server_call_duration_seconds_count{job=…}[2m]))`) for `catalog`, `order`,
+  `search`; **Kafka consumer lag** (`kafka` scaler on the service's consumer group) for
+  `search` (`search-indexer`), `notification`, `fulfillment`; **CPU** for `bff` (its Echo
+  router has no per-request otel metric yet — no `otelecho` middleware — so CPU stands in;
+  swap to `rps` when it does). The Deployment omits `spec.replicas` when autoscaled so the
+  HPA owns it; `scaleDown.stabilizationWindowSeconds: 300`. KEDA controller is already in
+  the app-of-apps.
 - ✅ `PodDisruptionBudget` (`minAvailable: 1`).
 - ✅ **NetworkPolicy** (L3/L4): a namespace `default-deny-all` + a shared `allow-egress-common`
   (DNS + otel), then per service an `<svc>-ingress` (only its actual callers) and
@@ -757,5 +763,5 @@ See [`SECURITY.md`](SECURITY.md) for job-by-job policy and the "did it actually 
 | **1 — Catalog & browse** | `catalog`, `media`, `search`, `bff`; `HTTPRoute`s for storefront; storefront browse + PDP; MinIO upload flow; Grafana platform + service dashboards (incl. mesh + gateway metrics). |
 | **2 — Cart & checkout** | `cart`, `pricing`, `inventory`, `order`, `payment` (PSP sandbox), the saga; `waypoint` proxies + `AuthorizationPolicy` for `order`/`payment`/`inventory`; ✅ checkout-funnel dashboard *(Phase 4)*; ✅ k6 load test (`perf/checkout-funnel.js` + weekly `perf.yml`). |
 | **3 — Fulfillment & comms** | ✅ `fulfillment`, `notification`, `review`; ✅ RMA/returns + partial refunds; ✅ admin API (operator mode on the list RPCs + BFF `/admin/*`); ✅ admin **SPA** (`web/admin`) + admin `HTTPRoute` on `admin.*` restricted by a source-IP `AuthorizationPolicy`. |
-| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; ✅ per-service **NetworkPolicies** (default-deny + call-graph-derived allows) + tightened per-service **`AuthorizationPolicy`** (SPIFFE identity, method-scoped for `payment`); KEDA `ScaledObject`s; **progressive delivery — Argo Rollouts + weighted `HTTPRoute` + traffic mirroring**; DR runbooks; pen-test remediation. |
+| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; ✅ per-service **NetworkPolicies** (default-deny + call-graph-derived allows) + tightened per-service **`AuthorizationPolicy`** (SPIFFE identity, method-scoped for `payment`); ✅ **KEDA `ScaledObject`s** (gRPC RPS / Kafka lag / CPU per service); **progressive delivery — Argo Rollouts + weighted `HTTPRoute` + traffic mirroring**; DR runbooks; pen-test remediation. |
 | **5 — Scale/optional** | ClickHouse analytics, CDN, multi-zone, OpenFGA fine-grained authz, marketplace/multi-seller model. |

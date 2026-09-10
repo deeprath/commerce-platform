@@ -46,6 +46,14 @@ global:
     serviceAccount: commerce-gateway
     podSelector: { gateway.networking.k8s.io/gateway-name: commerce-gateway }
 
+  # In-cluster Prometheus, for KEDA's `prometheus` trigger (gRPC RPS).
+  prometheusURL: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+
+  # Master switch for KEDA ScaledObjects (a per-service `autoscaling.enabled`
+  # still gates each one). Turn off for clusters without KEDA / Prometheus.
+  autoscaling:
+    enabled: true
+
 # Applied to every service unless overridden in the `services` map.
 defaults:
   replicas: 2
@@ -66,6 +74,12 @@ defaults:
     enabled: true
   authorizationPolicy:
     enabled: true
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    # HPA won't remove a pod until the metric has been below target this long.
+    scaleDownStabilizationSeconds: 300
   # GOMEMLIMIT is set from the memory limit (see _helpers.tpl).
   extraEnv: {}
 
@@ -96,6 +110,10 @@ services:
     kafka: true
     auth: true
     callers: [bff, pricing]
+    autoscaling:
+      enabled: true
+      maxReplicas: 12
+      triggers: [{ type: rps, threshold: 80 }] # ~80 gRPC req/s per replica
     env: { GRPC_ADDR: ":50051" }
 
   media:
@@ -116,6 +134,12 @@ services:
     callers: [bff]
     egressExtra:
       - { selector: { app: opensearch }, port: 9200 } # index
+    autoscaling:
+      enabled: true
+      maxReplicas: 12
+      triggers:
+        - { type: rps, threshold: 80 }
+        - { type: kafkaLag, group: search-indexer, threshold: 200 } # product_changed backlog
     env:
       GRPC_ADDR: ":50051"
       OPENSEARCH_ADDRESSES: http://opensearch.commerce.svc.cluster.local:9200
@@ -161,6 +185,11 @@ services:
     auth: true
     replicas: 3
     callers: [bff]
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 15
+      triggers: [{ type: rps, threshold: 40 }] # checkout is the tight path
     env:
       GRPC_ADDR: ":50051"
       CART_ADDR: cart.commerce.svc.cluster.local:50051
@@ -173,6 +202,10 @@ services:
     kafka: true
     auth: true
     callers: [bff]
+    autoscaling:
+      enabled: true
+      maxReplicas: 8
+      triggers: [{ type: kafkaLag, group: fulfillment, threshold: 100 }] # order.confirmed backlog
     env:
       GRPC_ADDR: ":50051"
       CARRIER_SWEEP_INTERVAL: 30s
@@ -184,6 +217,10 @@ services:
     kafka: true
     auth: true
     callers: [] # event-driven only; no gRPC caller
+    autoscaling:
+      enabled: true
+      maxReplicas: 8
+      triggers: [{ type: kafkaLag, group: notification, threshold: 100 }]
     env: { GRPC_ADDR: ":50051" }
 
   review:
@@ -199,6 +236,13 @@ services:
     replicas: 3
     envFromSecret: true # KEYCLOAK_CLIENT_SECRET
     callers: [gateway]
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 20
+      # The Echo router emits no per-request otel metric yet (no otelecho
+      # middleware), so scale on CPU. Switch to an `rps` trigger once it does.
+      triggers: [{ type: cpu, threshold: 70 }] # target 70% CPU utilization
     resources:
       requests: { cpu: 100m, memory: 128Mi }
       limits: { cpu: "1", memory: 384Mi }

@@ -1094,3 +1094,55 @@ CNI that implements it (Calico / Cilium — kindnet does not; noted in
 `deploy/istio/README.md`). The infra pods (Postgres, Kafka, …) are assumed to
 carry an `app: <name>` label the egress selectors match — true for the operator
 charts we deploy; adjust `global.infra.*.selector` otherwise.
+
+---
+
+## ADR-030 — Autoscaling: KEDA ScaledObjects, one `autoscaling:` block per service
+
+**Status:** Accepted (Phase 4).
+
+**Context:** The KEDA controller was already in the `deploy/helm/platform`
+app-of-apps but nothing used it. Services ran at a fixed replica count. The
+workload chart (ADR-028) is the natural place for the per-service `ScaledObject`.
+
+**Decision:**
+- **One `autoscaling:` block per service** in the chart values →
+  `templates/scaledobject.yaml` renders a KEDA `ScaledObject` targeting the
+  Deployment. When `autoscaling.enabled`, `deployment.yaml` **omits
+  `spec.replicas`** so the HPA KEDA creates owns it (otherwise Helm/Argo would
+  fight the HPA on every sync).
+- **Trigger per signal, matched to the service:**
+  - `rps` — `prometheus` scaler on
+    `sum(rate(rpc_server_call_duration_seconds_count{job="<svc>"}[2m]))`, target
+    req/s per replica. For the gRPC servers on the hot path: `catalog`, `order`,
+    `search`.
+  - `kafkaLag` — `kafka` scaler on the service's consumer group
+    (`search-indexer`, `notification`, `fulfillment`), so a burst of events adds
+    consumers. `activationLagThreshold: 1` + `minReplicaCount ≥ 2` = never scale
+    to zero (keep a warm consumer).
+  - `cpu` — for `bff`. Its Echo router has no per-request OTel metric yet (no
+    `otelecho` middleware), so there is no HTTP RPS series to scale on; CPU
+    utilization stands in. Swap to `rps` when the middleware lands.
+- **`scaleDown.stabilizationWindowSeconds: 300`** on every ScaledObject — the
+  metric must stay below target for 5 min before a pod is removed, so a spiky
+  checkout load doesn't thrash replica count.
+- **Not autoscaled:** `payment`, `inventory`, `cart`, `pricing`, `review`,
+  `ext-authz`, `media`, `notification`'s gRPC side — low or flat load; a fixed 2
+  replicas is cheaper than an idle HPA. Revisit from real load-test data.
+- **Validated in CI** by the existing `kubeconform` step (the datree CRD catalog
+  has the `keda.sh/v1alpha1` `ScaledObject` schema).
+
+**Alternatives:**
+- *Plain `HorizontalPodAutoscaler`* — CPU/memory only, or a `prometheus-adapter`
+  install to expose custom metrics as `external.metrics.k8s.io`. KEDA bundles the
+  Prometheus + Kafka scalers and the metrics-adapter, and its `ScaledObject` is
+  one object vs. an HPA + an adapter `ExternalMetric` + config.
+- *Vertical Pod Autoscaler* — resizes pods, doesn't add them; wrong tool for
+  request-rate spikes. Could complement later for right-sizing requests.
+- *Scale everything on CPU* — misses I/O-bound saga / consumer work that pegs
+  latency long before CPU; RPS and Kafka lag are the leading indicators.
+
+**Consequences:** the RPS triggers depend on the `rpc_server_*` series being in
+Prometheus (they are — same series the SLO rules use). `bff` autoscaling is a
+CPU proxy until `otelecho` is added — tracked. Thresholds are first guesses;
+tune from the k6 load-test p95 once there's a staging baseline.
