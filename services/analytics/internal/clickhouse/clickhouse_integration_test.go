@@ -77,6 +77,37 @@ func TestAdd_FlushesAutomaticallyAtBatchSize(t *testing.T) {
 	}
 }
 
+func TestAddClick_FlushesToClickstreamTable(t *testing.T) {
+	ctx := context.Background()
+	s := openSink(t, 2)
+	now := time.Now().UTC()
+	for i := 0; i < 2; i++ {
+		if err := s.AddClick(ctx, clickhouse.Click{
+			Type: "product_view", OccurredAt: now, ClientTime: now,
+			AnonymousID: "anon-1", SessionID: "sess-1", ProductID: "p-9",
+			Path: "/p/acme", Currency: "USD", ValueMinor: 0,
+		}); err != nil {
+			t.Fatalf("addclick %d: %v", i, err)
+		}
+	}
+	var n uint64
+	if err := s.Conn().QueryRow(ctx,
+		"SELECT count() FROM clickstream WHERE event_type='product_view'").Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("clickstream rows = %d, want 2 (auto-flush at batchSize)", n)
+	}
+	// The rollup MV fired.
+	var mv uint64
+	if err := s.Conn().QueryRow(ctx, "SELECT sum(events) FROM clickstream_daily").Scan(&mv); err != nil {
+		t.Fatal(err)
+	}
+	if mv == 0 {
+		t.Fatal("clickstream_daily rollup empty")
+	}
+}
+
 func TestRunFlusher_FlushesOnIntervalAndOnCancel(t *testing.T) {
 	ctx := context.Background()
 	s := openSink(t, 1000) // never auto-flushes on size

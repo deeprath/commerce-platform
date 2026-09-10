@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, Route, Routes } from "react-router-dom";
+import { Link, Route, Routes, useLocation } from "react-router-dom";
+import { track } from "./track";
 import { Browse } from "./pages/Browse";
 import { Product } from "./pages/Product";
 import { Login } from "./pages/Login";
@@ -36,7 +37,19 @@ function Header({ authed, onSignOut }: { authed: boolean; onSignOut: () => void 
   );
 }
 
+// One clickstream page_view per client-side navigation.
+function usePageViews() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    track("page_view", {
+      path: pathname,
+      referrer: typeof document !== "undefined" ? document.referrer : "",
+    });
+  }, [pathname]);
+}
+
 export function App() {
+  usePageViews();
   const [authed, setAuthed] = useState<boolean>(() => localStorage.getItem("signed_in") === "1");
 
   // If any request 401s, the session cookie is gone — drop the cached flag so

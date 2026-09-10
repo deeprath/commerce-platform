@@ -21,6 +21,7 @@ import (
 	"github.com/deeprath/commerce-platform/pkg/kafka"
 	"github.com/deeprath/commerce-platform/pkg/telemetry"
 	"github.com/deeprath/commerce-platform/services/analytics/internal/clickhouse"
+	"github.com/deeprath/commerce-platform/services/analytics/internal/clickstream"
 	"github.com/deeprath/commerce-platform/services/analytics/internal/consumer"
 )
 
@@ -59,6 +60,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	clickCons, err := kafka.NewConsumer(
+		"analytics-clickstream", clickstream.Topics(), clickstream.Handler(sink), brokers)
+	if err != nil {
+		return err
+	}
 
 	srv := grpcx.NewServer()
 	healthgrpc.RegisterHealthServer(srv, health.NewServer())
@@ -71,6 +77,7 @@ func run() error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return sink.RunFlusher(gctx, flushEvery) })
 	g.Go(func() error { return cons.Run(gctx) })
+	g.Go(func() error { return clickCons.Run(gctx) })
 	g.Go(func() error { return grpcx.Serve(gctx, srv, svc.GRPCAddr) })
 	return g.Wait()
 }

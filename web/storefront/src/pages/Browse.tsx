@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import type { SearchResponse } from "../types";
 import { ProductCard } from "../components/ProductCard";
+import { track } from "../track";
 
 const SORTS = [
   { v: "", label: "Relevance" },
@@ -33,7 +34,11 @@ export function Browse() {
         sort: (sort || undefined) as never,
         page_size: 24,
       })
-      .then((r) => !cancelled && setData(r))
+      .then((r) => {
+        if (cancelled) return;
+        setData(r);
+        if (q) track("search", { query: q });
+      })
       .catch((e) => !cancelled && setErr(String(e.message ?? e)))
       .finally(() => !cancelled && setLoading(false));
     return () => {

@@ -71,6 +71,15 @@ the *what*, this is the *how it's enforced and verified*.
   per environment; no wildcard with credentials.
 - **Webhooks (payment):** HMAC signature verified before the body is parsed; replay window
   enforced; handler idempotent on the PSP event id.
+- **Clickstream ingest (`POST /api/v1/events`):** the one **anonymous, unauthenticated**
+  write endpoint (browser `navigator.sendBeacon`). It only appends to Kafka — no DB write, no
+  downstream RPC. Hardened by: the edge rate-limiter (generous default bucket; no client key),
+  the shared 1 MiB request-body cap, a 20-events-per-beacon cap, per-field length caps, and a
+  closed `EventType` enum (unknown types dropped, not stored). The `owner_id` it records is a
+  **best-effort, signature-unverified** `sub` from any bearer token presented — used only to
+  attribute analytics rows, never for authorization. The first-party `cid` cookie it mints is
+  an opaque random UUID (HttpOnly, `SameSite=Lax`), never joined to PII; a production EU
+  deployment would gate it behind consent. See [DECISIONS.md ADR-034](DECISIONS.md).
 
 ---
 

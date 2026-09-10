@@ -22,9 +22,10 @@ func mkToken(t *testing.T, claims jwt.MapClaims) string {
 
 func TestPublicRouteNeedsNoToken(t *testing.T) {
 	c := New(DefaultConfig())
-	d := c.Check("/api/v1/catalog/products", nil)
-	if !d.Allow {
-		t.Fatalf("public route should allow: %+v", d)
+	for _, p := range []string{"/api/v1/catalog/products", "/api/v1/events"} {
+		if d := c.Check(p, nil); !d.Allow {
+			t.Fatalf("public route %s should allow: %+v", p, d)
+		}
 	}
 }
 

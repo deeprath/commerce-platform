@@ -32,12 +32,34 @@ type Event struct {
 	Reason      string
 }
 
-// Sink writes events to ClickHouse. Safe for concurrent Add; Flush and the
-// background flusher serialise on the mutex.
+// Click is one flattened browser interaction — the shape of a row in
+// `clickstream`. It is a distinct fact from Event (funnel/revenue) with its own
+// table, buffer and consumer group.
+type Click struct {
+	Type        string
+	OccurredAt  time.Time // BFF receive time — authoritative for ordering
+	ClientTime  time.Time // browser clock, may be skewed
+	AnonymousID string
+	SessionID   string
+	OwnerID     string
+	Path        string
+	Referrer    string
+	ProductID   string
+	Query       string
+	ValueMinor  int64
+	Currency    string
+	UserAgent   string
+}
+
+// Sink writes events to ClickHouse. Safe for concurrent Add/AddClick; Flush and
+// the background flusher serialise on the mutex. It holds two independent
+// buffers — funnel facts (`events`) and clickstream rows (`clickstream`) — that
+// flush together but fail independently.
 type Sink struct {
 	conn      driver.Conn
 	mu        sync.Mutex
 	buf       []Event
+	clickBuf  []Click
 	batchSize int
 }
 
@@ -84,7 +106,8 @@ func applySchema(ctx context.Context, conn driver.Conn) error {
 	return nil
 }
 
-// Add buffers an event; it flushes automatically once batchSize is reached.
+// Add buffers a funnel event; it flushes automatically once batchSize is
+// reached.
 func (s *Sink) Add(ctx context.Context, ev Event) error {
 	s.mu.Lock()
 	s.buf = append(s.buf, ev)
@@ -96,8 +119,32 @@ func (s *Sink) Add(ctx context.Context, ev Event) error {
 	return nil
 }
 
-// Flush writes and clears the buffer. A no-op when empty.
+// AddClick buffers a clickstream row; it flushes automatically once batchSize is
+// reached.
+func (s *Sink) AddClick(ctx context.Context, cl Click) error {
+	s.mu.Lock()
+	s.clickBuf = append(s.clickBuf, cl)
+	full := len(s.clickBuf) >= s.batchSize
+	s.mu.Unlock()
+	if full {
+		return s.Flush(ctx)
+	}
+	return nil
+}
+
+// Flush drains both buffers. Each is independent: a failure on one requeues its
+// own rows and is returned, but does not hold back the other.
 func (s *Sink) Flush(ctx context.Context) error {
+	evErr := s.flushEvents(ctx)
+	clErr := s.flushClicks(ctx)
+	if evErr != nil {
+		return evErr
+	}
+	return clErr
+}
+
+// flushEvents writes and clears the funnel buffer. A no-op when empty.
+func (s *Sink) flushEvents(ctx context.Context) error {
 	s.mu.Lock()
 	if len(s.buf) == 0 {
 		s.mu.Unlock()
@@ -128,11 +175,52 @@ func (s *Sink) Flush(ctx context.Context) error {
 	return nil
 }
 
-// requeue puts rows back at the front so a transient ClickHouse error retries
-// them on the next flush rather than dropping analytics data.
+// flushClicks writes and clears the clickstream buffer. A no-op when empty.
+func (s *Sink) flushClicks(ctx context.Context) error {
+	s.mu.Lock()
+	if len(s.clickBuf) == 0 {
+		s.mu.Unlock()
+		return nil
+	}
+	rows := s.clickBuf
+	s.clickBuf = nil
+	s.mu.Unlock()
+
+	batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO clickstream
+		(event_type, occurred_at, client_time, anonymous_id, session_id, owner_id,
+		 path, referrer, product_id, query, value_minor, currency, user_agent)`)
+	if err != nil {
+		s.requeueClicks(rows)
+		return fmt.Errorf("prepare clickstream batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.Type, r.OccurredAt, r.ClientTime, r.AnonymousID, r.SessionID, r.OwnerID,
+			r.Path, r.Referrer, r.ProductID, r.Query, r.ValueMinor, r.Currency, r.UserAgent,
+		); err != nil {
+			s.requeueClicks(rows)
+			return fmt.Errorf("append clickstream row: %w", err)
+		}
+	}
+	if err := batch.Send(); err != nil {
+		s.requeueClicks(rows)
+		return fmt.Errorf("send clickstream batch: %w", err)
+	}
+	return nil
+}
+
+// requeue puts funnel rows back at the front so a transient ClickHouse error
+// retries them on the next flush rather than dropping analytics data.
 func (s *Sink) requeue(rows []Event) {
 	s.mu.Lock()
 	s.buf = append(rows, s.buf...)
+	s.mu.Unlock()
+}
+
+// requeueClicks is requeue for the clickstream buffer.
+func (s *Sink) requeueClicks(rows []Click) {
+	s.mu.Lock()
+	s.clickBuf = append(rows, s.clickBuf...)
 	s.mu.Unlock()
 }
 

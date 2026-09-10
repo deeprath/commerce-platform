@@ -259,7 +259,10 @@ services:
     autoscaling:
       enabled: true
       maxReplicas: 6
-      triggers: [{ type: kafkaLag, group: analytics, threshold: 500 }]
+      # Two independent consumer groups: funnel facts and browser clickstream.
+      triggers:
+        - { type: kafkaLag, group: analytics, threshold: 500 }
+        - { type: kafkaLag, group: analytics-clickstream, threshold: 2000 }
     env:
       GRPC_ADDR: ":50051"
 
@@ -267,6 +270,7 @@ services:
     protocol: http
     port: 8080
     replicas: 3
+    kafka: true # clickstream ingestion (POST /api/v1/events -> commerce.clickstream.tracked)
     envFromSecret: true # KEYCLOAK_CLIENT_SECRET
     callers: [gateway]
     autoscaling:

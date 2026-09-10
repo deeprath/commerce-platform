@@ -19,6 +19,7 @@ import (
 	"github.com/deeprath/commerce-platform/services/bff/internal/api"
 	"github.com/deeprath/commerce-platform/services/bff/internal/auth"
 	"github.com/deeprath/commerce-platform/services/bff/internal/clients"
+	"github.com/deeprath/commerce-platform/services/bff/internal/events"
 )
 
 func main() {
@@ -65,8 +66,21 @@ func run() error {
 		config.Bool("COOKIE_SECURE", svc.Environment != "local"),
 	)
 
+	// Clickstream ingestion is optional: without a broker the /events endpoint
+	// answers 503 and the rest of the BFF is unaffected.
+	var pub api.Publisher
+	if brokers := config.String("KAFKA_BROKERS", ""); brokers != "" {
+		kp, err := events.NewKafkaPublisher(
+			config.String("CLICKSTREAM_TOPIC", "commerce.clickstream.tracked"), brokers)
+		if err != nil {
+			return err
+		}
+		defer kp.Close()
+		pub = kp
+	}
+
 	origins := strings.Split(config.String("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174"), ",")
-	e := api.New(cl, broker).Router(origins)
+	e := api.New(cl, broker, pub).Router(origins)
 
 	srv := &http.Server{
 		Addr:              config.String("HTTP_ADDR", ":8080"),
