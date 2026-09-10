@@ -23,6 +23,24 @@ app: {{ .name }}
 app: {{ .name }}
 {{- end -}}
 
+{{/*
+Downstream services `name` may egress to: every service Y whose `callers` list
+includes `name`. Input: (dict "name" <svc> "Values" .Values). Output: a JSON
+list of service names (use `fromJson` / `... | fromJsonArray`).
+*/}}
+{{- define "commerce.downstreams" -}}
+{{- $me := .name -}}
+{{- $out := list -}}
+{{- range $y, $ysvc := .Values.services -}}
+  {{- range ($ysvc.callers | default list) -}}
+    {{- $cn := . -}}
+    {{- if not (kindIs "string" .) -}}{{- $cn = .name -}}{{- end -}}
+    {{- if eq $cn $me -}}{{- $out = append $out $y -}}{{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- $out | uniq | sortAlpha | toJson -}}
+{{- end -}}
+
 {{/* GOMEMLIMIT from the container memory limit, as "<N>MiB" (Go accepts MiB). */}}
 {{- define "commerce.gomemlimit" -}}
 {{- $lim := . -}}
