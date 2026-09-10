@@ -4,7 +4,7 @@ package authz
 
 import (
 	"context"
-	_ "embed"
+	_ "embed" // powers the //go:embed of model.json below
 
 	"github.com/deeprath/commerce-platform/pkg/fga"
 )

@@ -34,122 +34,155 @@ func (f *fakeFGA) id(prefix string) string {
 	return prefix + "-" + string(rune('a'+f.nextID))
 }
 
+func writeJSON(w http.ResponseWriter, v any) { _ = json.NewEncoder(w).Encode(v) }
+
+func badTuple(w http.ResponseWriter, msg string) {
+	w.WriteHeader(http.StatusBadRequest)
+	writeJSON(w, map[string]string{"code": "write_failed_due_to_invalid_input", "message": msg})
+}
+
 func (f *fakeFGA) handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/stores", f.locked(f.handleStores))
+	mux.HandleFunc("/stores/", f.locked(f.handleStoreScoped))
+	return mux
+}
 
-	mux.HandleFunc("/stores", func(w http.ResponseWriter, r *http.Request) {
+// locked wraps a handler in the fake's mutex.
+func (f *fakeFGA) locked(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		if r.Method == http.MethodGet {
-			var out struct {
-				Stores []map[string]string `json:"stores"`
-			}
-			for id, name := range f.stores {
-				out.Stores = append(out.Stores, map[string]string{"id": id, "name": name})
-			}
-			_ = json.NewEncoder(w).Encode(out)
+		h(w, r)
+	}
+}
+
+func (f *fakeFGA) handleStores(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		var out struct {
+			Stores []map[string]string `json:"stores"`
+		}
+		for id, name := range f.stores {
+			out.Stores = append(out.Stores, map[string]string{"id": id, "name": name})
+		}
+		writeJSON(w, out)
+		return
+	}
+	var body map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	id := f.id("store")
+	f.stores[id] = body["name"].(string)
+	writeJSON(w, map[string]string{"id": id, "name": f.stores[id]})
+}
+
+func (f *fakeFGA) handleStoreScoped(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/stores/"), "/")
+	storeID, action := parts[0], ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+	switch action {
+	case "authorization-models":
+		f.handleModels(w, r, storeID)
+	case "write":
+		f.handleWrite(w, r, storeID)
+	case "check":
+		f.handleCheck(w, r, storeID)
+	case "list-objects":
+		f.handleListObjects(w, r, storeID)
+	case "read":
+		f.handleRead(w, r, storeID)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func (f *fakeFGA) handleModels(w http.ResponseWriter, r *http.Request, storeID string) {
+	if r.Method == http.MethodPost {
+		mid := f.id("model")
+		f.models[storeID] = append([]string{mid}, f.models[storeID]...)
+		writeJSON(w, map[string]string{"authorization_model_id": mid})
+		return
+	}
+	var out struct {
+		AuthorizationModels []map[string]string `json:"authorization_models"`
+	}
+	for _, m := range f.models[storeID] {
+		out.AuthorizationModels = append(out.AuthorizationModels, map[string]string{"id": m})
+	}
+	writeJSON(w, out)
+}
+
+func (f *fakeFGA) handleWrite(w http.ResponseWriter, r *http.Request, storeID string) {
+	var body struct {
+		Writes, Deletes struct {
+			TupleKeys []struct{ User, Relation, Object string } `json:"tuple_keys"`
+		}
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if f.tuples[storeID] == nil {
+		f.tuples[storeID] = map[string]bool{}
+	}
+	for _, tk := range body.Writes.TupleKeys {
+		k := tk.User + "|" + tk.Relation + "|" + tk.Object
+		if f.tuples[storeID][k] {
+			badTuple(w, "tuple already exists")
 			return
 		}
-		var body map[string]any
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		id := f.id("store")
-		f.stores[id] = body["name"].(string)
-		_ = json.NewEncoder(w).Encode(map[string]string{"id": id, "name": f.stores[id]})
-	})
+		f.tuples[storeID][k] = true
+	}
+	for _, tk := range body.Deletes.TupleKeys {
+		k := tk.User + "|" + tk.Relation + "|" + tk.Object
+		if !f.tuples[storeID][k] {
+			badTuple(w, "cannot delete a tuple which does not exist: not found")
+			return
+		}
+		delete(f.tuples[storeID], k)
+	}
+	_, _ = w.Write([]byte(`{}`))
+}
 
-	mux.HandleFunc("/stores/", func(w http.ResponseWriter, r *http.Request) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/stores/"), "/")
-		storeID := parts[0]
-		action := ""
-		if len(parts) > 1 {
-			action = parts[1]
+func (f *fakeFGA) handleCheck(w http.ResponseWriter, r *http.Request, storeID string) {
+	var body struct {
+		TupleKey struct{ User, Relation, Object string } `json:"tuple_key"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	k := body.TupleKey.User + "|" + body.TupleKey.Relation + "|" + body.TupleKey.Object
+	writeJSON(w, map[string]bool{"allowed": f.tuples[storeID][k]})
+}
+
+func (f *fakeFGA) handleListObjects(w http.ResponseWriter, r *http.Request, storeID string) {
+	var body struct{ Type, Relation, User string }
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	var out struct {
+		Objects []string `json:"objects"`
+	}
+	for k := range f.tuples[storeID] {
+		p := strings.Split(k, "|")
+		if p[0] == body.User && p[1] == body.Relation && strings.HasPrefix(p[2], body.Type+":") {
+			out.Objects = append(out.Objects, p[2])
 		}
-		switch {
-		case action == "authorization-models" && r.Method == http.MethodGet:
-			var out struct {
-				AuthorizationModels []map[string]string `json:"authorization_models"`
-			}
-			for _, m := range f.models[storeID] {
-				out.AuthorizationModels = append(out.AuthorizationModels, map[string]string{"id": m})
-			}
-			_ = json.NewEncoder(w).Encode(out)
-		case action == "authorization-models" && r.Method == http.MethodPost:
-			mid := f.id("model")
-			f.models[storeID] = append([]string{mid}, f.models[storeID]...)
-			_ = json.NewEncoder(w).Encode(map[string]string{"authorization_model_id": mid})
-		case action == "write":
-			var body struct {
-				Writes, Deletes struct {
-					TupleKeys []struct{ User, Relation, Object string } `json:"tuple_keys"`
-				}
-			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			if f.tuples[storeID] == nil {
-				f.tuples[storeID] = map[string]bool{}
-			}
-			for _, tk := range body.Writes.TupleKeys {
-				k := tk.User + "|" + tk.Relation + "|" + tk.Object
-				if f.tuples[storeID][k] {
-					w.WriteHeader(400)
-					_ = json.NewEncoder(w).Encode(map[string]string{"code": "write_failed_due_to_invalid_input", "message": "tuple already exists"})
-					return
-				}
-				f.tuples[storeID][k] = true
-			}
-			for _, tk := range body.Deletes.TupleKeys {
-				k := tk.User + "|" + tk.Relation + "|" + tk.Object
-				if !f.tuples[storeID][k] {
-					w.WriteHeader(400)
-					_ = json.NewEncoder(w).Encode(map[string]string{"code": "write_failed_due_to_invalid_input", "message": "cannot delete a tuple which does not exist: not found"})
-					return
-				}
-				delete(f.tuples[storeID], k)
-			}
-			_, _ = w.Write([]byte(`{}`))
-		case action == "check":
-			var body struct {
-				TupleKey struct{ User, Relation, Object string } `json:"tuple_key"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			k := body.TupleKey.User + "|" + body.TupleKey.Relation + "|" + body.TupleKey.Object
-			_ = json.NewEncoder(w).Encode(map[string]bool{"allowed": f.tuples[storeID][k]})
-		case action == "list-objects":
-			var body struct{ Type, Relation, User string }
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			var out struct {
-				Objects []string `json:"objects"`
-			}
-			for k := range f.tuples[storeID] {
-				p := strings.Split(k, "|")
-				if p[0] == body.User && p[1] == body.Relation && strings.HasPrefix(p[2], body.Type+":") {
-					out.Objects = append(out.Objects, p[2])
-				}
-			}
-			_ = json.NewEncoder(w).Encode(out)
-		case action == "read":
-			var body struct {
-				TupleKey struct{ Object string } `json:"tuple_key"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			var out struct {
-				Tuples []map[string]any `json:"tuples"`
-			}
-			for k := range f.tuples[storeID] {
-				p := strings.Split(k, "|")
-				if p[2] == body.TupleKey.Object {
-					out.Tuples = append(out.Tuples, map[string]any{
-						"key": map[string]string{"user": p[0], "relation": p[1], "object": p[2]},
-					})
-				}
-			}
-			_ = json.NewEncoder(w).Encode(out)
-		default:
-			w.WriteHeader(404)
+	}
+	writeJSON(w, out)
+}
+
+func (f *fakeFGA) handleRead(w http.ResponseWriter, r *http.Request, storeID string) {
+	var body struct {
+		TupleKey struct{ Object string } `json:"tuple_key"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	var out struct {
+		Tuples []map[string]any `json:"tuples"`
+	}
+	for k := range f.tuples[storeID] {
+		p := strings.Split(k, "|")
+		if p[2] == body.TupleKey.Object {
+			out.Tuples = append(out.Tuples, map[string]any{
+				"key": map[string]string{"user": p[0], "relation": p[1], "object": p[2]},
+			})
 		}
-	})
-	return mux
+	}
+	writeJSON(w, out)
 }
 
 func newClient(t *testing.T) *fga.Client {

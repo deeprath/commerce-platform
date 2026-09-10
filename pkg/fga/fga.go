@@ -28,6 +28,8 @@ import (
 
 var tracer = otel.Tracer("github.com/deeprath/commerce-platform/pkg/fga")
 
+const pathStores = "/stores"
+
 // Config configures a Client. Model is the OpenFGA authorization model as JSON
 // (the `{"schema_version":"1.1","type_definitions":[...]}` shape) — the DSL is
 // a client-side convenience the server never sees.
@@ -117,6 +119,9 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 func (c *Client) StoreID() string { return c.storeID }
 func (c *Client) ModelID() string { return c.modelID }
 
+// storePath builds a path under the resolved store, e.g. storePath("/check").
+func (c *Client) storePath(suffix string) string { return pathStores + "/" + c.storeID + suffix }
+
 // Check answers whether user has relation on object, e.g.
 // Check(ctx, "user:alice", "viewer", "order:123").
 func (c *Client) Check(ctx context.Context, user, relation, object string) (bool, error) {
@@ -130,7 +135,7 @@ func (c *Client) Check(ctx context.Context, user, relation, object string) (bool
 	var out struct {
 		Allowed bool `json:"allowed"`
 	}
-	err := c.do(ctx, http.MethodPost, "/stores/"+c.storeID+"/check", map[string]any{
+	err := c.do(ctx, http.MethodPost, c.storePath("/check"), map[string]any{
 		"tuple_key":              tupleKey(user, relation, object),
 		"authorization_model_id": c.modelID,
 	}, &out)
@@ -147,7 +152,7 @@ func (c *Client) Check(ctx context.Context, user, relation, object string) (bool
 func (c *Client) Write(ctx context.Context, user, relation, object string) error {
 	ctx, span := tracer.Start(ctx, "fga.Write")
 	defer span.End()
-	return c.do(ctx, http.MethodPost, "/stores/"+c.storeID+"/write", map[string]any{
+	return c.do(ctx, http.MethodPost, c.storePath("/write"), map[string]any{
 		"writes":                 map[string]any{"tuple_keys": []any{tupleKey(user, relation, object)}},
 		"authorization_model_id": c.modelID,
 	}, nil)
@@ -158,7 +163,7 @@ func (c *Client) Write(ctx context.Context, user, relation, object string) error
 func (c *Client) Delete(ctx context.Context, user, relation, object string) error {
 	ctx, span := tracer.Start(ctx, "fga.Delete")
 	defer span.End()
-	return c.do(ctx, http.MethodPost, "/stores/"+c.storeID+"/write", map[string]any{
+	return c.do(ctx, http.MethodPost, c.storePath("/write"), map[string]any{
 		"deletes":                map[string]any{"tuple_keys": []any{tupleKey(user, relation, object)}},
 		"authorization_model_id": c.modelID,
 	}, nil)
@@ -172,7 +177,7 @@ func (c *Client) ListObjects(ctx context.Context, user, relation, objectType str
 	var out struct {
 		Objects []string `json:"objects"`
 	}
-	err := c.do(ctx, http.MethodPost, "/stores/"+c.storeID+"/list-objects", map[string]any{
+	err := c.do(ctx, http.MethodPost, c.storePath("/list-objects"), map[string]any{
 		"type":                   objectType,
 		"relation":               relation,
 		"user":                   user,
@@ -200,7 +205,7 @@ func (c *Client) Read(ctx context.Context, object string) ([]Tuple, error) {
 			} `json:"key"`
 		} `json:"tuples"`
 	}
-	err := c.do(ctx, http.MethodPost, "/stores/"+c.storeID+"/read", map[string]any{
+	err := c.do(ctx, http.MethodPost, c.storePath("/read"), map[string]any{
 		"tuple_key": map[string]any{"object": object},
 	}, &out)
 	if err != nil {
@@ -219,7 +224,7 @@ func (c *Client) ensureStore(ctx context.Context, name string) (string, error) {
 	var list struct {
 		Stores []struct{ Id, Name string } `json:"stores"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/stores", nil, &list); err != nil {
+	if err := c.do(ctx, http.MethodGet, pathStores, nil, &list); err != nil {
 		return "", err
 	}
 	for _, s := range list.Stores {
@@ -228,7 +233,7 @@ func (c *Client) ensureStore(ctx context.Context, name string) (string, error) {
 		}
 	}
 	var created struct{ Id string }
-	if err := c.do(ctx, http.MethodPost, "/stores", map[string]any{"name": name}, &created); err != nil {
+	if err := c.do(ctx, http.MethodPost, pathStores, map[string]any{"name": name}, &created); err != nil {
 		return "", err
 	}
 	return created.Id, nil
@@ -238,7 +243,7 @@ func (c *Client) latestModelID(ctx context.Context) (string, error) {
 	var out struct {
 		AuthorizationModels []struct{ Id string } `json:"authorization_models"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/stores/"+c.storeID+"/authorization-models?page_size=1", nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, c.storePath("/authorization-models?page_size=1"), nil, &out); err != nil {
 		return "", err
 	}
 	if len(out.AuthorizationModels) == 0 {
@@ -255,7 +260,7 @@ func (c *Client) writeModel(ctx context.Context, modelJSON string) (string, erro
 	var out struct {
 		AuthorizationModelId string `json:"authorization_model_id"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/stores/"+c.storeID+"/authorization-models", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, c.storePath("/authorization-models"), body, &out); err != nil {
 		return "", err
 	}
 	return out.AuthorizationModelId, nil
