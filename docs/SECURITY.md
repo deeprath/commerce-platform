@@ -31,7 +31,7 @@ the *what*, this is the *how it's enforced and verified*.
 | Internal network | Lateral movement after one pod compromise | Default-deny NetworkPolicies (L3/L4) **and** Istio `AuthorizationPolicy` (L7 identity); mesh mTLS between all services (`PeerAuthentication: STRICT`); per-service ServiceAccount / SPIFFE identity; PSS `restricted` |
 | Secrets | Leak via Git, image layers, env dumps | Gitleaks in CI + pre-commit; External Secrets Operator + Vault; nothing sensitive in `values.yaml` or images; at-rest app secrets AES-GCM encrypted |
 | Supply chain | Malicious/vulnerable dependency, poisoned base image | Trivy (blocking on our deps); pinned versions; `go mod verify` / `buf` ; SBOM; signed images; Renovate |
-| Public endpoints | Injection, DoS, scraping, header misconfig | Ingress-gateway rate limiting (`envoyproxy/ratelimit` + Redis) + `ext-authz` shallow check + Coraza (OWASP CRS) Envoy filter; ZAP baseline scan; input validation at BFF + services |
+| Public endpoints | Injection, DoS, scraping, header misconfig | Ingress-gateway rate limiting (`envoyproxy/ratelimit` + Redis) + `ext-authz` shallow check + Coraza (OWASP CRS) Envoy filter; ZAP passive baseline + **authenticated active API scan**; input validation at BFF + services |
 
 ---
 
@@ -62,8 +62,11 @@ the *what*, this is the *how it's enforced and verified*.
   `Content-Security-Policy` (`default-src 'self'`; `media-src 'self' blob:` for any audio;
   `connect-src` to the API origin only), `X-Content-Type-Options: nosniff`,
   `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`,
-  `Permissions-Policy` minimal. These fail silently if regressed — the **ZAP baseline scan is
-  the backstop** that catches a missing header against the real running stack.
+  `Permissions-Policy` minimal. These fail silently if regressed — the **ZAP scan is the
+  backstop** that catches a missing header against the real running stack. The BFF itself
+  sets `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy:
+  no-referrer` and `Cache-Control: no-store` on every response (`secureHeaders` middleware,
+  asserted by `TestSecureHeaders_OnEveryResponse`); TLS/HSTS and CSP are set at the edge.
 - **CORS:** one `HTTPRoute` CORS filter at the ingress gateway; explicit origin allow-list
   per environment; no wildcard with credentials.
 - **Webhooks (payment):** HMAC signature verified before the body is parsed; replay window
@@ -117,8 +120,9 @@ skill.
 
 **First real run: PR #1, 2026-09-09.** `ci` + `security` both green. Every scanner below
 executed for real and its actual output was read (§7). Gitleaks, Trivy (fs / config /
-image) and SonarCloud run on every push + PR; ZAP is `workflow_dispatch` / weekly and was
-dispatched once against the live stack. Re-check these rows whenever the pipeline changes.
+image) and SonarCloud run on every push + PR; ZAP is `workflow_dispatch` / weekly and runs
+a passive baseline + an authenticated active API scan against the live stack. Re-check these
+rows whenever the pipeline changes.
 
 ### 5.1 Gitleaks — secret scanning
 
@@ -188,24 +192,41 @@ The tool most prone to "configured but never actually scanned anything." Guardra
 - **Report dir** is created `chmod 777` on the host before the run — the ZAP container's
   internal user otherwise can't write the report into the bind mount, and the step would go
   green with no report file.
-- **Scans:**
-  - **Baseline** (passive + a short spider) — on a **weekly schedule** and
-    `workflow_dispatch`. Fails on new `HIGH` alerts; `WARN` triaged.
-  - **Full active scan** — weekly, longer, against staging only (never prod), auth context
-    configured with a test user so authenticated routes are actually exercised.
-- **Reports:** HTML + JSON uploaded as the `zap-reports` CI artifact (MinIO archival is a
-  Phase 1 TODO).
-- **First run (2026-09-09, `workflow_dispatch`):** brought up the full compose stack in the
-  runner, scanned the Envoy edge on `host.docker.internal:8080` (3 URLs), ran 7m36s.
-  - **FAIL-NEW: 0** — no HIGH alerts; the gate passed.
-  - **WARN-NEW: 1** — `Storable and Cacheable Content [10049]` ×3: the edge's 401/403/503
-    responses carry no `Cache-Control: no-store`. Low severity; fix is a header on the BFF's
-    authed responses in Phase 1. Tracked in §8.
-  - The security-header checks (CSP, HSTS, `X-Content-Type-Options`, Permissions-Policy, …)
-    all report PASS, but **only because the edge has no HTML/content responses yet** — real
-    header enforcement gets exercised once the BFF serves real payloads (Phase 1).
-- **TODO (Phase 4):** authenticated context (Keycloak token in a ZAP context file) + the
-  full active scan against staging.
+- **Two passes** (`infra/security/zap-scan.sh`, weekly + `workflow_dispatch`):
+  1. **Passive baseline** — `zap-baseline.py` against the Envoy edge. Security headers,
+     cookie flags, cache hints, info-disclosure on whatever the edge serves.
+  2. **Authenticated active API scan** — the ZAP Automation Framework plan
+     `infra/security/zap/api-scan.yaml`. It imports a hand-maintained OpenAPI description
+     of the BFF surface (`infra/security/openapi/bff.yaml` — *not* served by the BFF; it
+     exists so ZAP scans every endpoint/method/param, not just what a spider finds), logs
+     in as the realm-seeded `testuser` (`POST /api/v1/auth/login` → httpOnly `access_token`
+     cookie, replayed by ZAP's cookie session management; the 401 body `SIGN_IN_REQUIRED`
+     on `GET /orders` is the "logged out" signal so ZAP re-auths mid-scan), then runs an
+     active scan tuned for a JSON API (SQLi / command / code injection / traversal / CRLF
+     at low threshold, high strength).
+- **Alert filter:** rule `10049` (Storable/Cacheable Content) is downgraded to INFO in the
+  plan — it is a known low-severity item on the edge's error responses and the BFF now
+  sends `Cache-Control: no-store` itself. A fresh finding on any other rule still fails.
+- **Gate:** the CI step parses every `reports/*.json` and fails on any `HIGH` (riskcode 3).
+  `MEDIUM`/`LOW`/`WARN` are printed with counts and triaged into §8.
+- **`/checkout` + `/checkout/confirm` are excluded from the active scan** — they drive the
+  irreversible order saga (Kafka → payment / inventory / fulfillment); fuzzing them creates
+  thousands of orders, drains seeded stock, and stalled an early run. Thin BFF
+  pass-throughs; still covered by the passive pass.
+- **Reports:** HTML + JSON uploaded as the `zap-reports` CI artifact.
+- **First authenticated run (2026-09-10, local, live compose stack):** full stack up, ZAP
+  authenticated as `testuser`, OpenAPI import → spider → active scan (~4 min).
+  - Round 1 raised 4 real issues: `10021` X-Content-Type-Options missing, `90022`
+    Application Error Disclosure (`GET /orders/{id}` → 500 on a bad UUID), `40018` **SQL
+    Injection HIGH** on `PUT /cart/items/{productId}`, plus `10106` HTTP-Only-Site.
+  - `40018` was run down by hand and confirmed a **false positive** (the cart is
+    Redis-backed); `10021`, `90022` and the `40018` root-cause (no product-id validation)
+    were all **fixed** in this change.
+  - Round 2 (post-fix): **0 HIGH, 0 LOW, 1 MEDIUM** (`10106` HTTP-Only-Site — the
+    intentional dev-stack artifact, §8), 4 INFO. Gate: **PASS**.
+- **Not covered / follow-ups:** the admin surface (`/api/v1/admin/**`) needs an operator
+  role + is source-IP gated — a second operator-context scan is a follow-up. Staging runs
+  the same plan against the real ingress gateway.
 
 ---
 
@@ -261,9 +282,11 @@ Checklist to close out before Phase 0 is "done":
 - [x] Trivy: real CI run of fs / config / image (×2), all tables read, all clean at HIGH/CRITICAL
 - [~] SonarCloud: job wired and green; **scan self-skips until the `SONAR_TOKEN` secret is
       added** (owner action — §5.3)
-- [x] ZAP: real `workflow_dispatch` scan against the live compose stack — confirmed it hit
-      `host.docker.internal:8080` (the Envoy edge), not an empty `localhost`; report read;
-      FAIL-NEW 0, one WARN tracked in §8. Authenticated context is Phase 4.
+- [x] ZAP: passive baseline **and** authenticated active API scan against the live compose
+      stack (2026-09-10) — real reports read; the first authenticated run found + fixed a
+      missing `X-Content-Type-Options` header and a 500 on a malformed order id (§8), and a
+      SQL-injection alert on `PUT /cart/items/{productId}` that was verified a false positive
+      (the cart is Redis-backed) with the underlying input-validation gap closed.
 - [x] All four wired into `security.yml` with the documented block/inform policy
 - [x] This document updated from the real output
 
@@ -271,12 +294,33 @@ Checklist to close out before Phase 0 is "done":
 
 ## 8. Open items / accepted tradeoffs
 
-### ZAP-10049 — Storable and Cacheable Content on edge error responses
-- Tool: zap (baseline, 2026-09-09)
-- Status: **open item**
-- Detail: the Envoy edge's 401/403/503 responses have no `Cache-Control: no-store`.
-  Low severity (no sensitive body today), but authed API responses must not be cacheable.
-- Fix: set `Cache-Control: no-store` on the BFF's authenticated responses; revisit in Phase 1.
+### ZAP active-scan rules downgraded to INFO (compose-stack artifacts)
+- Tool: zap (authenticated active scan, 2026-09-10) — `infra/security/zap/api-scan.yaml` `alertFilter`
+- Status: **accepted tradeoff**, re-checked each run
+- `10049` **Storable and Cacheable Content** — now only fires on Envoy's *own* 404/40x
+  error bodies (`/robots.txt`, `/sitemap.xml`). The BFF itself sends `Cache-Control:
+  no-store` on every response (`secureHeaders`), so authed API payloads are covered.
+  Envoy's static error pages carry no sensitive data.
+- `10106` **"HTTP Only Site"** — the compose edge listens on plain HTTP by design; TLS is
+  terminated at the k8s ingress `Gateway` (ARCHITECTURE §8.7). Staging runs the same plan
+  over HTTPS.
+- `10024` **"Sensitive Information in URL"** — matches the opaque `page_token` pagination
+  cursor against a "sensitive param name" list. The cursor is not a secret.
+
+Only `10049` is filtered in the plan; `10106` (MEDIUM) and `10024` (INFO) surface as WARN
+and are triaged here — the CI gate fails on HIGH only, and a fresh finding on any other
+rule is still visible in the report and the step output.
+
+### ZAP-40018 — SQL Injection on `PUT /cart/items/{productId}` — false positive
+- Tool: zap (authenticated active scan, 2026-09-10), reported HIGH
+- Status: **false positive, verified**; underlying input-validation gap **fixed**
+- Detail: the `cart` service is Redis-backed (JSON blobs) — there is no SQL. ZAP's
+  boolean-based heuristic (`… AND 1=1 --` vs `… AND 1=2 --`) tripped because the endpoint
+  accepted *any* string as a line id and appended a line per request, so the two probe
+  responses differed. Reproduced by hand: both probes now return an identical `400`.
+- Fix: `cart` rejects a non-UUID `product_id` with `InvalidArgument` (`checkProductID` in
+  the domain aggregate). Not a rule suppression — a real validation gap that also removes
+  the signal the heuristic keyed on.
 
 ### SonarCloud not yet active
 - Tool: sonarcloud
@@ -285,6 +329,13 @@ Checklist to close out before Phase 0 is "done":
   repo secret exists. See §5.3 for the one-time setup.
 
 ### Fixed
+- **ZAP `10021` — X-Content-Type-Options missing** on every BFF response. First
+  authenticated scan, 2026-09-10. **Fixed** by the `secureHeaders` middleware (also adds
+  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`).
+- **ZAP `90022` — Application Error Disclosure**: `GET /orders/{id}` returned HTTP 500 for
+  a syntactically invalid id (Postgres `uuid` cast error; body was already generic).
+  First authenticated scan, 2026-09-10. **Fixed** — the order store rejects a malformed id
+  as `NotFound` before the query (`notFoundID`), so it is a clean 404.
 - **CVE-2026-17106** — `github.com/moby/go-archive` (transitive via testcontainers-go,
   test-only). Trivy `fs` HIGH on PR #2. **Fixed** by bumping to `v0.3.0`.
 - **CVE-2026-55677** — `github.com/labstack/echo/v4` (the BFF's HTTP framework),

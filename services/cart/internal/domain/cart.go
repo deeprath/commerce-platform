@@ -6,11 +6,26 @@ import (
 	"sort"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/deeprath/commerce-platform/pkg/errs"
 )
 
 // MaxLineQuantity caps a single line to keep a cart sane.
 const MaxLineQuantity = 999
+
+// checkProductID rejects an empty or non-UUID product id before it becomes a
+// cart line. Catalog ids are UUIDs; anything else can only be junk (or a
+// probe — a scanner's `AND 1=1 --` string lands here).
+func checkProductID(productID string) error {
+	if productID == "" {
+		return errs.New(errs.KindInvalidArgument, "PRODUCT_ID_REQUIRED", "product_id is required")
+	}
+	if _, err := uuid.Parse(productID); err != nil {
+		return errs.New(errs.KindInvalidArgument, "PRODUCT_ID_INVALID", "product_id must be a UUID")
+	}
+	return nil
+}
 
 type Item struct {
 	ProductID string    `json:"product_id"`
@@ -47,8 +62,8 @@ func (c *Cart) find(productID string) *Item {
 
 // Add increases (or creates) a line by delta (> 0).
 func (c *Cart) Add(productID string, delta int32) error {
-	if productID == "" {
-		return errs.New(errs.KindInvalidArgument, "PRODUCT_ID_REQUIRED", "product_id is required")
+	if err := checkProductID(productID); err != nil {
+		return err
 	}
 	if delta <= 0 {
 		return errs.New(errs.KindInvalidArgument, "BAD_QUANTITY", "quantity to add must be > 0")
@@ -70,6 +85,9 @@ func (c *Cart) SetQuantity(productID string, qty int32) error {
 	if qty == 0 {
 		c.Remove(productID)
 		return nil
+	}
+	if err := checkProductID(productID); err != nil {
+		return err
 	}
 	if it := c.find(productID); it != nil {
 		it.Quantity = clampQty(qty)

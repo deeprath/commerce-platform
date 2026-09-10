@@ -10,6 +10,7 @@ replace (
 require (
 	github.com/deeprath/commerce-platform/gen/go v0.0.0-00010101000000-000000000000
 	github.com/deeprath/commerce-platform/pkg v0.0.0-00010101000000-000000000000
+	github.com/google/uuid v1.6.0
 	github.com/redis/go-redis/v9 v9.7.0
 	google.golang.org/grpc v1.83.2
 )
@@ -23,7 +24,6 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0 // indirect

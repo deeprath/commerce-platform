@@ -39,6 +39,7 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	e.HideBanner = true
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestID())
+	e.Use(secureHeaders)
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins:     allowedOrigins,
 		AllowCredentials: true,
@@ -88,6 +89,20 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	adm.POST("/shipments/:id/cancel", s.adminCancelShipment)
 
 	return e
+}
+
+// secureHeaders sets the response headers appropriate for a JSON API that is
+// never framed and never cached. TLS/HSTS is terminated and set at the edge, so
+// it is deliberately not repeated here.
+func secureHeaders(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		h := c.Response().Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Cache-Control", "no-store")
+		return next(c)
+	}
 }
 
 // --- helpers ---

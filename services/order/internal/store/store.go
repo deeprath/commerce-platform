@@ -10,6 +10,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -66,7 +67,21 @@ func (s *Store) Get(ctx context.Context, id, ownerID string) (*domain.Order, err
 	return s.get(ctx, s.pool, id, ownerID)
 }
 
+// notFoundID rejects a syntactically invalid UUID before it reaches a `WHERE
+// id = $1` on a uuid column (which would be a Postgres error -> 500). A
+// malformed id definitionally matches no row, so NotFound is the honest answer
+// and it does not disclose the id format.
+func notFoundID(id, reason string) error {
+	if _, err := uuid.Parse(id); err != nil {
+		return pkgerrs.New(pkgerrs.KindNotFound, reason, "no such record")
+	}
+	return nil
+}
+
 func (s *Store) get(ctx context.Context, q querier, id, ownerID string) (*domain.Order, error) {
+	if err := notFoundID(id, "ORDER_NOT_FOUND"); err != nil {
+		return nil, err
+	}
 	var (
 		o      domain.Order
 		status string

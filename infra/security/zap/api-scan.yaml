@@ -1,0 +1,136 @@
+# ZAP Automation Framework plan — authenticated active scan of the BFF API.
+#
+# Run via infra/security/zap-scan.sh (which mounts this file, the OpenAPI spec
+# and ./reports into the zaproxy container and passes ZAP_AUTH_* through).
+#
+#   zap.sh -cmd -autorun /zap/wrk/zap/api-scan.yaml
+#
+# Auth: POST /api/v1/auth/login returns an httpOnly `access_token` cookie; ZAP's
+# cookie session management stores and replays it. "Logged out" is detected by
+# the 401 body (`SIGN_IN_REQUIRED`) on GET /api/v1/orders, so ZAP re-authenticates
+# whenever the session lapses mid-scan.
+env:
+  contexts:
+    - name: bff-api
+      urls:
+        - http://host.docker.internal:8080/api/v1/catalog/products
+      includePaths:
+        - http://host.docker.internal:8080/api/v1/.*
+      excludePaths:
+        # logout would drop the session mid-scan
+        - http://host.docker.internal:8080/api/v1/auth/logout
+        # checkout drives the irreversible order saga (Kafka -> payment /
+        # inventory / fulfillment). Fuzzing it creates thousands of orders,
+        # drains seeded stock, and can stall the scan. It is a thin BFF
+        # pass-through; the passive baseline pass still reaches it.
+        - http://host.docker.internal:8080/api/v1/checkout
+        - http://host.docker.internal:8080/api/v1/checkout/confirm
+      authentication:
+        method: json
+        parameters:
+          loginPageUrl: http://host.docker.internal:8080/api/v1/orders
+          loginRequestUrl: http://host.docker.internal:8080/api/v1/auth/login
+          loginRequestBody: '{"username":"{%username%}","password":"{%password%}"}'
+        verification:
+          method: poll
+          loggedInRegex: '.*'
+          loggedOutRegex: 'SIGN_IN_REQUIRED|UNAUTHENTICATED'
+          pollUrl: http://host.docker.internal:8080/api/v1/orders
+          pollFrequency: 60
+          pollUnits: requests
+      sessionManagement:
+        method: cookie
+      users:
+        - name: shopper
+          credentials:
+            username: ${ZAP_AUTH_USERNAME}
+            password: ${ZAP_AUTH_PASSWORD}
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  - type: openapi
+    parameters:
+      apiFile: /zap/wrk/openapi/bff.yaml
+      targetUrl: http://host.docker.internal:8080/api/v1
+      context: bff-api
+
+  - type: passiveScan-config
+    parameters:
+      maxAlertsPerRule: 20
+      scanOnlyInScope: true
+
+  - type: spider
+    parameters:
+      context: bff-api
+      user: shopper
+      maxDuration: 2
+      maxDepth: 8
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: activeScan
+    parameters:
+      context: bff-api
+      user: shopper
+      maxRuleDurationInMins: 2
+      maxScanDurationInMins: 15
+      threadPerHost: 2
+    policyDefinition:
+      defaultThreshold: medium
+      defaultStrength: medium
+      rules:
+        # SQL injection / command / XSS / path traversal / SSRF matter most on
+        # a JSON API. Turn a few noisy-on-APIs passive-ish rules down.
+        - id: 40018 # SQL injection
+          threshold: low
+          strength: high
+        - id: 90019 # server-side code injection
+          threshold: low
+        - id: 90020 # remote OS command injection
+          threshold: low
+        - id: 40012 # reflected XSS
+          threshold: medium
+        - id: 40014 # persistent XSS
+          threshold: medium
+        - id: 6      # path traversal
+          threshold: low
+        - id: 40003 # CRLF injection
+          threshold: medium
+
+  - type: alertFilter
+    parameters:
+      deleteGlobalAlerts: false
+    alertFilters:
+      # Storable/Cacheable Content fires only on envoy's own 404/40x error
+      # bodies here — no sensitive content. Tracked in docs/SECURITY.md §8.
+      - ruleId: 10049
+        newRisk: "Info"
+      # The CI gate (.github/workflows/security.yml) fails only on HIGH. The
+      # plain-HTTP artifacts of the local compose stack — 10106 "HTTP Only Site"
+      # (MEDIUM; TLS is at the k8s gateway) and 10024 "Sensitive Info in URL"
+      # (INFO; the opaque page_token cursor) — surface as WARN and are triaged
+      # in SECURITY.md §8 rather than globally suppressed.
+
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: /zap/wrk/reports
+      reportFile: zap-api-scan-report.json
+      reportTitle: BFF authenticated API scan
+
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/reports
+      reportFile: zap-api-scan-report.html
+      reportTitle: BFF authenticated API scan
+
+  - type: outputSummary
+    parameters:
+      format: long
+      summaryFile: /zap/wrk/reports/zap-summary.json

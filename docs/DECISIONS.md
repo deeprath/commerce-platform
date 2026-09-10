@@ -849,3 +849,73 @@ deliberately long local run against a not-freshly-seeded stack will report
 `checkout_out_of_stock`; that is expected, and CI always starts clean. k6's
 `--summary-export` schema (Rate metrics expose `passes`/`fails`, not `rate`) is a
 minor gotcha when post-processing `summary.json`.
+
+---
+
+## ADR-026 — DAST: authenticated ZAP active scan driven by a hand-kept OpenAPI file
+
+**Status:** Accepted (Phase 4).
+
+**Context:** Phase 0 shipped a passive ZAP baseline against the edge. It never
+authenticated and never actively probed, so nothing behind sign-in — the whole
+cart/checkout/orders surface — was tested. The roadmap called for the full
+authenticated scan.
+
+**Decision:**
+- **ZAP Automation Framework plan** (`infra/security/zap/api-scan.yaml`), run by
+  `infra/security/zap-scan.sh` as pass 2 after the existing passive baseline.
+- **Endpoint list comes from a hand-maintained OpenAPI file**
+  (`infra/security/openapi/bff.yaml`), *not* served by the BFF. The BFF has no
+  spec endpoint and its HTML-less JSON responses give a spider nothing to
+  follow, so without an explicit list an "active scan" would attack almost
+  nothing. The file is small and kept in step with `api.go` by eye.
+- **Auth is cookie replay, not a token in a header.** `POST /api/v1/auth/login`
+  returns an httpOnly `access_token` cookie; ZAP's `sessionManagement: cookie`
+  stores and replays it. The 401 body `SIGN_IN_REQUIRED` on `GET /orders` is the
+  "logged out" poll signal, so ZAP re-authenticates when the session lapses
+  mid-scan. This exercises the real browser flow rather than a side channel.
+- **`/checkout` and `/checkout/confirm` are excluded from the active scan.** They
+  drive the irreversible order saga (Kafka → payment / inventory / fulfillment);
+  fuzzing them creates thousands of orders, drains seeded stock, and stalled an
+  early run. They are thin BFF pass-throughs and still get passive coverage.
+- **Gate = any HIGH fails** (the CI step parses every `reports/*.json` for
+  riskcode 3). Three rules are downgraded to INFO by an `alertFilter` because
+  they are artifacts of scanning the local compose stack over plain HTTP —
+  `10049` (cache headers on envoy's own error bodies), `10106` ("HTTP Only
+  Site" — TLS is at the k8s gateway), `10024` (the opaque `page_token` cursor
+  matching a "sensitive param name" list). A fresh finding on any *other* rule,
+  or HIGH on any rule, still fails. All three are logged in §8 of `SECURITY.md`.
+- **Weekly + `workflow_dispatch`, never on PRs** — it needs the whole stack up
+  and ~5–15 min. Runs against the compose edge locally / in CI and the real
+  ingress gateway on staging.
+
+**What the first authenticated run found (2026-09-10):**
+- **`X-Content-Type-Options` missing** on every BFF response → added a
+  `secureHeaders` middleware (`nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer`, `Cache-Control: no-store`).
+- **`GET /orders/{id}` returned 500** for a syntactically invalid id (Postgres
+  `uuid` cast error). The order store now rejects a malformed id as `NotFound`
+  before the query — a malformed id matches no row and 404 discloses nothing.
+- **SQL Injection alert (HIGH) on `PUT /cart/items/{productId}`** — verified a
+  **false positive**: the cart is Redis-backed (JSON blobs), no SQL anywhere.
+  ZAP's boolean heuristic tripped on a stateful, input-reflecting endpoint that
+  accepted *any* string as a line id and grew the cart between the `1=1` / `1=2`
+  probes. The real (lower-severity) gap — no product-id validation — was closed:
+  `cart` now rejects a non-UUID `product_id` with `InvalidArgument`, which also
+  removes the boolean-diff the scanner keyed on. No global suppression of the
+  SQLi rule.
+
+**Alternatives:**
+- *Spider-only, no spec* — finds nothing on a JSON API with no HTML.
+- *Serve OpenAPI from the BFF* — a real feature, but adds a generated-spec
+  pipeline and a public endpoint for what is only needed by the scanner; the
+  hand-kept file is smaller and has no runtime surface.
+- *Bearer token via a ZAP replacer rule* — simpler to wire, but skips the
+  cookie/session code path that production browsers actually use.
+- *Fail on MEDIUM too* — the local-HTTP artifacts are all MEDIUM/less; gating on
+  HIGH + "any new rule" keeps signal without permanent suppressions.
+
+**Consequences:** `bff.yaml` is a second description of the API surface to keep
+current (a stale entry only means that path isn't scanned — fail-safe). The
+admin surface (`/api/v1/admin/**`, operator role + source-IP gated) is not in
+this scan; an operator-context pass is a follow-up.

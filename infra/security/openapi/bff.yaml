@@ -1,0 +1,239 @@
+# OpenAPI description of the BFF's public HTTP surface, maintained by hand for
+# the ZAP authenticated API scan (infra/security/zap/api-scan.yaml). It is NOT
+# served by the BFF and is not a client contract — it exists so ZAP imports and
+# actively scans every endpoint + method + parameter rather than only what a
+# spider can discover. Keep it in step with services/bff/internal/api/api.go.
+#
+# The admin surface (/api/v1/admin/**) is intentionally omitted: it needs an
+# operator role and is source-IP restricted at the gateway (ADR-023). A separate
+# operator-context scan is a follow-up.
+openapi: 3.0.3
+info:
+  title: commerce-platform BFF (public API)
+  version: "1.0"
+  description: Storefront edge API. Anonymous browse + cart; sign-in required for checkout and orders.
+servers:
+  - url: http://host.docker.internal:8080/api/v1
+    description: compose edge (Envoy) — ZAP target
+  - url: http://localhost:8088/api/v1
+    description: BFF direct (local, bypasses the edge)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+  schemas:
+    Error:
+      type: object
+      properties:
+        status: { type: integer, example: 401 }
+        code: { type: string, example: UNAUTHENTICATED }
+        reason: { type: string, example: SIGN_IN_REQUIRED }
+    Address:
+      type: object
+      properties:
+        full_name: { type: string, example: Ada Lovelace }
+        line1: { type: string, example: 1 Analytical Engine Way }
+        line2: { type: string, example: "" }
+        city: { type: string, example: London }
+        region: { type: string, example: LDN }
+        postal_code: { type: string, example: EC1A 1BB }
+        country_code: { type: string, example: GB }
+        phone: { type: string, example: "+442071234567" }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, example: testuser }
+        password: { type: string, example: testuser123 }
+    AddCartItem:
+      type: object
+      required: [product_id, quantity]
+      properties:
+        product_id: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, example: 1 }
+    SetCartQuantity:
+      type: object
+      required: [quantity]
+      properties:
+        quantity: { type: integer, minimum: 0, example: 2 }
+    CheckoutRequest:
+      type: object
+      properties:
+        currency_code: { type: string, example: USD }
+        coupon_code: { type: string, example: "" }
+        payment_method_token: { type: string, example: pm_card_ok }
+        ship_to: { $ref: "#/components/schemas/Address" }
+    ConfirmRequest:
+      type: object
+      required: [payment_id]
+      properties:
+        payment_id: { type: string, format: uuid }
+        outcome: { type: string, enum: [authorize, fail], example: authorize }
+
+paths:
+  /auth/login:
+    post:
+      operationId: login
+      summary: Exchange credentials for an httpOnly session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200": { description: authenticated; Set-Cookie access_token }
+        "401":
+          description: bad credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /catalog/products:
+    get:
+      operationId: listProducts
+      summary: List / search products (anonymous)
+      parameters:
+        - { name: q, in: query, schema: { type: string }, example: lamp }
+        - { name: category, in: query, schema: { type: string }, example: home }
+        - { name: page_size, in: query, schema: { type: integer, maximum: 100 }, example: 20 }
+        - { name: page_token, in: query, schema: { type: string } }
+      responses:
+        "200": { description: product hits + facets }
+
+  /catalog/products/{slug}:
+    get:
+      operationId: getProduct
+      summary: Product detail by slug (anonymous)
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string }, example: desk-lamp }
+      responses:
+        "200": { description: product }
+        "404": { description: unknown slug }
+
+  /search/autocomplete:
+    get:
+      operationId: autocomplete
+      summary: Search-as-you-type suggestions (anonymous)
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string }, example: des }
+      responses:
+        "200": { description: suggestions }
+
+  /cart:
+    get:
+      operationId: getCart
+      summary: Current cart (guest cart_id cookie minted on first use)
+      parameters:
+        - { name: coupon, in: query, schema: { type: string }, example: WELCOME10 }
+      responses:
+        "200": { description: cart view }
+
+  /cart/items:
+    post:
+      operationId: addCartItem
+      summary: Add a line to the cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddCartItem" }
+      responses:
+        "200": { description: updated cart }
+        "400": { description: bad body }
+
+  /cart/items/{productId}:
+    put:
+      operationId: setCartItem
+      summary: Set a line's quantity (0 removes)
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetCartQuantity" }
+      responses:
+        "200": { description: updated cart }
+    delete:
+      operationId: removeCartItem
+      summary: Remove a line
+      parameters:
+        - { name: productId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: updated cart }
+
+  /cart/clear:
+    post:
+      operationId: clearCart
+      summary: Empty the cart
+      responses:
+        "200": { description: empty cart }
+
+  /checkout:
+    post:
+      operationId: checkout
+      summary: Create an order from the cart (requires sign-in)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckoutRequest" }
+      responses:
+        "201": { description: order created, payment intent returned }
+        "401":
+          description: not signed in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409": { description: insufficient stock }
+
+  /checkout/confirm:
+    post:
+      operationId: confirmCheckout
+      summary: Drive the payment intent (sandbox PSP stand-in; requires sign-in)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConfirmRequest" }
+      responses:
+        "200": { description: payment authorized/failed }
+        "400": { description: payment_id required }
+        "401": { description: not signed in }
+
+  /orders:
+    get:
+      operationId: listOrders
+      summary: The caller's orders (requires sign-in)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: page_size, in: query, schema: { type: integer, maximum: 100 }, example: 20 }
+        - { name: page_token, in: query, schema: { type: string } }
+      responses:
+        "200": { description: order list }
+        "401":
+          description: not signed in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      summary: One of the caller's orders (requires sign-in)
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: order }
+        "401": { description: not signed in }
+        "404": { description: not found / not yours }
