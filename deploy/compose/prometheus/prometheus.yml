@@ -20,3 +20,7 @@ scrape_configs:
 
   - job_name: otel-collector
     static_configs: [{ targets: ["otel-collector:8888"] }]
+
+  # CDN edge (nginx) cache stats, via nginx-prometheus-exporter.
+  - job_name: cdn
+    static_configs: [{ targets: ["cdn-exporter:9113"] }]

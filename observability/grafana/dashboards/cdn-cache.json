@@ -1,0 +1,86 @@
+{
+  "uid": "cdn-cache",
+  "title": "CDN — Media Edge Cache",
+  "tags": ["commerce", "cdn", "media", "cache"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Cache hit ratio (5m)",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"cdn\"} | json | cache_status=\"HIT\" [5m])) / clamp_min(sum(count_over_time({service_name=\"cdn\"} | json | cache_status=~\"HIT|MISS|EXPIRED|REVALIDATED|STALE|UPDATING\" [5m])), 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 0.5 }, { "color": "green", "value": 0.8 }] }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests by cache disposition",
+      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (cache_status) (count_over_time({service_name=\"cdn\"} | json | __error__=\"\" [1m]))",
+          "legendFormat": "{{cache_status}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "stacking": { "mode": "normal" } } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "CDN request rate (nginx)",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "rate(nginx_http_requests_total[5m])", "legendFormat": "requests/s" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "CDN connections",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "nginx_connections_active", "legendFormat": "active" },
+        { "refId": "B", "expr": "nginx_connections_waiting", "legendFormat": "waiting" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Origin offload — bytes served from cache vs origin",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(bytes_over_time({service_name=\"cdn\"} | json | cache_status=\"HIT\" | unwrap bytes [1m]))",
+          "legendFormat": "from cache"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(bytes_over_time({service_name=\"cdn\"} | json | cache_status=~\"MISS|EXPIRED|REVALIDATED\" | unwrap bytes [1m]))",
+          "legendFormat": "from origin"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    }
+  ]
+}

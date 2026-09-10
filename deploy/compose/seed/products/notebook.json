@@ -3,6 +3,9 @@
   "title": "Dot-Grid Notebook",
   "description": "A5 hardcover notebook, 192 dot-grid pages, lay-flat binding, elastic closure.",
   "category_id": "office",
+  "media_keys": [
+    "product-media/seed/placeholder.png"
+  ],
   "list_price": {
     "currency_code": "USD",
     "units": "12",
