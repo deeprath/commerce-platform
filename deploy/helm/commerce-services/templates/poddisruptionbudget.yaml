@@ -9,7 +9,11 @@ metadata:
   labels:
     {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
 spec:
+  {{- if $svc.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ $svc.podDisruptionBudget.maxUnavailable }}
+  {{- else }}
   minAvailable: {{ $svc.podDisruptionBudget.minAvailable }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 6 }}

@@ -58,6 +58,13 @@ global:
   # rollout.enabled still gates each one).
   rollout:
     enabled: true
+
+  # Master switch for multi-zone topology: adds a zone-level pod-spread
+  # constraint and renders a per-service Istio DestinationRule with
+  # locality-aware load balancing + zone failover. Off for single-zone / kind
+  # clusters (values-dev.yaml).
+  multiZone:
+    enabled: true
     # The Gateway API HTTPRoute a canary shifts weight on (BFF only for now).
     httpRoute: bff-storefront
 
@@ -73,10 +80,28 @@ defaults:
     limits: { cpu: 500m, memory: 256Mi }
   podDisruptionBudget:
     enabled: true
+    # Set exactly one of minAvailable / maxUnavailable. maxUnavailable as a
+    # percentage lets a single-zone voluntary drain proceed while still blocking
+    # a whole-service eviction (critical services set maxUnavailable: 34%).
     minAvailable: 1
+    maxUnavailable: null
   topologySpread:
     enabled: true
     maxSkew: 1
+    # Node-level spread is always soft — pack the cluster evenly, never block.
+    node:
+      whenUnsatisfiable: ScheduleAnyway
+    # Zone-level spread is added only when global.multiZone.enabled. Soft by
+    # default; critical services flip this to DoNotSchedule to *guarantee* a
+    # per-zone copy (needs replicas >= zone count).
+    zone:
+      enabled: true
+      whenUnsatisfiable: ScheduleAnyway
+  # Istio DestinationRule: keep service-to-service gRPC in-zone, fail over to
+  # another zone on unhealthy endpoints. Rendered only when
+  # global.multiZone.enabled. A no-op in a single-zone cluster.
+  localityLB:
+    enabled: true
   networkPolicy:
     enabled: true
   authorizationPolicy:
@@ -195,10 +220,16 @@ services:
     db: payment
     kafka: true
     auth: true
+    replicas: 3 # >= zone count, so the DoNotSchedule zone spread is satisfiable
     grpcService: commerce.payment.v1.PaymentService # for method-level AuthorizationPolicy
     callers:
       - { name: bff, methods: [ConfirmPayment] }
       - { name: order, methods: [CreatePayment, Refund] }
+    topologySpread:
+      zone: { whenUnsatisfiable: DoNotSchedule }
+    podDisruptionBudget:
+      minAvailable: null
+      maxUnavailable: 34%
     env: { GRPC_ADDR: ":50051" }
 
   order:
@@ -209,6 +240,12 @@ services:
     callers: [bff]
     egressExtra:
       - { selector: { app: openfga }, port: 8080 } # delegated order sharing (ADR-035)
+    # Checkout saga orchestrator — per-zone copy guaranteed, one-zone drain cap.
+    topologySpread:
+      zone: { whenUnsatisfiable: DoNotSchedule }
+    podDisruptionBudget:
+      minAvailable: null
+      maxUnavailable: 34%
     autoscaling:
       enabled: true
       minReplicas: 3
@@ -279,6 +316,13 @@ services:
     kafka: true # clickstream ingestion (POST /api/v1/events -> commerce.clickstream.tracked)
     envFromSecret: true # KEYCLOAK_CLIENT_SECRET
     callers: [gateway]
+    # Edge of the checkout path — guarantee a live copy in every zone and don't
+    # let a voluntary drain take more than one zone's worth out at once.
+    topologySpread:
+      zone: { whenUnsatisfiable: DoNotSchedule }
+    podDisruptionBudget:
+      minAvailable: null
+      maxUnavailable: 34%
     autoscaling:
       enabled: true
       minReplicas: 3

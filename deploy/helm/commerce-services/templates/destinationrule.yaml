@@ -1,0 +1,52 @@
+{{- /*
+Per-service Istio DestinationRule for multi-zone traffic management:
+
+  - localityLbSetting: prefer endpoints in the caller's own zone, then region,
+    keeping east-west gRPC in-zone (latency + cross-AZ data-transfer cost).
+  - outlierDetection: eject endpoints returning 5xx / connection errors — this
+    is what makes locality *failover* actually trigger when a zone degrades.
+  - connectionPool: bound in-flight work so a slow zone can't queue unbounded.
+
+Rendered only when global.multiZone.enabled AND the service opts in
+(localityLB.enabled, on by default). A no-op in a single-zone cluster.
+*/ -}}
+{{- $g := .Values.global }}
+{{- if $g.multiZone.enabled }}
+{{- range $name, $rawSvc := .Values.services }}
+{{- $svc := mergeOverwrite (deepCopy $.Values.defaults) $rawSvc }}
+{{- if $svc.localityLB.enabled }}
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $name }}-locality
+  namespace: {{ $g.namespace }}
+  labels:
+    {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
+spec:
+  host: {{ $name }}.{{ $g.namespace }}.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      simple: LEAST_REQUEST
+      localityLbSetting:
+        enabled: true
+        failoverPriority:
+          - topology.kubernetes.io/zone
+          - topology.kubernetes.io/region
+    outlierDetection:
+      consecutive5xxErrors: 5
+      consecutiveGatewayErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+      minHealthPercent: 40
+    connectionPool:
+      tcp:
+        maxConnections: 512
+        connectTimeout: 1s
+      http:
+        http2MaxRequests: 1024
+        maxRequestsPerConnection: 0
+---
+{{- end }}
+{{- end }}
+{{- end }}

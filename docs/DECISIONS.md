@@ -1519,3 +1519,67 @@ now point at the CDN host. `SECURITY.md §3` notes the edge is read-only,
 query-string-independent, and strips cookies. Hotlink protection
 (`valid_referers`) is left off in dev (so `curl` / tests work) and is a
 one-line enable for a real deployment.
+
+---
+
+## ADR-037 — Multi-zone resilience: zone-spread pods, zone-aware PDBs, Istio locality failover
+
+**Status:** accepted · Phase 5
+
+**Context:** the workload chart spread pods across *nodes*
+(`topologySpreadConstraints` on `kubernetes.io/hostname`, soft) and gave every
+service a `minAvailable: 1` PDB. Nothing pinned pods to *zones* or steered
+east-west traffic, so a single-AZ outage could take every replica of a service
+(all scheduled in the dead zone) and cross-zone gRPC hair-pinned regardless of
+where the caller ran.
+
+**Decision** — all in `deploy/helm/commerce-services`, gated by a
+`global.multiZone.enabled` master switch (off in `values-dev.yaml` for a
+single-node kind cluster):
+
+- **Zone-level pod spread.** A second `topologySpreadConstraint` on
+  `topology.kubernetes.io/zone`. Default `whenUnsatisfiable: ScheduleAnyway`
+  (best-effort even spread); **`bff`, `order`, `payment` override to
+  `DoNotSchedule`** with `replicas ≥ 3`, so a healthy zone is *guaranteed* a
+  copy of everything on the checkout-commit path. Both constraints carry
+  `matchLabelKeys: [pod-template-hash]` so a rollout's new ReplicaSet spreads on
+  its own axis instead of fighting the old one's skew.
+- **Zone-aware PDBs.** The chart now accepts `podDisruptionBudget.maxUnavailable`
+  as an alternative to `minAvailable`. The critical services set
+  `maxUnavailable: 34%` — a node-pool upgrade that rolls one zone of three at a
+  time proceeds, but a disruption that would take a whole service is blocked.
+  Everything else keeps `minAvailable: 1`.
+- **Istio locality load balancing + failover.** A per-service
+  `DestinationRule` (`<svc>-locality`): `localityLbSetting` with
+  `failoverPriority: [zone, region]` keeps gRPC in the caller's zone (latency +
+  cross-AZ data-transfer cost), and `outlierDetection` ejects a degraded zone's
+  endpoints — which is what actually makes failover fire. A bounded
+  `connectionPool` stops a slow zone from queueing unbounded work. Rendered only
+  under `multiZone.enabled` + a per-service `localityLB.enabled` (default on);
+  a no-op with one zone.
+- **Stateful deps** (Postgres via CloudNativePG, Kafka RF3, MinIO) already carry
+  their own multi-AZ replication — out of scope here.
+- **A single-zone outage becomes a non-event** — [RUNBOOKS.md RB-9](RUNBOOKS.md)
+  is verification, not intervention.
+
+**Alternatives:**
+- *Pod anti-affinity on the zone label* — `requiredDuringScheduling` is all-or-
+  nothing (no "skew ≤ 1"); `preferred` is a weaker `ScheduleAnyway`.
+  `topologySpreadConstraints` are the modern, tunable form.
+- *Mesh-wide `meshConfig.localityLbSetting`* — one global default is coarser than
+  per-service `outlierDetection` thresholds, and folding it into the istiod
+  Application's values couples a traffic policy to a platform-chart bump. A
+  templated per-service `DestinationRule` keeps it with the workload.
+- *Leave PDBs at `minAvailable: 1`* — fine for availability, but with 3 replicas
+  across 3 zones it also *permits* evicting 2 of 3 during a drain; the goal is to
+  cap a voluntary disruption at one zone's worth.
+- *Cluster-autoscaler / Karpenter zone balancing* — complementary (it right-sizes
+  the node pool per zone) but doesn't place *pods*; still need the spread
+  constraints.
+
+**Consequences:** `bff`/`order`/`payment` won't schedule if fewer than 3 zones
+are usable (RB-9 step 4 relaxes it). `payment` goes from 2 → 3 replicas. 14 new
+`DestinationRule` objects (`kubeconform` validates them against the datree
+catalog). No app or compose change — this is k8s topology only, validated with
+`helm template | kubeconform -strict` for both `values.yaml` and
+`values-dev.yaml`.
