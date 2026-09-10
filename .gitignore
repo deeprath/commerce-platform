@@ -34,6 +34,10 @@ web/**/gen/
 zap-report.*
 trivy-report.*
 
+# Perf test output
+/perf/out/
+/perf/summary.json
+
 # Go workspace sum is committed; per-module vendor dirs are not
 
 # TS incremental build info

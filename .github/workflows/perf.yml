@@ -1,0 +1,76 @@
+name: perf
+
+on:
+  workflow_dispatch:
+    inputs:
+      browse_vus:
+        description: "peak concurrent browsing VUs"
+        default: "20"
+      checkout_rps:
+        description: "peak checkout iterations/sec"
+        default: "3"
+      hold:
+        description: "steady-state duration (k6 stage)"
+        default: "40s"
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC — one hour after the security run
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  k6-checkout-funnel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bring up the stack
+        run: |
+          cp deploy/compose/.env.example deploy/compose/.env
+          docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env up -d --build
+
+      - name: Wait for the BFF and a seeded catalog
+        run: ./perf/wait-ready.sh
+        env:
+          TIMEOUT: "240"
+
+      - name: k6 load test (checkout funnel)
+        run: |
+          mkdir -p perf/out && chmod 777 perf/out
+          # k6 runs in its own container; host.docker.internal (mapped to the
+          # host gateway on native Linux Docker) reaches the published BFF port.
+          docker run --rm --add-host host.docker.internal:host-gateway \
+            -v "$PWD/perf:/perf:ro" \
+            -v "$PWD/perf/out:/out" \
+            -e BASE_URL=http://host.docker.internal:8088/api/v1 \
+            -e BROWSE_VUS="${BROWSE_VUS}" \
+            -e CHECKOUT_RPS="${CHECKOUT_RPS}" \
+            -e HOLD="${HOLD}" \
+            grafana/k6:0.54.0 run \
+              --summary-export=/out/summary.json \
+              /perf/checkout-funnel.js
+        env:
+          BROWSE_VUS: ${{ inputs.browse_vus || '20' }}
+          CHECKOUT_RPS: ${{ inputs.checkout_rps || '3' }}
+          HOLD: ${{ inputs.hold || '40s' }}
+
+      - name: Stack logs (on failure)
+        if: failure()
+        run: docker compose -f deploy/compose/docker-compose.yml logs --tail=200 bff order payment inventory pricing cart
+
+      - name: Upload k6 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-summary
+          path: perf/out/summary.json
+          if-no-files-found: warn
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f deploy/compose/docker-compose.yml down -v
