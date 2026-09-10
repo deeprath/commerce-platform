@@ -121,10 +121,12 @@ func (s *Server) CreateProduct(ctx context.Context, req *catalogv1.CreateProduct
 	if p := auth.FromContext(ctx); p != nil {
 		sub = p.Subject
 	}
-	p, err := domain.NewProduct(
-		req.GetSlug(), req.GetTitle(), req.GetDescription(), req.GetCategoryId(),
-		fromProtoMoney(req.GetListPrice()), req.GetMediaKeys(), req.GetAttributes(), req.GetShopId(), sub,
-	)
+	p, err := domain.NewProduct(domain.NewProductInput{
+		Slug: req.GetSlug(), Title: req.GetTitle(), Description: req.GetDescription(),
+		CategoryID: req.GetCategoryId(), Price: fromProtoMoney(req.GetListPrice()),
+		MediaKeys: req.GetMediaKeys(), Attributes: req.GetAttributes(),
+		ShopID: req.GetShopId(), CreatedBy: sub,
+	})
 	if err != nil {
 		return nil, err
 	}

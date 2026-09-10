@@ -43,32 +43,46 @@ type Product struct {
 	UpdatedAt   time.Time
 }
 
+// NewProductInput is the create payload for NewProduct.
+type NewProductInput struct {
+	Slug        string
+	Title       string
+	Description string
+	CategoryID  string
+	Price       Money
+	MediaKeys   []string
+	Attributes  map[string]string
+	ShopID      string // "" => first-party (platform-owned)
+	CreatedBy   string // Keycloak sub of the creator
+}
+
 // NewProduct validates inputs and returns a DRAFT product (id/timestamps set by the store).
-func NewProduct(slug, title, description, categoryID string, price Money, mediaKeys []string, attrs map[string]string, shopID, createdBy string) (*Product, error) {
-	slug = normaliseSlug(slug)
+func NewProduct(in NewProductInput) (*Product, error) {
+	slug := normaliseSlug(in.Slug)
 	if err := validateSlug(slug); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(title) == "" {
+	if strings.TrimSpace(in.Title) == "" {
 		return nil, errs.New(errs.KindInvalidArgument, "TITLE_REQUIRED", "title must not be empty")
 	}
-	if err := validateMoney(price); err != nil {
+	if err := validateMoney(in.Price); err != nil {
 		return nil, err
 	}
+	attrs := in.Attributes
 	if attrs == nil {
 		attrs = map[string]string{}
 	}
 	return &Product{
 		Slug:        slug,
-		Title:       strings.TrimSpace(title),
-		Description: description,
-		CategoryID:  categoryID,
-		ListPrice:   price,
-		MediaKeys:   mediaKeys,
+		Title:       strings.TrimSpace(in.Title),
+		Description: in.Description,
+		CategoryID:  in.CategoryID,
+		ListPrice:   in.Price,
+		MediaKeys:   in.MediaKeys,
 		Status:      StatusDraft,
 		Attributes:  attrs,
-		ShopID:      strings.TrimSpace(shopID),
-		CreatedBy:   createdBy,
+		ShopID:      strings.TrimSpace(in.ShopID),
+		CreatedBy:   in.CreatedBy,
 	}, nil
 }
 
