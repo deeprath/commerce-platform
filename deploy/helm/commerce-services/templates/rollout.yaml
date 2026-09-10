@@ -1,0 +1,59 @@
+{{- $g := .Values.global -}}
+{{- range $name, $rawSvc := .Values.services }}
+{{- $svc := mergeOverwrite (deepCopy $.Values.defaults) $rawSvc }}
+{{- $r := $svc.rollout }}
+{{- if and $g.rollout.enabled $r.enabled }}
+# {{ $name }}: canary rollout. Reads its pod template from the Deployment of the
+# same name (workloadRef); Rollouts scales that Deployment to 0 after the first
+# successful rollout. Weight is shifted on the {{ $g.rollout.httpRoute }}
+# HTTPRoute via the Gateway API traffic-router plugin.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ $name }}
+  namespace: {{ $g.namespace }}
+  labels:
+    {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
+spec:
+  workloadRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+    scaleDown: onsuccess
+  revisionHistoryLimit: {{ $svc.revisionHistoryLimit }}
+  strategy:
+    canary:
+      canaryService: {{ $name }}-canary
+      stableService: {{ $name }}
+      trafficRouting:
+        plugins:
+          argoproj-labs/gatewayAPI:
+            httpRoute: {{ $g.rollout.httpRoute }}
+            namespace: {{ $g.namespace }}
+      {{- if $r.analysis }}
+      analysis:
+        templates:
+          - templateName: {{ $name }}-canary
+        startingStep: 1 # after the first setWeight
+        args:
+          - name: service
+            value: {{ $name }}
+          - name: namespace
+            value: {{ $g.namespace }}
+      {{- end }}
+      steps:
+        {{- if $r.mirror }}
+        # Shadow: run canary pods and mirror all traffic to them, no real weight.
+        - setCanaryScale: { weight: 100 }
+        - setMirrorRoutes:
+            name: {{ $g.rollout.httpRoute }}
+            percentage: 100
+            match:
+              - path: { prefix: /api/v1 }
+        - pause: { duration: 2m }
+        - setMirrorRoutes: { name: {{ $g.rollout.httpRoute }} } # stop mirroring
+        - setCanaryScale: { matchTrafficWeight: true }
+        {{- end }}
+        {{- toYaml $r.steps | nindent 8 }}
+{{- end }}
+{{- end }}

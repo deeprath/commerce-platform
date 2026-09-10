@@ -144,7 +144,14 @@ jobs:
       - name: commerce-services
         run: |
           helm lint deploy/helm/commerce-services
+          # -skip Rollout: the datree CRD-catalog schema for argoproj Rollout
+          # lags the controller version and rejects the (valid) setMirrorRoutes
+          # step. The Rollout is still helm-lint'd and rendered.
           helm template deploy/helm/commerce-services \
+            | kubeconform -strict -summary -kubernetes-version 1.30.0 -skip Rollout \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+          helm template deploy/helm/commerce-services -f deploy/helm/commerce-services/values-dev.yaml \
             | kubeconform -strict -summary -kubernetes-version 1.30.0 \
                 -schema-location default \
                 -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'

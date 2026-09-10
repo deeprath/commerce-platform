@@ -1,0 +1,20 @@
+{{- $g := .Values.global -}}
+{{- $anyRollout := false -}}
+{{- range $n, $s := .Values.services }}{{- if (mergeOverwrite (deepCopy $.Values.defaults) $s).rollout.enabled }}{{- $anyRollout = true }}{{- end }}{{- end }}
+{{- if and $g.rollout.enabled $anyRollout }}
+# The Argo Rollouts Gateway API traffic-router plugin needs to read and patch
+# HTTPRoutes. The argo-rollouts ClusterRole doesn't grant that out of the box.
+# Aggregated in via the label the chart's ClusterRole uses.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: argo-rollouts-gateway-api
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-argo-rollouts: "true"
+    app.kubernetes.io/part-of: commerce-platform
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+rules:
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+{{- end }}

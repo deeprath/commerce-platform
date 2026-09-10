@@ -1146,3 +1146,61 @@ workload chart (ADR-028) is the natural place for the per-service `ScaledObject`
 Prometheus (they are — same series the SLO rules use). `bff` autoscaling is a
 CPU proxy until `otelecho` is added — tracked. Thresholds are first guesses;
 tune from the k6 load-test p95 once there's a staging baseline.
+
+---
+
+## ADR-031 — Progressive delivery: Argo Rollouts canary for the BFF via the Gateway API plugin
+
+**Status:** Accepted (Phase 4). BFF only; internal gRPC canary deferred.
+
+**Context:** Deploys were a plain `RollingUpdate` — a bad build reaches 100% of
+traffic as fast as pods roll. §14 called for Argo Rollouts + weighted `HTTPRoute`
++ traffic mirroring. The workload chart (ADR-028) and the SLO recording rules
+(ADR-024) are the pieces that make an automated canary gate possible.
+
+**Decision:**
+- **Argo Rollouts controller** in the app-of-apps, with the
+  **`argoproj-labs/gatewayAPI` traffic-router plugin** registered (so a `Rollout`
+  can shift weight on a Gateway API `HTTPRoute`, no Istio `VirtualService`).
+- **`Rollout` reads its pod template from the Deployment** (`workloadRef` +
+  `scaleDown: onsuccess`) — zero template duplication, the Deployment stays the
+  single definition; Rollouts scales it to 0 after the first successful rollout.
+- **Canary on the BFF only.** It is the one externally-routed service, so
+  weighted `HTTPRoute` backendRefs (`bff` / `bff-canary`) are a clean split. The
+  chart renders a `<svc>-canary` Service; the plugin owns the two `weight`s on
+  `bff-storefront` (steady state 100 / 0). Internal gRPC services stay
+  Deployments — L7 split between them needs mesh waypoints, which are their own
+  roadmap item.
+- **Steps:** a mirror/shadow step first (`setCanaryScale: 100` +
+  `setMirrorRoutes: 100%`, 0 real weight) so the new version sees production
+  traffic with no user impact, then `10 → 30 → 60 → 100` weight with `pause`s.
+- **Automated gate:** a background `AnalysisTemplate` (`bff-canary`) queries
+  Prometheus every minute — checkout success-rate ≥ 90% **and**
+  `job:grpc_error_ratio:5m{job="order"}` ≤ 2% — `failureLimit: 2` ⇒ Rollouts
+  shifts weight back to stable and marks the rollout Degraded. The checks are
+  platform-scoped (checkout health) not canary-pod-scoped: the BFF has no
+  per-pod request metric yet (no `otelecho` — see ADR-030), but a broken BFF
+  moves these regardless of which pod served the request.
+- **KEDA + Rollouts:** when a service has both, the `ScaledObject`'s
+  `scaleTargetRef` targets the `Rollout` (`argoproj.io/v1alpha1`), not the
+  Deployment.
+- **`global.rollout.enabled`** master switch; `values-dev.yaml` leaves it off so
+  a kind cluster without the Rollouts controller renders plain Deployments.
+
+**Alternatives:**
+- *Flagger* — same idea, tied more tightly to a service mesh; Argo Rollouts fits
+  the existing Argo CD + Gateway API stack and its `AnalysisTemplate` is a first-
+  class object.
+- *Istio `VirtualService` weight via Rollouts' istio provider* — works, but adds
+  an Istio-API dependency where Gateway API already expresses the route.
+- *Blue-green* — a full second stack per deploy and an instant 100% cutover; the
+  canary's gradual exposure + auto-analysis catches regressions with a fraction
+  of the blast radius.
+- *Canary every service now* — the internal ones need waypoint proxies for L7
+  weighting; scoping to the BFF ships the capability without that prerequisite.
+
+**Consequences:** `bff-storefront` `HTTPRoute` now carries two backendRefs that
+Argo Rollouts mutates — do not hand-edit the weights. The analysis gate depends
+on the SLO recording rules being present in the cluster Prometheus (they are —
+`deploy/k8s/observability/prometheus-rules.yaml`). Rollout status becomes part of
+the deploy: Argo CD sync isn't "done" until the `Rollout` is Healthy.
