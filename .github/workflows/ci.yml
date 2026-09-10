@@ -145,4 +145,6 @@ jobs:
         run: |
           helm lint deploy/helm/commerce-services
           helm template deploy/helm/commerce-services \
-            | kubeconform -strict -summary -kubernetes-version 1.30.0 -schema-location default
+            | kubeconform -strict -summary -kubernetes-version 1.30.0 \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'

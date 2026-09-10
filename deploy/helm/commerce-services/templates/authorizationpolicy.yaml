@@ -1,0 +1,40 @@
+{{- $g := .Values.global -}}
+{{- range $name, $rawSvc := .Values.services }}
+{{- $svc := mergeOverwrite (deepCopy $.Values.defaults) $rawSvc }}
+{{- if $svc.authorizationPolicy.enabled }}
+# {{ $name }}: L7 identity allow-list. With the namespace `default-deny`
+# (deploy/istio/authorization-policy.yaml) this is the only way in.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-{{ $name }}
+  namespace: {{ $g.namespace }}
+  labels:
+    {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 6 }}
+  action: ALLOW
+  {{- $rules := list }}
+  {{- range ($svc.callers | default list) }}
+  {{- $cn := . }}{{- $methods := list }}
+  {{- if not (kindIs "string" .) }}{{- $cn = .name }}{{- $methods = .methods | default list }}{{- end }}
+  {{- $sa := ternary $g.gateway.serviceAccount $cn (eq $cn "gateway") }}
+  {{- $rule := dict "from" (list (dict "source" (dict "principals" (list (printf "cluster.local/ns/%s/sa/%s" $g.namespace $sa))))) }}
+  {{- if $methods }}
+  {{- $paths := list }}
+  {{- range $methods }}{{- $paths = append $paths (printf "/%s/%s" $rawSvc.grpcService .) }}{{- end }}
+  {{- $rule = merge $rule (dict "to" (list (dict "operation" (dict "paths" $paths)))) }}
+  {{- end }}
+  {{- $rules = append $rules $rule }}
+  {{- end }}
+  {{- if $rules }}
+  rules:
+    {{- toYaml $rules | nindent 4 }}
+  {{- else }}
+  rules: [] # no caller — deny every L7 request (event-driven service)
+  {{- end }}
+---
+{{- end }}
+{{- end }}

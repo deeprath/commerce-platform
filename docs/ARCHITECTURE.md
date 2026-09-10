@@ -529,11 +529,16 @@ Per service (rendered by `deploy/helm/commerce-services`, §9.3):
   `search`, `notification`, `media`; on **gRPC RPS** for `bff`, `catalog`, `search`.
   *(KEDA controller is in the app-of-apps; the `ScaledObject`s are a follow-on.)*
 - ✅ `PodDisruptionBudget` (`minAvailable: 1`).
-- **NetworkPolicy** (L3/L4): default-deny ingress+egress per namespace; explicit allows
-  (`bff → domain services`, `order → payment/inventory/fulfillment`, `* → its own DB`,
-  `* → Kafka`, `* → otel-collector`). No service can reach another service's DB.
-- **Istio `AuthorizationPolicy`** (L7 identity + path/method): default-deny, explicit allows
-  by SPIFFE identity — complements NetworkPolicy, doesn't replace it (§8.1).
+- ✅ **NetworkPolicy** (L3/L4): a namespace `default-deny-all` + a shared `allow-egress-common`
+  (DNS + otel), then per service an `<svc>-ingress` (only its actual callers) and
+  `<svc>-egress` (its DB / Kafka / Redis / Keycloak per the chart flags, plus the downstream
+  services it calls — *derived* from every service's `callers` list). No service can reach
+  another service's DB or an API it never calls. Rendered by `deploy/helm/commerce-services`.
+- ✅ **Istio `AuthorizationPolicy`** (L7 identity + method): the namespace `default-deny` lives
+  in `deploy/istio/`; the chart adds one `allow-to-<svc>` per service keyed on the caller's
+  SPIFFE identity (`cluster.local/ns/commerce/sa/<caller>`). `payment` is method-scoped
+  (`bff` → `ConfirmPayment`; `order` → `CreatePayment`, `Refund`). `notification` has no
+  caller → `rules: []` = deny all L7. Complements NetworkPolicy, doesn't replace it.
 - ✅ **Pod Security Standards: `restricted`** — enforced by the namespace label
   (`deploy/istio/namespace.yaml`) **and** met by every pod: `runAsNonRoot`,
   `runAsUser: 65532`, `seccompProfile: RuntimeDefault`, `allowPrivilegeEscalation: false`,
@@ -752,5 +757,5 @@ See [`SECURITY.md`](SECURITY.md) for job-by-job policy and the "did it actually 
 | **1 — Catalog & browse** | `catalog`, `media`, `search`, `bff`; `HTTPRoute`s for storefront; storefront browse + PDP; MinIO upload flow; Grafana platform + service dashboards (incl. mesh + gateway metrics). |
 | **2 — Cart & checkout** | `cart`, `pricing`, `inventory`, `order`, `payment` (PSP sandbox), the saga; `waypoint` proxies + `AuthorizationPolicy` for `order`/`payment`/`inventory`; ✅ checkout-funnel dashboard *(Phase 4)*; ✅ k6 load test (`perf/checkout-funnel.js` + weekly `perf.yml`). |
 | **3 — Fulfillment & comms** | ✅ `fulfillment`, `notification`, `review`; ✅ RMA/returns + partial refunds; ✅ admin API (operator mode on the list RPCs + BFF `/admin/*`); ✅ admin **SPA** (`web/admin`) + admin `HTTPRoute` on `admin.*` restricted by a source-IP `AuthorizationPolicy`. |
-| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; KEDA `ScaledObject`s; NetworkPolicies + tightened per-service `AuthorizationPolicy` (default-deny everywhere); **progressive delivery — Argo Rollouts + weighted `HTTPRoute` + traffic mirroring**; DR runbooks; pen-test remediation. |
+| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; ✅ per-service **NetworkPolicies** (default-deny + call-graph-derived allows) + tightened per-service **`AuthorizationPolicy`** (SPIFFE identity, method-scoped for `payment`); KEDA `ScaledObject`s; **progressive delivery — Argo Rollouts + weighted `HTTPRoute` + traffic mirroring**; DR runbooks; pen-test remediation. |
 | **5 — Scale/optional** | ClickHouse analytics, CDN, multi-zone, OpenFGA fine-grained authz, marketplace/multi-seller model. |

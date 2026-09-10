@@ -1033,3 +1033,64 @@ secret key. The template is now load-bearing for 13 services, so a change to it
 is a fleet-wide change — hence the `kubeconform` gate. `values-dev.yaml` carries
 the kind-cluster deltas (1 replica, `pullPolicy: Never`, no PDB); prod sizing is a
 deploy-time values override.
+
+---
+
+## ADR-029 — Zero-trust internal networking: NetworkPolicy + per-service AuthorizationPolicy, generated from one call graph
+
+**Status:** Accepted (Phase 4).
+
+**Context:** The Phase 0 `deploy/istio/authorization-policy.yaml` had a namespace
+`default-deny` plus two broad allows: gateway→bff, and bff→*(every non-gateway
+workload)*. There were no L3/L4 NetworkPolicies at all. Any compromised service
+could reach any other service's gRPC API and — with no NetworkPolicy — any other
+service's database, Kafka, Redis. The workload chart (ADR-028) now creates a
+ServiceAccount + `app:` label per service, so per-service policy is finally
+expressible.
+
+**Decision:**
+- **One source of truth: a `callers:` list per service** in the chart's
+  `values.yaml` — who is allowed to call it (a service name, `"gateway"`, or
+  `{name, methods:[...]}`). Both policy layers derive from it:
+  - **`AuthorizationPolicy`** (`templates/authorizationpolicy.yaml`): one
+    `allow-to-<svc>` per service, `action: ALLOW`, keyed on each caller's SPIFFE
+    identity `cluster.local/ns/commerce/sa/<caller>`. Method-scoped where
+    `methods` is set (`payment`: `bff`→`ConfirmPayment` only; `order`→
+    `CreatePayment`,`Refund` only). No caller ⇒ `rules: []` ⇒ deny all L7
+    (`notification` — event-driven, no gRPC ingress).
+  - **`NetworkPolicy`** (`templates/networkpolicy.yaml`): a namespace
+    `default-deny-all`, a shared `allow-egress-common` (DNS + otel-collector for
+    every platform pod), then per service an `<svc>-ingress` (only the pods in
+    `callers`) and an `<svc>-egress`. The egress targets are **derived**: the
+    infra ones from the existing `db`/`kafka`/`redis`/`auth` flags, and the
+    downstream services by scanning *every* service's `callers` for this one
+    (`commerce.downstreams` helper). Add a call to the graph in one place and
+    both the caller's egress and the callee's ingress + authz update.
+- **Layers stay complementary, not redundant.** NetworkPolicy is L3/L4 (can this
+  pod open a socket to that pod / DB / broker); AuthorizationPolicy is L7 SPIFFE
+  identity + method (is this *workload identity* allowed to call this *RPC*).
+  Losing one does not open the other.
+- **Gateway-scoped policy stays in `deploy/istio/`** (`gateway-ext-authz`
+  `CUSTOM`, the namespace `default-deny`, `admin-ip-allowlist`). The broad
+  `allow-gateway-to-bff` / `allow-bff-to-domain` are deleted — superseded by the
+  generated per-service policies.
+- **Validated in CI** with `kubeconform -strict` against the datree CRD catalog
+  (Istio `AuthorizationPolicy` schema) + the core schemas (`NetworkPolicy`).
+
+**Alternatives:**
+- *Hand-write 13 AuthorizationPolicies + 26 NetworkPolicies* — the call graph
+  would live in ~40 files; a missed edge is a silent outage or a silent hole.
+- *NetworkPolicy only* — no method-level control, no workload-identity check
+  (an attacker who lands in an allowed pod inherits its L3 reach).
+- *AuthorizationPolicy only* — nothing stops a compromised service from
+  connecting straight to another service's Postgres, bypassing gRPC entirely.
+- *Cilium `CiliumNetworkPolicy` with L7* — one CRD for both layers, but ties the
+  platform to Cilium; the Istio + core-NetworkPolicy split is CNI-portable.
+
+**Consequences:** `callers` is now a load-bearing part of the service contract —
+adding an inter-service call means adding one list entry (and, if you want it
+method-scoped, a `grpcService` + `methods`). NetworkPolicy enforcement needs a
+CNI that implements it (Calico / Cilium — kindnet does not; noted in
+`deploy/istio/README.md`). The infra pods (Postgres, Kafka, …) are assumed to
+carry an `app: <name>` label the egress selectors match — true for the operator
+charts we deploy; adjust `global.infra.*.selector` otherwise.

@@ -31,6 +31,21 @@ global:
   # Operator + Vault) — never templated by this chart.
   secretName: commerce-services
 
+  # L3/L4 targets for the generated NetworkPolicies. `port` is what the pod
+  # listens on; selectors match pods in `global.namespace` unless `namespace`
+  # is set.
+  infra:
+    postgres: { selector: { app: postgres }, port: 5432 }
+    kafka: { selector: { app: kafka }, port: 9092 }
+    redis: { selector: { app: redis }, port: 6379 }
+    keycloak: { selector: { app: keycloak }, port: 8080 }
+    otelCollector: { namespace: observability, selector: { app.kubernetes.io/name: opentelemetry-collector }, port: 4317 }
+  # SA name of the Istio ingress gateway (matches deploy/istio/*), and the pod
+  # label NetworkPolicies use to select it.
+  gateway:
+    serviceAccount: commerce-gateway
+    podSelector: { gateway.networking.k8s.io/gateway-name: commerce-gateway }
+
 # Applied to every service unless overridden in the `services` map.
 defaults:
   replicas: 2
@@ -47,20 +62,29 @@ defaults:
   topologySpread:
     enabled: true
     maxSkew: 1
+  networkPolicy:
+    enabled: true
+  authorizationPolicy:
+    enabled: true
   # GOMEMLIMIT is set from the memory limit (see _helpers.tpl).
   extraEnv: {}
 
 # --- the services -----------------------------------------------------------
 # Flags:
 #   protocol/port  - grpc:50051 (default) or http (bff)
-#   db: <name>     - inject DATABASE_URL from secret key <NAME>_DATABASE_URL
-#   kafka: true    - inject KAFKA_BROKERS
-#   redis: true    - inject REDIS_URL
-#   auth: true     - inject KEYCLOAK_JWKS_URL + KEYCLOAK_ISSUER
+#   db: <name>     - inject DATABASE_URL from secret key <NAME>_DATABASE_URL, allow egress to Postgres
+#   kafka: true    - inject KAFKA_BROKERS, allow egress to Kafka
+#   redis: true    - inject REDIS_URL, allow egress to Redis
+#   auth: true     - inject KEYCLOAK_JWKS_URL + KEYCLOAK_ISSUER, allow egress to Keycloak
 #   envFromSecret  - also envFrom the shared secret (bff needs KEYCLOAK_CLIENT_SECRET)
+#   callers        - who may call this service (drives NetworkPolicy ingress + AuthorizationPolicy).
+#                    Each entry: a service name, "gateway", or {name, methods: [<rpc>...]}.
+#                    A service X's egress to service Y is derived: Y lists X in `callers`.
+#   egressExtra    - extra L3/L4 egress targets ({selector, port, namespace?}).
 services:
   ext-authz:
     replicas: 3
+    callers: [gateway]
     env:
       GRPC_ADDR: ":50051"
     resources:
@@ -71,6 +95,7 @@ services:
     db: catalog
     kafka: true
     auth: true
+    callers: [bff, pricing]
     env: { GRPC_ADDR: ":50051" }
 
   media:
@@ -78,6 +103,9 @@ services:
     kafka: true
     auth: true
     envFromSecret: true # MINIO_ACCESS_KEY / MINIO_SECRET_KEY
+    callers: [bff]
+    egressExtra:
+      - { selector: { app: minio }, port: 9000 } # object storage
     env:
       GRPC_ADDR: ":50051"
       MINIO_INTERNAL_ENDPOINT: minio.commerce.svc.cluster.local:9000
@@ -85,6 +113,9 @@ services:
 
   search:
     kafka: true
+    callers: [bff]
+    egressExtra:
+      - { selector: { app: opensearch }, port: 9200 } # index
     env:
       GRPC_ADDR: ":50051"
       OPENSEARCH_ADDRESSES: http://opensearch.commerce.svc.cluster.local:9200
@@ -92,11 +123,13 @@ services:
   cart:
     redis: true
     auth: true
+    callers: [bff, order]
     env: { GRPC_ADDR: ":50051" }
 
   pricing:
     db: pricing
     auth: true
+    callers: [bff, order]
     env:
       GRPC_ADDR: ":50051"
       CATALOG_ADDR: catalog.commerce.svc.cluster.local:50051
@@ -106,6 +139,7 @@ services:
     db: inventory
     kafka: true
     auth: true
+    callers: [order]
     env:
       GRPC_ADDR: ":50051"
       DEFAULT_STOCK_ON_HAND: "0" # no dev auto-seed in prod
@@ -115,6 +149,10 @@ services:
     db: payment
     kafka: true
     auth: true
+    grpcService: commerce.payment.v1.PaymentService # for method-level AuthorizationPolicy
+    callers:
+      - { name: bff, methods: [ConfirmPayment] }
+      - { name: order, methods: [CreatePayment, Refund] }
     env: { GRPC_ADDR: ":50051" }
 
   order:
@@ -122,6 +160,7 @@ services:
     kafka: true
     auth: true
     replicas: 3
+    callers: [bff]
     env:
       GRPC_ADDR: ":50051"
       CART_ADDR: cart.commerce.svc.cluster.local:50051
@@ -133,6 +172,7 @@ services:
     db: fulfillment
     kafka: true
     auth: true
+    callers: [bff]
     env:
       GRPC_ADDR: ":50051"
       CARRIER_SWEEP_INTERVAL: 30s
@@ -143,12 +183,14 @@ services:
     db: notification
     kafka: true
     auth: true
+    callers: [] # event-driven only; no gRPC caller
     env: { GRPC_ADDR: ":50051" }
 
   review:
     db: review
     kafka: true
     auth: true
+    callers: [bff] # BFF review client is wired; storefront routes land next
     env: { GRPC_ADDR: ":50051" }
 
   bff:
@@ -156,6 +198,7 @@ services:
     port: 8080
     replicas: 3
     envFromSecret: true # KEYCLOAK_CLIENT_SECRET
+    callers: [gateway]
     resources:
       requests: { cpu: 100m, memory: 128Mi }
       limits: { cpu: "1", memory: 384Mi }

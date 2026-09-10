@@ -1,0 +1,126 @@
+{{- $g := .Values.global -}}
+{{- $anyNP := false -}}
+{{- range $n, $s := .Values.services }}{{- if (mergeOverwrite (deepCopy $.Values.defaults) $s).networkPolicy.enabled }}{{- $anyNP = true }}{{- end }}{{- end }}
+{{- if $anyNP }}
+# Namespace default-deny. Every allow below is additive.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: {{ $g.namespace }}
+  labels:
+    app.kubernetes.io/part-of: commerce-platform
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Every commerce-platform pod may do DNS and ship telemetry.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-common
+  namespace: {{ $g.namespace }}
+  labels:
+    app.kubernetes.io/part-of: commerce-platform
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: commerce-platform
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels: { k8s-app: kube-dns }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $g.infra.otelCollector.namespace }} }
+          podSelector:
+            matchLabels:
+              {{- toYaml $g.infra.otelCollector.selector | nindent 14 }}
+      ports:
+        - { protocol: TCP, port: {{ $g.infra.otelCollector.port }} }
+{{- end }}
+{{- range $name, $rawSvc := .Values.services }}
+{{- $svc := mergeOverwrite (deepCopy $.Values.defaults) $rawSvc }}
+{{- if $svc.networkPolicy.enabled }}
+{{- $downstreams := include "commerce.downstreams" (dict "name" $name "Values" $.Values) | fromJsonArray }}
+---
+# {{ $name }}: who may connect in.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-ingress
+  namespace: {{ $g.namespace }}
+  labels:
+    {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 6 }}
+  policyTypes: [Ingress]
+  {{- $froms := list }}
+  {{- range ($svc.callers | default list) }}
+  {{- $cn := . }}{{- if not (kindIs "string" .) }}{{- $cn = .name }}{{- end }}
+  {{- if eq $cn "gateway" }}
+  {{- $froms = append $froms (dict "podSelector" (dict "matchLabels" $g.gateway.podSelector)) }}
+  {{- else }}
+  {{- $froms = append $froms (dict "podSelector" (dict "matchLabels" (dict "app" $cn))) }}
+  {{- end }}
+  {{- end }}
+  {{- if $froms }}
+  ingress:
+    - from:
+        {{- toYaml $froms | nindent 8 }}
+      ports:
+        - { protocol: TCP, port: {{ $svc.port }} }
+  {{- else }}
+  ingress: [] # no gRPC caller — deny all inbound (event-driven service)
+  {{- end }}
+---
+# {{ $name }}: where it may connect out (beyond DNS + telemetry, above).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-egress
+  namespace: {{ $g.namespace }}
+  labels:
+    {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    {{- if $svc.db }}
+    - to: [ podSelector: { matchLabels: {{ $g.infra.postgres.selector | toJson }} } ]
+      ports: [ { protocol: TCP, port: {{ $g.infra.postgres.port }} } ]
+    {{- end }}
+    {{- if $svc.kafka }}
+    - to: [ podSelector: { matchLabels: {{ $g.infra.kafka.selector | toJson }} } ]
+      ports: [ { protocol: TCP, port: {{ $g.infra.kafka.port }} } ]
+    {{- end }}
+    {{- if $svc.redis }}
+    - to: [ podSelector: { matchLabels: {{ $g.infra.redis.selector | toJson }} } ]
+      ports: [ { protocol: TCP, port: {{ $g.infra.redis.port }} } ]
+    {{- end }}
+    {{- if or $svc.auth (eq $svc.protocol "http") }}
+    - to: [ podSelector: { matchLabels: {{ $g.infra.keycloak.selector | toJson }} } ]
+      ports: [ { protocol: TCP, port: {{ $g.infra.keycloak.port }} } ]
+    {{- end }}
+    {{- range $svc.egressExtra | default list }}
+    - to: [ podSelector: { matchLabels: {{ .selector | toJson }} } ]
+      ports: [ { protocol: TCP, port: {{ .port }} } ]
+    {{- end }}
+    {{- range $downstreams }}
+    {{- $dsvc := mergeOverwrite (deepCopy $.Values.defaults) (index $.Values.services .) }}
+    - to: [ podSelector: { matchLabels: { app: {{ . }} } } ]
+      ports: [ { protocol: TCP, port: {{ $dsvc.port }} } ]
+    {{- end }}
+{{- end }}
+{{- end }}
