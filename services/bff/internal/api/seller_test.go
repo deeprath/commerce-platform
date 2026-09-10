@@ -247,6 +247,25 @@ func TestCreateShopProduct_RejectsInactiveShop(t *testing.T) {
 	}
 }
 
+func TestListShopProducts_ResolvesShopAndForwards(t *testing.T) {
+	fc := &fakeCatalog{}
+	s := &Server{cl: &clients.Set{Seller: &fakeSeller{}, Catalog: fc}}
+
+	if rec := sellerReq(t, s, http.MethodGet, "/api/v1/seller/products", "", false); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anon = %d, want 401", rec.Code)
+	}
+	rec := sellerReq(t, s, http.MethodGet, "/api/v1/seller/products", "", true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if fc.lastListShop.GetShopId() != "shop-1" {
+		t.Fatalf("shop_id = %q, want the resolved shop-1", fc.lastListShop.GetShopId())
+	}
+	if !strings.Contains(rec.Body.String(), "p-draft") {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
 func TestUpdateAndArchiveShopProduct_ForwardToCatalog(t *testing.T) {
 	fc := &fakeCatalog{}
 	s := &Server{cl: &clients.Set{Seller: &fakeSeller{}, Catalog: fc}}

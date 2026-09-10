@@ -867,6 +867,110 @@ func (x *ArchiveProductResponse) GetProduct() *Product {
 	return nil
 }
 
+type ListShopProductsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ShopId        string                 `protobuf:"bytes,1,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
+	Page          *v1.PageRequest        `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListShopProductsRequest) Reset() {
+	*x = ListShopProductsRequest{}
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListShopProductsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListShopProductsRequest) ProtoMessage() {}
+
+func (x *ListShopProductsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListShopProductsRequest.ProtoReflect.Descriptor instead.
+func (*ListShopProductsRequest) Descriptor() ([]byte, []int) {
+	return file_commerce_catalog_v1_catalog_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ListShopProductsRequest) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
+}
+
+func (x *ListShopProductsRequest) GetPage() *v1.PageRequest {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+type ListShopProductsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Products      []*Product             `protobuf:"bytes,1,rep,name=products,proto3" json:"products,omitempty"`
+	Page          *v1.PageResponse       `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListShopProductsResponse) Reset() {
+	*x = ListShopProductsResponse{}
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListShopProductsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListShopProductsResponse) ProtoMessage() {}
+
+func (x *ListShopProductsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_catalog_v1_catalog_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListShopProductsResponse.ProtoReflect.Descriptor instead.
+func (*ListShopProductsResponse) Descriptor() ([]byte, []int) {
+	return file_commerce_catalog_v1_catalog_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListShopProductsResponse) GetProducts() []*Product {
+	if x != nil {
+		return x.Products
+	}
+	return nil
+}
+
+func (x *ListShopProductsResponse) GetPage() *v1.PageResponse {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
 var File_commerce_catalog_v1_catalog_proto protoreflect.FileDescriptor
 
 const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
@@ -949,12 +1053,18 @@ const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x15UpdateProductResponse\x126\n" +
 	"\aproduct\x18\x01 \x01(\v2\x1c.commerce.catalog.v1.ProductR\aproduct\"P\n" +
 	"\x16ArchiveProductResponse\x126\n" +
-	"\aproduct\x18\x01 \x01(\v2\x1c.commerce.catalog.v1.ProductR\aproduct*\x81\x01\n" +
+	"\aproduct\x18\x01 \x01(\v2\x1c.commerce.catalog.v1.ProductR\aproduct\"g\n" +
+	"\x17ListShopProductsRequest\x12\x17\n" +
+	"\ashop_id\x18\x01 \x01(\tR\x06shopId\x123\n" +
+	"\x04page\x18\x02 \x01(\v2\x1f.commerce.common.v1.PageRequestR\x04page\"\x8a\x01\n" +
+	"\x18ListShopProductsResponse\x128\n" +
+	"\bproducts\x18\x01 \x03(\v2\x1c.commerce.catalog.v1.ProductR\bproducts\x124\n" +
+	"\x04page\x18\x02 \x01(\v2 .commerce.common.v1.PageResponseR\x04page*\x81\x01\n" +
 	"\rProductStatus\x12\x1e\n" +
 	"\x1aPRODUCT_STATUS_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14PRODUCT_STATUS_DRAFT\x10\x01\x12\x19\n" +
 	"\x15PRODUCT_STATUS_ACTIVE\x10\x02\x12\x1b\n" +
-	"\x17PRODUCT_STATUS_ARCHIVED\x10\x032\x80\x05\n" +
+	"\x17PRODUCT_STATUS_ARCHIVED\x10\x032\xf1\x05\n" +
 	"\x0eCatalogService\x12]\n" +
 	"\n" +
 	"GetProduct\x12&.commerce.catalog.v1.GetProductRequest\x1a'.commerce.catalog.v1.GetProductResponse\x12c\n" +
@@ -962,7 +1072,8 @@ const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x10BatchGetProducts\x12,.commerce.catalog.v1.BatchGetProductsRequest\x1a-.commerce.catalog.v1.BatchGetProductsResponse\x12f\n" +
 	"\rCreateProduct\x12).commerce.catalog.v1.CreateProductRequest\x1a*.commerce.catalog.v1.CreateProductResponse\x12f\n" +
 	"\rUpdateProduct\x12).commerce.catalog.v1.UpdateProductRequest\x1a*.commerce.catalog.v1.UpdateProductResponse\x12i\n" +
-	"\x0eArchiveProduct\x12*.commerce.catalog.v1.ArchiveProductRequest\x1a+.commerce.catalog.v1.ArchiveProductResponseB\xe1\x01\n" +
+	"\x0eArchiveProduct\x12*.commerce.catalog.v1.ArchiveProductRequest\x1a+.commerce.catalog.v1.ArchiveProductResponse\x12o\n" +
+	"\x10ListShopProducts\x12,.commerce.catalog.v1.ListShopProductsRequest\x1a-.commerce.catalog.v1.ListShopProductsResponseB\xe1\x01\n" +
 	"\x17com.commerce.catalog.v1B\fCatalogProtoP\x01ZJgithub.com/deeprath/commerce-platform/gen/go/commerce/catalog/v1;catalogv1\xa2\x02\x03CCX\xaa\x02\x13Commerce.Catalog.V1\xca\x02\x13Commerce\\Catalog\\V1\xe2\x02\x1fCommerce\\Catalog\\V1\\GPBMetadata\xea\x02\x15Commerce::Catalog::V1b\x06proto3"
 
 var (
@@ -978,7 +1089,7 @@ func file_commerce_catalog_v1_catalog_proto_rawDescGZIP() []byte {
 }
 
 var file_commerce_catalog_v1_catalog_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_commerce_catalog_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_commerce_catalog_v1_catalog_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_commerce_catalog_v1_catalog_proto_goTypes = []any{
 	(ProductStatus)(0),               // 0: commerce.catalog.v1.ProductStatus
 	(*Product)(nil),                  // 1: commerce.catalog.v1.Product
@@ -994,47 +1105,54 @@ var file_commerce_catalog_v1_catalog_proto_goTypes = []any{
 	(*CreateProductResponse)(nil),    // 11: commerce.catalog.v1.CreateProductResponse
 	(*UpdateProductResponse)(nil),    // 12: commerce.catalog.v1.UpdateProductResponse
 	(*ArchiveProductResponse)(nil),   // 13: commerce.catalog.v1.ArchiveProductResponse
-	nil,                              // 14: commerce.catalog.v1.Product.AttributesEntry
-	nil,                              // 15: commerce.catalog.v1.CreateProductRequest.AttributesEntry
-	nil,                              // 16: commerce.catalog.v1.UpdateProductRequest.AttributesEntry
-	(*v1.Money)(nil),                 // 17: commerce.common.v1.Money
-	(*v1.PageRequest)(nil),           // 18: commerce.common.v1.PageRequest
-	(*v1.PageResponse)(nil),          // 19: commerce.common.v1.PageResponse
+	(*ListShopProductsRequest)(nil),  // 14: commerce.catalog.v1.ListShopProductsRequest
+	(*ListShopProductsResponse)(nil), // 15: commerce.catalog.v1.ListShopProductsResponse
+	nil,                              // 16: commerce.catalog.v1.Product.AttributesEntry
+	nil,                              // 17: commerce.catalog.v1.CreateProductRequest.AttributesEntry
+	nil,                              // 18: commerce.catalog.v1.UpdateProductRequest.AttributesEntry
+	(*v1.Money)(nil),                 // 19: commerce.common.v1.Money
+	(*v1.PageRequest)(nil),           // 20: commerce.common.v1.PageRequest
+	(*v1.PageResponse)(nil),          // 21: commerce.common.v1.PageResponse
 }
 var file_commerce_catalog_v1_catalog_proto_depIdxs = []int32{
-	17, // 0: commerce.catalog.v1.Product.list_price:type_name -> commerce.common.v1.Money
+	19, // 0: commerce.catalog.v1.Product.list_price:type_name -> commerce.common.v1.Money
 	0,  // 1: commerce.catalog.v1.Product.status:type_name -> commerce.catalog.v1.ProductStatus
-	14, // 2: commerce.catalog.v1.Product.attributes:type_name -> commerce.catalog.v1.Product.AttributesEntry
+	16, // 2: commerce.catalog.v1.Product.attributes:type_name -> commerce.catalog.v1.Product.AttributesEntry
 	1,  // 3: commerce.catalog.v1.GetProductResponse.product:type_name -> commerce.catalog.v1.Product
-	18, // 4: commerce.catalog.v1.ListProductsRequest.page:type_name -> commerce.common.v1.PageRequest
+	20, // 4: commerce.catalog.v1.ListProductsRequest.page:type_name -> commerce.common.v1.PageRequest
 	1,  // 5: commerce.catalog.v1.ListProductsResponse.products:type_name -> commerce.catalog.v1.Product
-	19, // 6: commerce.catalog.v1.ListProductsResponse.page:type_name -> commerce.common.v1.PageResponse
+	21, // 6: commerce.catalog.v1.ListProductsResponse.page:type_name -> commerce.common.v1.PageResponse
 	1,  // 7: commerce.catalog.v1.BatchGetProductsResponse.products:type_name -> commerce.catalog.v1.Product
-	17, // 8: commerce.catalog.v1.CreateProductRequest.list_price:type_name -> commerce.common.v1.Money
-	15, // 9: commerce.catalog.v1.CreateProductRequest.attributes:type_name -> commerce.catalog.v1.CreateProductRequest.AttributesEntry
-	17, // 10: commerce.catalog.v1.UpdateProductRequest.list_price:type_name -> commerce.common.v1.Money
-	16, // 11: commerce.catalog.v1.UpdateProductRequest.attributes:type_name -> commerce.catalog.v1.UpdateProductRequest.AttributesEntry
+	19, // 8: commerce.catalog.v1.CreateProductRequest.list_price:type_name -> commerce.common.v1.Money
+	17, // 9: commerce.catalog.v1.CreateProductRequest.attributes:type_name -> commerce.catalog.v1.CreateProductRequest.AttributesEntry
+	19, // 10: commerce.catalog.v1.UpdateProductRequest.list_price:type_name -> commerce.common.v1.Money
+	18, // 11: commerce.catalog.v1.UpdateProductRequest.attributes:type_name -> commerce.catalog.v1.UpdateProductRequest.AttributesEntry
 	0,  // 12: commerce.catalog.v1.UpdateProductRequest.status:type_name -> commerce.catalog.v1.ProductStatus
 	1,  // 13: commerce.catalog.v1.CreateProductResponse.product:type_name -> commerce.catalog.v1.Product
 	1,  // 14: commerce.catalog.v1.UpdateProductResponse.product:type_name -> commerce.catalog.v1.Product
 	1,  // 15: commerce.catalog.v1.ArchiveProductResponse.product:type_name -> commerce.catalog.v1.Product
-	2,  // 16: commerce.catalog.v1.CatalogService.GetProduct:input_type -> commerce.catalog.v1.GetProductRequest
-	4,  // 17: commerce.catalog.v1.CatalogService.ListProducts:input_type -> commerce.catalog.v1.ListProductsRequest
-	6,  // 18: commerce.catalog.v1.CatalogService.BatchGetProducts:input_type -> commerce.catalog.v1.BatchGetProductsRequest
-	8,  // 19: commerce.catalog.v1.CatalogService.CreateProduct:input_type -> commerce.catalog.v1.CreateProductRequest
-	9,  // 20: commerce.catalog.v1.CatalogService.UpdateProduct:input_type -> commerce.catalog.v1.UpdateProductRequest
-	10, // 21: commerce.catalog.v1.CatalogService.ArchiveProduct:input_type -> commerce.catalog.v1.ArchiveProductRequest
-	3,  // 22: commerce.catalog.v1.CatalogService.GetProduct:output_type -> commerce.catalog.v1.GetProductResponse
-	5,  // 23: commerce.catalog.v1.CatalogService.ListProducts:output_type -> commerce.catalog.v1.ListProductsResponse
-	7,  // 24: commerce.catalog.v1.CatalogService.BatchGetProducts:output_type -> commerce.catalog.v1.BatchGetProductsResponse
-	11, // 25: commerce.catalog.v1.CatalogService.CreateProduct:output_type -> commerce.catalog.v1.CreateProductResponse
-	12, // 26: commerce.catalog.v1.CatalogService.UpdateProduct:output_type -> commerce.catalog.v1.UpdateProductResponse
-	13, // 27: commerce.catalog.v1.CatalogService.ArchiveProduct:output_type -> commerce.catalog.v1.ArchiveProductResponse
-	22, // [22:28] is the sub-list for method output_type
-	16, // [16:22] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	20, // 16: commerce.catalog.v1.ListShopProductsRequest.page:type_name -> commerce.common.v1.PageRequest
+	1,  // 17: commerce.catalog.v1.ListShopProductsResponse.products:type_name -> commerce.catalog.v1.Product
+	21, // 18: commerce.catalog.v1.ListShopProductsResponse.page:type_name -> commerce.common.v1.PageResponse
+	2,  // 19: commerce.catalog.v1.CatalogService.GetProduct:input_type -> commerce.catalog.v1.GetProductRequest
+	4,  // 20: commerce.catalog.v1.CatalogService.ListProducts:input_type -> commerce.catalog.v1.ListProductsRequest
+	6,  // 21: commerce.catalog.v1.CatalogService.BatchGetProducts:input_type -> commerce.catalog.v1.BatchGetProductsRequest
+	8,  // 22: commerce.catalog.v1.CatalogService.CreateProduct:input_type -> commerce.catalog.v1.CreateProductRequest
+	9,  // 23: commerce.catalog.v1.CatalogService.UpdateProduct:input_type -> commerce.catalog.v1.UpdateProductRequest
+	10, // 24: commerce.catalog.v1.CatalogService.ArchiveProduct:input_type -> commerce.catalog.v1.ArchiveProductRequest
+	14, // 25: commerce.catalog.v1.CatalogService.ListShopProducts:input_type -> commerce.catalog.v1.ListShopProductsRequest
+	3,  // 26: commerce.catalog.v1.CatalogService.GetProduct:output_type -> commerce.catalog.v1.GetProductResponse
+	5,  // 27: commerce.catalog.v1.CatalogService.ListProducts:output_type -> commerce.catalog.v1.ListProductsResponse
+	7,  // 28: commerce.catalog.v1.CatalogService.BatchGetProducts:output_type -> commerce.catalog.v1.BatchGetProductsResponse
+	11, // 29: commerce.catalog.v1.CatalogService.CreateProduct:output_type -> commerce.catalog.v1.CreateProductResponse
+	12, // 30: commerce.catalog.v1.CatalogService.UpdateProduct:output_type -> commerce.catalog.v1.UpdateProductResponse
+	13, // 31: commerce.catalog.v1.CatalogService.ArchiveProduct:output_type -> commerce.catalog.v1.ArchiveProductResponse
+	15, // 32: commerce.catalog.v1.CatalogService.ListShopProducts:output_type -> commerce.catalog.v1.ListShopProductsResponse
+	26, // [26:33] is the sub-list for method output_type
+	19, // [19:26] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_commerce_catalog_v1_catalog_proto_init() }
@@ -1048,7 +1166,7 @@ func file_commerce_catalog_v1_catalog_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_commerce_catalog_v1_catalog_proto_rawDesc), len(file_commerce_catalog_v1_catalog_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   16,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

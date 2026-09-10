@@ -24,12 +24,13 @@ import (
 
 type fakeCatalog struct {
 	catalogv1.CatalogServiceClient
-	resp       *catalogv1.BatchGetProductsResponse
-	gotIDs     []string
-	lastCreate *catalogv1.CreateProductRequest
-	lastUpdate *catalogv1.UpdateProductRequest
-	lastArch   *catalogv1.ArchiveProductRequest
-	err        error
+	resp         *catalogv1.BatchGetProductsResponse
+	gotIDs       []string
+	lastCreate   *catalogv1.CreateProductRequest
+	lastUpdate   *catalogv1.UpdateProductRequest
+	lastArch     *catalogv1.ArchiveProductRequest
+	lastListShop *catalogv1.ListShopProductsRequest
+	err          error
 }
 
 func (f *fakeCatalog) BatchGetProducts(
@@ -67,6 +68,18 @@ func (f *fakeCatalog) ArchiveProduct(
 		return nil, f.err
 	}
 	return &catalogv1.ArchiveProductResponse{Product: &catalogv1.Product{Id: in.GetId()}}, nil
+}
+
+func (f *fakeCatalog) ListShopProducts(
+	_ context.Context, in *catalogv1.ListShopProductsRequest, _ ...grpc.CallOption,
+) (*catalogv1.ListShopProductsResponse, error) {
+	f.lastListShop = in
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &catalogv1.ListShopProductsResponse{Products: []*catalogv1.Product{
+		{Id: "p-draft", ShopId: in.GetShopId(), Status: catalogv1.ProductStatus_PRODUCT_STATUS_DRAFT},
+	}}, nil
 }
 
 type fakePricing struct {

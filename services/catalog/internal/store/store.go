@@ -89,20 +89,35 @@ func (s *Store) GetBySlug(ctx context.Context, slug string) (*domain.Product, er
 // List returns ACTIVE products newest-first, optionally filtered by category,
 // paginated by a created_at|id keyset cursor.
 func (s *Store) List(ctx context.Context, categoryID string, limit int, cursor *Cursor) ([]*domain.Product, *Cursor, error) {
+	where := "status='ACTIVE'"
+	args := []any{}
+	if categoryID != "" {
+		args = append(args, categoryID)
+		where += " AND category_id=$" + strconv.Itoa(len(args))
+	}
+	return s.listPage(ctx, where, args, limit, cursor)
+}
+
+// ListByShop returns a shop's products of ALL statuses (draft/active/archived),
+// newest-first, keyset-paginated. For the seller's own management view.
+func (s *Store) ListByShop(ctx context.Context, shopID string, limit int, cursor *Cursor) ([]*domain.Product, *Cursor, error) {
+	return s.listPage(ctx, "shop_id=$1", []any{shopID}, limit, cursor)
+}
+
+// listPage runs a keyset-paginated product query. `where` is the filter clause
+// (its placeholders start at $1); `args` are the values for it. The limit and
+// keyset-cursor placeholders are appended after.
+func (s *Store) listPage(ctx context.Context, where string, args []any, limit int, cursor *Cursor) ([]*domain.Product, *Cursor, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	args := []any{limit + 1}
-	q := `SELECT ` + productCols + ` FROM products WHERE status='ACTIVE'`
-	if categoryID != "" {
-		args = append(args, categoryID)
-		q += ` AND category_id=$2`
-	}
+	q := `SELECT ` + productCols + ` FROM products WHERE ` + where
 	if cursor != nil {
 		args = append(args, cursor.CreatedAt, cursor.ID)
 		q += ` AND (created_at, id) < ($` + strconv.Itoa(len(args)-1) + `, $` + strconv.Itoa(len(args)) + `)`
 	}
-	q += ` ORDER BY created_at DESC, id DESC LIMIT $1`
+	args = append(args, limit+1)
+	q += ` ORDER BY created_at DESC, id DESC LIMIT $` + strconv.Itoa(len(args))
 
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {

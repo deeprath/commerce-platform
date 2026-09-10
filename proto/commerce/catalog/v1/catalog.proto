@@ -31,6 +31,11 @@ service CatalogService {
   // ArchiveProduct moves a product to ARCHIVED (soft delete); it stops
   // appearing in ListProducts/search but existing orders still resolve it.
   rpc ArchiveProduct(ArchiveProductRequest) returns (ArchiveProductResponse);
+
+  // ListShopProducts returns a shop's products of ALL statuses (the seller's
+  // management view). The caller must be `shop#staff` of shop_id (or hold
+  // catalog_manager).
+  rpc ListShopProducts(ListShopProductsRequest) returns (ListShopProductsResponse);
 }
 
 message Product {
@@ -126,4 +131,14 @@ message UpdateProductResponse {
 
 message ArchiveProductResponse {
   Product product = 1;
+}
+
+message ListShopProductsRequest {
+  string shop_id = 1;
+  commerce.common.v1.PageRequest page = 2;
+}
+
+message ListShopProductsResponse {
+  repeated Product products = 1;
+  commerce.common.v1.PageResponse page = 2;
 }

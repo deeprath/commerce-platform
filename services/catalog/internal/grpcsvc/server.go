@@ -113,6 +113,27 @@ func (s *Server) BatchGetProducts(ctx context.Context, req *catalogv1.BatchGetPr
 	return &catalogv1.BatchGetProductsResponse{Products: toProtos(items)}, nil
 }
 
+func (s *Server) ListShopProducts(ctx context.Context, req *catalogv1.ListShopProductsRequest) (*catalogv1.ListShopProductsResponse, error) {
+	if req.GetShopId() == "" {
+		return nil, errs.New(errs.KindInvalidArgument, "SHOP_ID_REQUIRED", "shop_id is required")
+	}
+	if err := s.mayWriteProduct(ctx, req.GetShopId()); err != nil {
+		return nil, err // same rule as a write: staff of the shop, or catalog_manager
+	}
+	cur, err := decodeCursor(req.GetPage().GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	items, next, err := s.store.ListByShop(ctx, req.GetShopId(), int(req.GetPage().GetPageSize()), cur)
+	if err != nil {
+		return nil, err
+	}
+	return &catalogv1.ListShopProductsResponse{
+		Products: toProtos(items),
+		Page:     &commonv1.PageResponse{NextPageToken: encodeCursor(next), TotalSize: -1},
+	}, nil
+}
+
 func (s *Server) CreateProduct(ctx context.Context, req *catalogv1.CreateProductRequest) (*catalogv1.CreateProductResponse, error) {
 	if err := s.mayWriteProduct(ctx, req.GetShopId()); err != nil {
 		return nil, err

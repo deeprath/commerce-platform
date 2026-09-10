@@ -1748,7 +1748,8 @@ lets a seller manage only their own.
 **Consequences:** `catalog` gains an OpenFGA dependency (degrades to
 "catalog_manager only" without it — first-party catalog management is
 unaffected). The `product#shop` tuple write on create is best-effort (logged on
-failure; a later slice can add a reconcile). Deferred to follow-on slices:
-threading `shop_id` into `ProductChanged` → `search` index → the storefront
-"sold by <shop>" line, and `GET /api/v1/seller/products` (list your shop's
-listings).
+failure; a later slice can add a reconcile). `ListShopProducts` (a shop's
+products of *all* statuses, authorized exactly like a write — `shop#staff` or
+`catalog_manager`) backs `GET /api/v1/seller/products`. Deferred to follow-on
+slices: threading the shop into the `search` index so the storefront can show a
+"sold by \<shop\>" line and a shop page product grid.
