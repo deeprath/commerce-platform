@@ -3,6 +3,7 @@ go 1.26.0
 use (
 	./gen/go
 	./pkg
+	./services/analytics
 	./services/bff
 	./services/cart
 	./services/catalog

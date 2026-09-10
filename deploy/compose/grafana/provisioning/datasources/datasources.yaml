@@ -29,6 +29,19 @@ datasources:
       nodeGraph:
         enabled: true
 
+  - name: ClickHouse
+    uid: clickhouse
+    type: grafana-clickhouse-datasource
+    access: proxy
+    jsonData:
+      host: clickhouse
+      port: 9000
+      protocol: native
+      defaultDatabase: analytics
+      username: analytics
+    secureJsonData:
+      password: analytics
+
   - name: Loki
     uid: loki
     type: loki

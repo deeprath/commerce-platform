@@ -1258,3 +1258,60 @@ The runbooks assume the prod stack (CloudNativePG, Strimzi, MinIO replication);
 their cluster halves can't be exercised locally and are validated by review + the
 quarterly staging game-days the drill schedule mandates. Keep RB command blocks in
 step with the operators when their versions move.
+
+---
+
+## ADR-033 — Analytics: a Go consumer flattening domain events into ClickHouse
+
+**Status:** Accepted (Phase 5, first cut). Browser clickstream is a follow-on.
+
+**Context:** §2.2 pencilled in ClickHouse "optional, phase 2" for funnel /
+merchandising analytics. The Postgres-per-service model + Grafana-on-Prometheus
+can show operational RED metrics but not business questions across services
+("of orders created last week, what share reached payment, then confirmation, and
+what revenue did that represent") — those need an OLAP store fed from the event
+stream.
+
+**Decision:**
+- **A new `analytics` service** — a Kafka consumer, no gRPC API of its own (just
+  a health server for the probe) — that subscribes to `order.*` and `payment.*`,
+  flattens each proto event into one wide row, and batch-inserts into ClickHouse.
+  Same shape as `notification` / `search`: a `pkg/kafka` consumer + a sink.
+- **Not the ClickHouse Kafka table engine.** The events on the bus are
+  `proto.Marshal` bytes; consuming them with ClickHouse's `Kafka` engine needs
+  the `.proto` files mounted and `format_schema` wired, and every schema change
+  is a ClickHouse DDL change. A Go consumer already has the generated types and
+  keeps the mapping (money → integer minor units, timestamp parsing) in one
+  tested place.
+- **One wide `events` MergeTree** (`event_type`, `occurred_at`, `order_id`,
+  `owner_id`, `payment_id`, `amount_minor`, `currency`, `reason`),
+  month-partitioned, 90-day TTL, plus a `funnel_daily` `SummingMergeTree` + a
+  materialized view. Schema is embedded SQL applied on startup (`CREATE ... IF
+  NOT EXISTS`), not a migration tool — ClickHouse DDL is additive and idempotent
+  here.
+- **Best-effort, at-least-once.** Analytics is not a system of record: no
+  `processed_events` dedupe, no outbox. A rare duplicate on redelivery is
+  acceptable and de-duped in queries (`LIMIT 1 BY order_id, event_type` /
+  `argMax`). The sink retries a failed batch (rows are re-queued) rather than
+  dropping data.
+- **Grafana reads ClickHouse directly** via `grafana-clickhouse-datasource`
+  (provisioned datasource + `analytics-funnel` dashboard). No BI tool.
+- **Autoscales on Kafka lag** (KEDA, `analytics` consumer group) — a backfill or
+  a traffic spike adds consumers.
+
+**Alternatives:**
+- *ClickHouse Kafka engine* — see above; couples the schema to CH DDL and needs
+  the proto schema files in the CH image.
+- *Materialise the funnel in Postgres* (a table in the `order` DB) — cross-
+  service revenue/attribution wants `payment` and eventually `catalog` data too;
+  a shared analytics store avoids per-service reporting tables and cross-DB joins.
+- *ClickPipes / a managed ELT* — fine later; the in-cluster consumer keeps the
+  compose stack self-contained and the mapping in Go.
+- *Wait for browser clickstream first* — the domain events already describe the
+  whole checkout funnel; page-view/add-to-cart events are additive and land next.
+
+**Consequences:** ClickHouse is now a compose dependency (single-node;
+Keeper+replicas in prod) and the Grafana image installs the ClickHouse plugin.
+`events` is append-only and derived — it is **not** backed up (rebuild by
+resetting the `analytics` consumer group to earliest; RUNBOOKS.md). The event →
+row mapping in `internal/consumer` must track new event fields to stay useful.

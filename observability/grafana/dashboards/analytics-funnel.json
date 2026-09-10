@@ -1,0 +1,110 @@
+{
+  "uid": "analytics-funnel",
+  "title": "Analytics — Checkout Funnel & Revenue",
+  "tags": ["commerce", "analytics", "clickhouse"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": { "from": "now-30d", "to": "now" },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Funnel",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "barchart",
+      "title": "Events by stage (selected range)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT event_type, count() AS events FROM analytics.events WHERE $__timeFilter(occurred_at) GROUP BY event_type ORDER BY events DESC"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "type": "stat",
+      "title": "Created → authorized → confirmed",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT countIf(event_type='order_created') AS created, countIf(event_type='payment_authorized') AS authorized, countIf(event_type='order_confirmed') AS confirmed, round(100 * countIf(event_type='order_confirmed') / greatest(countIf(event_type='order_created'), 1), 1) AS conversion_pct FROM analytics.events WHERE $__timeFilter(occurred_at)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": { "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "conversion_pct" }, "properties": [{ "id": "unit", "value": "percent" }] }
+        ]
+      }
+    },
+    {
+      "type": "row",
+      "title": "Revenue",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Authorized revenue / hour",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT toStartOfHour(occurred_at) AS time, sum(amount_minor) / 100.0 AS authorized FROM analytics.events WHERE event_type = 'payment_authorized' AND $__timeFilter(occurred_at) GROUP BY time ORDER BY time"
+        },
+        {
+          "refId": "B",
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT toStartOfHour(occurred_at) AS time, -sum(amount_minor) / 100.0 AS refunded FROM analytics.events WHERE event_type = 'payment_refunded' AND $__timeFilter(occurred_at) GROUP BY time ORDER BY time"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+    {
+      "type": "table",
+      "title": "Payment failures by reason",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT reason, count() AS failures FROM analytics.events WHERE event_type = 'payment_failed' AND $__timeFilter(occurred_at) GROUP BY reason ORDER BY failures DESC"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Orders: confirmed vs fulfilled vs cancelled / day",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": 0,
+          "queryType": "sql",
+          "rawSql": "SELECT day AS time, sumIf(events, event_type = 'order_confirmed') AS confirmed, sumIf(events, event_type = 'order_fulfilled') AS fulfilled, sumIf(events, event_type = 'order_cancelled') AS cancelled FROM analytics.funnel_daily WHERE $__timeFilter(day) GROUP BY day ORDER BY day"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    }
+  ]
+}
