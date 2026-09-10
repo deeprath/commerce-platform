@@ -155,11 +155,16 @@ services:
     kafka: true
     auth: true
     callers: [bff, pricing]
+    egressExtra:
+      - { selector: { app: openfga }, port: 8080 } # per-shop catalog authz (ADR-040)
     autoscaling:
       enabled: true
       maxReplicas: 12
       triggers: [{ type: rps, threshold: 80 }] # ~80 gRPC req/s per replica
-    env: { GRPC_ADDR: ":50051" }
+    env:
+      GRPC_ADDR: ":50051"
+      OPENFGA_API_URL: http://openfga.commerce.svc.cluster.local:8080
+      OPENFGA_STORE_NAME: commerce
 
   media:
     db: media

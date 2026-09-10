@@ -6,6 +6,7 @@ package grpcsvc
 import (
 	"context"
 	"encoding/base64"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	commonv1 "github.com/deeprath/commerce-platform/gen/go/commerce/common/v1"
 	"github.com/deeprath/commerce-platform/pkg/auth"
 	"github.com/deeprath/commerce-platform/pkg/errs"
+	"github.com/deeprath/commerce-platform/pkg/fga"
 	"github.com/deeprath/commerce-platform/pkg/grpcx"
 	"github.com/deeprath/commerce-platform/services/catalog/internal/domain"
 	"github.com/deeprath/commerce-platform/services/catalog/internal/store"
@@ -24,9 +26,42 @@ const roleCatalogManager = "catalog_manager"
 type Server struct {
 	catalogv1.UnimplementedCatalogServiceServer
 	store *store.Store
+	// fga authorizes marketplace-seller writes: a caller may create/update a
+	// product under a shop only if they are `shop#staff`. nil when no OpenFGA
+	// endpoint is configured — seller writes then require the catalog_manager
+	// role like first-party ones (and no `product#shop` tuple is recorded).
+	fga fga.API
 }
 
-func New(s *store.Store) *Server { return &Server{store: s} }
+func New(s *store.Store, fgaClient fga.API) *Server { return &Server{store: s, fga: fgaClient} }
+
+// mayWriteProduct authorizes a create/update/archive. A first-party product
+// (shopID == "") needs the catalog_manager role. A shop-owned product needs the
+// caller to be staff of that shop — OR the catalog_manager role (platform staff
+// may manage any listing).
+func (s *Server) mayWriteProduct(ctx context.Context, shopID string) error {
+	if hasRole(ctx, roleCatalogManager) {
+		return nil
+	}
+	if shopID == "" {
+		return grpcx.RequireRole(ctx, roleCatalogManager) // returns PermissionDenied
+	}
+	p := auth.FromContext(ctx)
+	if p == nil {
+		return errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
+	}
+	if s.fga == nil {
+		return errs.New(errs.KindPermissionDenied, "NOT_SHOP_STAFF", "not permitted to manage this shop's catalog")
+	}
+	ok, err := s.fga.Check(ctx, fga.UserObject(p.Subject), fga.RelationStaff, fga.ShopObject(shopID))
+	if err != nil {
+		return errs.Wrap(err, errs.KindPermissionDenied, "AUTHZ_CHECK_FAILED", "could not verify shop staff access")
+	}
+	if !ok {
+		return errs.New(errs.KindPermissionDenied, "NOT_SHOP_STAFF", "you are not staff of this shop")
+	}
+	return nil
+}
 
 func (s *Server) GetProduct(ctx context.Context, req *catalogv1.GetProductRequest) (*catalogv1.GetProductResponse, error) {
 	var (
@@ -79,17 +114,19 @@ func (s *Server) BatchGetProducts(ctx context.Context, req *catalogv1.BatchGetPr
 }
 
 func (s *Server) CreateProduct(ctx context.Context, req *catalogv1.CreateProductRequest) (*catalogv1.CreateProductResponse, error) {
-	if err := grpcx.RequireRole(ctx, roleCatalogManager); err != nil {
+	if err := s.mayWriteProduct(ctx, req.GetShopId()); err != nil {
 		return nil, err
 	}
 	sub := ""
 	if p := auth.FromContext(ctx); p != nil {
 		sub = p.Subject
 	}
-	p, err := domain.NewProduct(
-		req.GetSlug(), req.GetTitle(), req.GetDescription(), req.GetCategoryId(),
-		fromProtoMoney(req.GetListPrice()), req.GetMediaKeys(), req.GetAttributes(), sub,
-	)
+	p, err := domain.NewProduct(domain.NewProductInput{
+		Slug: req.GetSlug(), Title: req.GetTitle(), Description: req.GetDescription(),
+		CategoryID: req.GetCategoryId(), Price: fromProtoMoney(req.GetListPrice()),
+		MediaKeys: req.GetMediaKeys(), Attributes: req.GetAttributes(),
+		ShopID: req.GetShopId(), CreatedBy: sub,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -97,18 +134,25 @@ func (s *Server) CreateProduct(ctx context.Context, req *catalogv1.CreateProduct
 	if err != nil {
 		return nil, err
 	}
+	// Link the product to its shop in OpenFGA so `product#manager` resolves.
+	if saved.ShopID != "" && s.fga != nil {
+		if werr := s.fga.Write(ctx, fga.ShopObject(saved.ShopID), fga.RelationShop, fga.ProductObject(saved.ID)); werr != nil && !fga.IsAlreadyExists(werr) {
+			slog.ErrorContext(ctx, "product#shop tuple write failed",
+				slog.String("product", saved.ID), slog.String("shop", saved.ShopID), slog.Any("err", werr))
+		}
+	}
 	return &catalogv1.CreateProductResponse{Product: toProto(saved)}, nil
 }
 
 func (s *Server) UpdateProduct(ctx context.Context, req *catalogv1.UpdateProductRequest) (*catalogv1.UpdateProductResponse, error) {
-	if err := grpcx.RequireRole(ctx, roleCatalogManager); err != nil {
-		return nil, err
-	}
 	if req.GetId() == "" {
 		return nil, errs.New(errs.KindInvalidArgument, "ID_REQUIRED", "id is required")
 	}
 	p, err := s.store.Get(ctx, req.GetId())
 	if err != nil {
+		return nil, err
+	}
+	if err := s.mayWriteProduct(ctx, p.ShopID); err != nil {
 		return nil, err
 	}
 	status := p.Status // keep current unless the caller sets one
@@ -129,7 +173,11 @@ func (s *Server) UpdateProduct(ctx context.Context, req *catalogv1.UpdateProduct
 }
 
 func (s *Server) ArchiveProduct(ctx context.Context, req *catalogv1.ArchiveProductRequest) (*catalogv1.ArchiveProductResponse, error) {
-	if err := grpcx.RequireRole(ctx, roleCatalogManager); err != nil {
+	p, err := s.store.Get(ctx, req.GetId())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.mayWriteProduct(ctx, p.ShopID); err != nil {
 		return nil, err
 	}
 	saved, err := s.store.Archive(ctx, req.GetId())
@@ -169,6 +217,7 @@ func toProto(p *domain.Product) *catalogv1.Product {
 		MediaKeys:  p.MediaKeys,
 		Status:     protoStatus(p.Status),
 		Attributes: p.Attributes,
+		ShopId:     p.ShopID,
 	}
 }
 

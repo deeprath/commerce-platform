@@ -13,8 +13,9 @@ const StoreName = "commerce"
 // as slices land:
 //
 //	type user
-//	type order   { viewer: [user] }                       — delegated order sharing (ADR-035)
-//	type shop    { owner: [user], staff: [user] or owner } — marketplace shop staff (ADR-039)
+//	type order   { viewer: [user] }                        — delegated order sharing (ADR-035)
+//	type shop    { owner: [user], staff: [user] or owner }  — marketplace shop staff (ADR-039)
+//	type product { shop: [shop], manager: staff from shop } — per-shop catalog listings (ADR-040)
 //
 //go:embed model.json
 var CommerceModel string
@@ -23,12 +24,15 @@ var CommerceModel string
 func UserObject(subject string) string { return "user:" + subject }
 func OrderObject(id string) string     { return "order:" + id }
 func ShopObject(id string) string      { return "shop:" + id }
+func ProductObject(id string) string   { return "product:" + id }
 
 // Relations.
 const (
-	RelationViewer = "viewer" // order#viewer
-	RelationOwner  = "owner"  // shop#owner
-	RelationStaff  = "staff"  // shop#staff (= [user] or owner)
+	RelationViewer  = "viewer"  // order#viewer
+	RelationOwner   = "owner"   // shop#owner
+	RelationStaff   = "staff"   // shop#staff (= [user] or owner)
+	RelationShop    = "shop"    // product#shop (links a product to its shop)
+	RelationManager = "manager" // product#manager (= staff of the product's shop)
 )
 
 // API is the subset of *Client the services depend on — an interface so gRPC

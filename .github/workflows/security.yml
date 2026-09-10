@@ -109,6 +109,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+        with:
+          # Pull Docker Hub base images (golang:*, etc.) through Google's
+          # public pull-through cache — auth.docker.io 500s / anonymous rate
+          # limits otherwise flake the whole matrix.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
       - name: build image
         uses: docker/build-push-action@v6
         with:

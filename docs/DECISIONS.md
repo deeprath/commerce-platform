@@ -1693,3 +1693,62 @@ change is a `pkg` change that every FGA-using service picks up on its next
 deploy — intentional: the model is one artifact. Model edits are still
 append-only in practice (OpenFGA versions them; `New` takes the latest). The
 `seller` service gains an OpenFGA dependency and degrades without it.
+
+---
+
+## ADR-040 — Marketplace, slice 3: per-shop catalog ownership (`product#manager`)
+
+**Status:** accepted · Phase 5 · builds on ADR-038, ADR-039
+
+**Context:** a marketplace shop exists (ADR-038) and can have staff (ADR-039),
+but every product is still first-party — nothing links a listing to a shop or
+lets a seller manage only their own.
+
+**Decision:**
+- **`products.shop_id`** — a nullable `UUID` column. `NULL` ⇒ a first-party
+  (platform-owned) product; set ⇒ owned by that marketplace shop. On the wire:
+  `Product.shop_id` and `CreateProductRequest.shop_id`.
+- **Authorization model gains `product`:**
+  ```
+  type product
+    relations
+      define shop: [shop]
+      define manager: staff from shop
+  ```
+  `manager` is a tuple-to-userset: a user manages a product if they are `staff`
+  of the product's `shop`. One `Check(user, staff, shop:<id>)` on create, and the
+  `product#shop` tuple (written by the catalog on create) makes
+  `product#manager` resolve for update/archive.
+- **The catalog enforces it, not the BFF.** `CreateProduct` / `UpdateProduct` /
+  `ArchiveProduct` call `mayWriteProduct(shopID)`:
+  - `catalog_manager` role ⇒ always allowed (platform staff manage any listing,
+    first-party or any shop's).
+  - `shop_id == ""` ⇒ `catalog_manager` required (unchanged first-party rule).
+  - `shop_id` set ⇒ `Check(caller, staff, shop:<shop_id>)` must pass. No OpenFGA
+    endpoint configured ⇒ denied (seller writes need the ReBAC store).
+- **The BFF resolves the shop.** `POST /api/v1/seller/products` calls
+  `seller.GetMyShop`, requires it `ACTIVE`, and injects `shop_id` — a caller
+  **cannot** pass someone else's shop id. `PUT /api/v1/seller/products/:id` and
+  `.../archive` forward straight to the catalog, which authorizes via
+  `product#manager`.
+
+**Alternatives:**
+- *BFF does the authz* — the catalog is a caller of the seller/OpenFGA graph
+  regardless; putting the check in the service means gRPC clients (not just the
+  BFF) are covered, consistent with every other service's "authoritative check
+  lives in the service" rule.
+- *A `product#owner` per-user tuple instead of `manager from shop`* — would need
+  a tuple per (staff, product) pair and rewrites on every staffing change;
+  `manager from shop` is one tuple per product and follows staffing
+  automatically.
+- *`shop_id` non-null with a sentinel "platform" shop* — a real `shops` row for
+  the platform is overkill; `NULL` is the natural "first-party" marker and keeps
+  the existing role rule a one-liner.
+
+**Consequences:** `catalog` gains an OpenFGA dependency (degrades to
+"catalog_manager only" without it — first-party catalog management is
+unaffected). The `product#shop` tuple write on create is best-effort (logged on
+failure; a later slice can add a reconcile). Deferred to follow-on slices:
+threading `shop_id` into `ProductChanged` → `search` index → the storefront
+"sold by <shop>" line, and `GET /api/v1/seller/products` (list your shop's
+listings).

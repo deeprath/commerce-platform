@@ -55,9 +55,11 @@ func spinUp(t *testing.T) *pgxpool.Pool {
 
 func newDraft(t *testing.T, slug string) *domain.Product {
 	t.Helper()
-	p, err := domain.NewProduct(slug, "T "+slug, "d", "cat-a",
-		domain.Money{CurrencyCode: "USD", Units: 1999}, []string{"m1"},
-		map[string]string{"color": "blue"}, "mgr-1")
+	p, err := domain.NewProduct(domain.NewProductInput{
+		Slug: slug, Title: "T " + slug, Description: "d", CategoryID: "cat-a",
+		Price: domain.Money{CurrencyCode: "USD", Units: 1999}, MediaKeys: []string{"m1"},
+		Attributes: map[string]string{"color": "blue"}, CreatedBy: "mgr-1",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

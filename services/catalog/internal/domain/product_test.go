@@ -9,24 +9,24 @@ import (
 func usd(u int64) Money { return Money{CurrencyCode: "USD", Units: u} }
 
 func TestNewProductValidation(t *testing.T) {
-	_, err := NewProduct("ab", "T", "", "", usd(10), nil, nil, "u1")
+	_, err := NewProduct(NewProductInput{Slug: "ab", Title: "T", Price: usd(10), CreatedBy: "u1"})
 	if !errs.Is(err, errs.KindInvalidArgument) {
 		t.Fatalf("short slug => %v", err)
 	}
-	_, err = NewProduct("good-slug", "  ", "", "", usd(10), nil, nil, "u1")
+	_, err = NewProduct(NewProductInput{Slug: "good-slug", Title: "  ", Price: usd(10), CreatedBy: "u1"})
 	if !errs.Is(err, errs.KindInvalidArgument) {
 		t.Fatalf("blank title => %v", err)
 	}
-	_, err = NewProduct("good-slug", "T", "", "", Money{CurrencyCode: "US", Units: 1}, nil, nil, "u1")
+	_, err = NewProduct(NewProductInput{Slug: "good-slug", Title: "T", Price: Money{CurrencyCode: "US", Units: 1}, CreatedBy: "u1"})
 	if !errs.Is(err, errs.KindInvalidArgument) {
 		t.Fatalf("bad currency => %v", err)
 	}
-	_, err = NewProduct("good-slug", "T", "", "", Money{CurrencyCode: "USD", Units: -1}, nil, nil, "u1")
+	_, err = NewProduct(NewProductInput{Slug: "good-slug", Title: "T", Price: Money{CurrencyCode: "USD", Units: -1}, CreatedBy: "u1"})
 	if !errs.Is(err, errs.KindInvalidArgument) {
 		t.Fatalf("negative price => %v", err)
 	}
 
-	p, err := NewProduct("My Cool Shirt", "Cool Shirt", "d", "cat1", usd(2500), []string{"k1"}, map[string]string{"color": "red"}, "u1")
+	p, err := NewProduct(NewProductInput{Slug: "My Cool Shirt", Title: "Cool Shirt", Description: "d", CategoryID: "cat1", Price: usd(2500), MediaKeys: []string{"k1"}, Attributes: map[string]string{"color": "red"}, CreatedBy: "u1"})
 	if err != nil {
 		t.Fatalf("valid product: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestNewProductValidation(t *testing.T) {
 }
 
 func TestApplyUpdate(t *testing.T) {
-	p, _ := NewProduct("slug-one", "One", "", "", usd(10), nil, nil, "u1")
+	p, _ := NewProduct(NewProductInput{Slug: "slug-one", Title: "One", Price: usd(10), CreatedBy: "u1"})
 
 	if err := p.ApplyUpdate("Two", "d2", "cat2", usd(20), []string{"k"}, map[string]string{"a": "b"}, StatusActive); err != nil {
 		t.Fatalf("valid update: %v", err)

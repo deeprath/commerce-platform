@@ -24,6 +24,7 @@ type fakeSeller struct {
 	lastSuspend     *sellerv1.SuspendShopRequest
 	lastAddStaff    *sellerv1.AddShopStaffRequest
 	lastRemoveStaff *sellerv1.RemoveShopStaffRequest
+	myShopStatus    sellerv1.ShopStatus
 	err             error
 }
 
@@ -38,7 +39,11 @@ func (f *fakeSeller) GetMyShop(_ context.Context, _ *sellerv1.GetMyShopRequest, 
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &sellerv1.Shop{Id: "shop-1", Slug: "the-shop"}, nil
+	st := f.myShopStatus
+	if st == sellerv1.ShopStatus_SHOP_STATUS_UNSPECIFIED {
+		st = sellerv1.ShopStatus_SHOP_STATUS_ACTIVE
+	}
+	return &sellerv1.Shop{Id: "shop-1", Slug: "the-shop", Status: st}, nil
 }
 func (f *fakeSeller) UpdateShop(_ context.Context, in *sellerv1.UpdateShopRequest, _ ...grpc.CallOption) (*sellerv1.Shop, error) {
 	if f.err != nil {
@@ -207,6 +212,56 @@ func TestShopStaff_Routes(t *testing.T) {
 	rec := sellerReq(t, s, http.MethodGet, "/api/v1/seller/shops/me/staff", "", true)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "helper-a") {
 		t.Fatalf("list-staff = %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateShopProduct_ResolvesShopAndInjectsID(t *testing.T) {
+	fc := &fakeCatalog{}
+	fs := &fakeSeller{}
+	s := &Server{cl: &clients.Set{Seller: fs, Catalog: fc}}
+
+	if rec := sellerReq(t, s, http.MethodPost, "/api/v1/seller/products", `{"slug":"widget","title":"Widget"}`, false); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anon = %d, want 401", rec.Code)
+	}
+	rec := sellerReq(t, s, http.MethodPost, "/api/v1/seller/products",
+		`{"slug":"widget","title":"Widget","shop_id":"attacker-supplied"}`, true)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	// The BFF overrides any client-supplied shop_id with the caller's own shop.
+	if fc.lastCreate.GetShopId() != "shop-1" {
+		t.Fatalf("shop_id = %q, want the resolved shop-1 (not attacker-supplied)", fc.lastCreate.GetShopId())
+	}
+}
+
+func TestCreateShopProduct_RejectsInactiveShop(t *testing.T) {
+	fc := &fakeCatalog{}
+	fs := &fakeSeller{myShopStatus: sellerv1.ShopStatus_SHOP_STATUS_PENDING_REVIEW}
+	s := &Server{cl: &clients.Set{Seller: fs, Catalog: fc}}
+	rec := sellerReq(t, s, http.MethodPost, "/api/v1/seller/products", `{"slug":"w","title":"W"}`, true)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (shop not active)", rec.Code)
+	}
+	if fc.lastCreate != nil {
+		t.Fatal("catalog called despite inactive shop")
+	}
+}
+
+func TestUpdateAndArchiveShopProduct_ForwardToCatalog(t *testing.T) {
+	fc := &fakeCatalog{}
+	s := &Server{cl: &clients.Set{Seller: &fakeSeller{}, Catalog: fc}}
+
+	if rec := sellerReq(t, s, http.MethodPut, "/api/v1/seller/products/prod-9", `{"title":"New"}`, true); rec.Code != http.StatusOK {
+		t.Fatalf("update = %d", rec.Code)
+	}
+	if fc.lastUpdate.GetId() != "prod-9" || fc.lastUpdate.GetTitle() != "New" {
+		t.Fatalf("update forwarded %+v", fc.lastUpdate)
+	}
+	if rec := sellerReq(t, s, http.MethodPost, "/api/v1/seller/products/prod-9/archive", "", true); rec.Code != http.StatusOK {
+		t.Fatalf("archive = %d", rec.Code)
+	}
+	if fc.lastArch.GetId() != "prod-9" {
+		t.Fatalf("archive forwarded %+v", fc.lastArch)
 	}
 }
 

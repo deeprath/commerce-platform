@@ -32,6 +32,24 @@
           "staff": { "directly_related_user_types": [{ "type": "user" }] }
         }
       }
+    },
+    {
+      "type": "product",
+      "relations": {
+        "shop": { "this": {} },
+        "manager": {
+          "tupleToUserset": {
+            "tupleset": { "relation": "shop" },
+            "computedUserset": { "relation": "staff" }
+          }
+        }
+      },
+      "metadata": {
+        "relations": {
+          "shop": { "directly_related_user_types": [{ "type": "shop" }] },
+          "manager": { "directly_related_user_types": [] }
+        }
+      }
     }
   ]
 }

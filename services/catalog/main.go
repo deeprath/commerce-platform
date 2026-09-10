@@ -19,6 +19,7 @@ import (
 	catalogv1 "github.com/deeprath/commerce-platform/gen/go/commerce/catalog/v1"
 	"github.com/deeprath/commerce-platform/pkg/auth"
 	"github.com/deeprath/commerce-platform/pkg/config"
+	"github.com/deeprath/commerce-platform/pkg/fga"
 	"github.com/deeprath/commerce-platform/pkg/grpcx"
 	"github.com/deeprath/commerce-platform/pkg/kafka"
 	"github.com/deeprath/commerce-platform/pkg/pgx"
@@ -74,6 +75,23 @@ func run() error {
 	defer producer.Close()
 	relay := kafka.NewOutboxRelay(pool, producer, 0, 0)
 
+	// Per-shop catalog authorization (OpenFGA). Optional: without an endpoint,
+	// shop-owned product writes require the catalog_manager role like
+	// first-party ones. See ADR-040.
+	var fgaClient fga.API
+	if apiURL := config.String("OPENFGA_API_URL", ""); apiURL != "" {
+		c, ferr := fga.New(ctx, fga.Config{
+			APIURL:    apiURL,
+			StoreName: config.String("OPENFGA_STORE_NAME", fga.StoreName),
+			Model:     fga.CommerceModel,
+		})
+		if ferr != nil {
+			return ferr
+		}
+		slog.Info("openfga ready", slog.String("store", c.StoreID()), slog.String("model", c.ModelID()))
+		fgaClient = c
+	}
+
 	st := store.New(pool)
 	srv := grpcx.NewServer(
 		grpcx.WithAuth(verifier,
@@ -88,7 +106,7 @@ func run() error {
 			"/commerce.catalog.v1.CatalogService/BatchGetProducts",
 		),
 	)
-	catalogv1.RegisterCatalogServiceServer(srv, grpcsvc.New(st))
+	catalogv1.RegisterCatalogServiceServer(srv, grpcsvc.New(st, fgaClient))
 	healthgrpc.RegisterHealthServer(srv, health.NewServer())
 	if svc.Environment == "local" {
 		reflection.Register(srv)

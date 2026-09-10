@@ -90,7 +90,11 @@ type Product struct {
 	MediaKeys []string      `protobuf:"bytes,7,rep,name=media_keys,json=mediaKeys,proto3" json:"media_keys,omitempty"`
 	Status    ProductStatus `protobuf:"varint,8,opt,name=status,proto3,enum=commerce.catalog.v1.ProductStatus" json:"status,omitempty"`
 	// Free-form attributes (colour, size chart, material, ...). Stored as JSONB.
-	Attributes    map[string]string `protobuf:"bytes,9,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Attributes map[string]string `protobuf:"bytes,9,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Owning marketplace shop (commerce.seller.v1). Empty => a first-party
+	// (platform-owned) product. A seller may only write their own shop's
+	// products; the catalog enforces this via OpenFGA `shop#staff` (ADR-040).
+	ShopId        string `protobuf:"bytes,10,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -186,6 +190,13 @@ func (x *Product) GetAttributes() map[string]string {
 		return x.Attributes
 	}
 	return nil
+}
+
+func (x *Product) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
 }
 
 type GetProductRequest struct {
@@ -479,14 +490,17 @@ func (x *BatchGetProductsResponse) GetProducts() []*Product {
 }
 
 type CreateProductRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Slug          string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
-	CategoryId    string                 `protobuf:"bytes,4,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
-	ListPrice     *v1.Money              `protobuf:"bytes,5,opt,name=list_price,json=listPrice,proto3" json:"list_price,omitempty"`
-	MediaKeys     []string               `protobuf:"bytes,6,rep,name=media_keys,json=mediaKeys,proto3" json:"media_keys,omitempty"`
-	Attributes    map[string]string      `protobuf:"bytes,7,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Slug        string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
+	Title       string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	CategoryId  string                 `protobuf:"bytes,4,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
+	ListPrice   *v1.Money              `protobuf:"bytes,5,opt,name=list_price,json=listPrice,proto3" json:"list_price,omitempty"`
+	MediaKeys   []string               `protobuf:"bytes,6,rep,name=media_keys,json=mediaKeys,proto3" json:"media_keys,omitempty"`
+	Attributes  map[string]string      `protobuf:"bytes,7,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Create under this marketplace shop. Empty => first-party. Requires the
+	// caller to be `shop#staff` of shop_id (or hold catalog_manager).
+	ShopId        string `protobuf:"bytes,8,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -568,6 +582,13 @@ func (x *CreateProductRequest) GetAttributes() map[string]string {
 		return x.Attributes
 	}
 	return nil
+}
+
+func (x *CreateProductRequest) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
 }
 
 type UpdateProductRequest struct {
@@ -850,7 +871,7 @@ var File_commerce_catalog_v1_catalog_proto protoreflect.FileDescriptor
 
 const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
 	"\n" +
-	"!commerce/catalog/v1/catalog.proto\x12\x13commerce.catalog.v1\x1a\x1ecommerce/common/v1/types.proto\"\xa8\x03\n" +
+	"!commerce/catalog/v1/catalog.proto\x12\x13commerce.catalog.v1\x1a\x1ecommerce/common/v1/types.proto\"\xc1\x03\n" +
 	"\aProduct\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x14\n" +
@@ -865,7 +886,9 @@ const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x06status\x18\b \x01(\x0e2\".commerce.catalog.v1.ProductStatusR\x06status\x12L\n" +
 	"\n" +
 	"attributes\x18\t \x03(\v2,.commerce.catalog.v1.Product.AttributesEntryR\n" +
-	"attributes\x1a=\n" +
+	"attributes\x12\x17\n" +
+	"\ashop_id\x18\n" +
+	" \x01(\tR\x06shopId\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
@@ -884,7 +907,7 @@ const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x17BatchGetProductsRequest\x12\x10\n" +
 	"\x03ids\x18\x01 \x03(\tR\x03ids\"T\n" +
 	"\x18BatchGetProductsResponse\x128\n" +
-	"\bproducts\x18\x01 \x03(\v2\x1c.commerce.catalog.v1.ProductR\bproducts\"\xf6\x02\n" +
+	"\bproducts\x18\x01 \x03(\v2\x1c.commerce.catalog.v1.ProductR\bproducts\"\x8f\x03\n" +
 	"\x14CreateProductRequest\x12\x12\n" +
 	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -897,7 +920,8 @@ const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
 	"media_keys\x18\x06 \x03(\tR\tmediaKeys\x12Y\n" +
 	"\n" +
 	"attributes\x18\a \x03(\v29.commerce.catalog.v1.CreateProductRequest.AttributesEntryR\n" +
-	"attributes\x1a=\n" +
+	"attributes\x12\x17\n" +
+	"\ashop_id\x18\b \x01(\tR\x06shopId\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xae\x03\n" +
