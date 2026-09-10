@@ -38,6 +38,9 @@ trivy-report.*
 /perf/out/
 /perf/summary.json
 
+# DR backup output
+/backups/
+
 # Go workspace sum is committed; per-module vendor dirs are not
 
 # TS incremental build info

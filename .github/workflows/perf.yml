@@ -62,9 +62,12 @@ jobs:
           CHECKOUT_RPS: ${{ inputs.checkout_rps || '3' }}
           HOLD: ${{ inputs.hold || '40s' }}
 
+      - name: DR restore drill (docs/RUNBOOKS.md RB-1)
+        run: infra/dr/verify-restore.sh
+
       - name: Stack logs (on failure)
         if: failure()
-        run: docker compose -f deploy/compose/docker-compose.yml logs --tail=200 bff order payment inventory pricing cart
+        run: docker compose -f deploy/compose/docker-compose.yml logs --tail=200 bff order payment inventory pricing cart postgres
 
       - name: Upload k6 summary
         if: always()

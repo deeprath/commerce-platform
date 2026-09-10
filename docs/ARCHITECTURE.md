@@ -674,8 +674,15 @@ trace spans `bff → order → payment` **and** the async `order.confirmed → n
   `terminationGracePeriodSeconds`), commit Kafka offsets, close pools.
 - **Zero-downtime deploys**: expand/contract migrations, rolling updates, readiness gating,
   PDBs.
-- **DR**: Postgres PITR (WAL archiving to object storage), Kafka topic replication factor 3,
-  MinIO bucket replication, `velero` for cluster-state backup. RPO ≤ 5 min, RTO ≤ 1 h target.
+- **DR** (RPO ≤ 5 min, RTO ≤ 1 h): Postgres PITR (CloudNativePG WAL archiving to object
+  storage) + logical dumps (`infra/dr/pg-backup.sh` locally); Kafka RF 3 /
+  `min.insync.replicas=2`; MinIO bucket versioning + object-lock + cross-region replication;
+  the transactional outbox lets consumer-derived state be re-driven; `velero` for cluster
+  objects (everything else is in Git via Argo CD). Numbered recovery procedures — restore a
+  DB, PITR, MinIO object/bucket, Kafka broker loss, outbox re-drive, deploy rollback, full
+  region loss — are in [`RUNBOOKS.md`](RUNBOOKS.md). The Postgres restore drill
+  (`infra/dr/verify-restore.sh`) runs in the `perf` CI job; a drill log is kept in
+  `RUNBOOKS.md`.
 - **Capacity**: load tests (`k6`) replicating the checkout funnel — `perf/checkout-funnel.js`,
   run weekly and on demand by `.github/workflows/perf.yml` against a fresh compose stack, and
   quarterly against staging. Results feed resource requests and HPA / KEDA thresholds; the
@@ -771,5 +778,5 @@ See [`SECURITY.md`](SECURITY.md) for job-by-job policy and the "did it actually 
 | **1 — Catalog & browse** | `catalog`, `media`, `search`, `bff`; `HTTPRoute`s for storefront; storefront browse + PDP; MinIO upload flow; Grafana platform + service dashboards (incl. mesh + gateway metrics). |
 | **2 — Cart & checkout** | `cart`, `pricing`, `inventory`, `order`, `payment` (PSP sandbox), the saga; `waypoint` proxies + `AuthorizationPolicy` for `order`/`payment`/`inventory`; ✅ checkout-funnel dashboard *(Phase 4)*; ✅ k6 load test (`perf/checkout-funnel.js` + weekly `perf.yml`). |
 | **3 — Fulfillment & comms** | ✅ `fulfillment`, `notification`, `review`; ✅ RMA/returns + partial refunds; ✅ admin API (operator mode on the list RPCs + BFF `/admin/*`); ✅ admin **SPA** (`web/admin`) + admin `HTTPRoute` on `admin.*` restricted by a source-IP `AuthorizationPolicy`. |
-| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; ✅ per-service **NetworkPolicies** (default-deny + call-graph-derived allows) + tightened per-service **`AuthorizationPolicy`** (SPIFFE identity, method-scoped for `payment`); ✅ **KEDA `ScaledObject`s** (gRPC RPS / Kafka lag / CPU per service); ✅ **progressive delivery** — Argo Rollouts canary for the BFF: weighted `bff-storefront` `HTTPRoute` via the Gateway API traffic-router plugin, traffic-mirror shadow step, background `AnalysisRun` on checkout health that auto-aborts; DR runbooks; pen-test remediation. |
+| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; ✅ per-service **NetworkPolicies** (default-deny + call-graph-derived allows) + tightened per-service **`AuthorizationPolicy`** (SPIFFE identity, method-scoped for `payment`); ✅ **KEDA `ScaledObject`s** (gRPC RPS / Kafka lag / CPU per service); ✅ **progressive delivery** — Argo Rollouts canary for the BFF: weighted `bff-storefront` `HTTPRoute` via the Gateway API traffic-router plugin, traffic-mirror shadow step, background `AnalysisRun` on checkout health that auto-aborts; ✅ **DR runbooks** ([`RUNBOOKS.md`](RUNBOOKS.md) + `infra/dr/` scripts; Postgres + MinIO drills run against the live stack); pen-test remediation *(needs an engagement)*. |
 | **5 — Scale/optional** | ClickHouse analytics, CDN, multi-zone, OpenFGA fine-grained authz, marketplace/multi-seller model. |

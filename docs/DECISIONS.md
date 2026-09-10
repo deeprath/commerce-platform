@@ -1205,3 +1205,56 @@ Argo Rollouts mutates — do not hand-edit the weights. The analysis gate depend
 on the SLO recording rules being present in the cluster Prometheus (they are —
 `deploy/k8s/observability/prometheus-rules.yaml`). Rollout status becomes part of
 the deploy: Argo CD sync isn't "done" until the `Rollout` is Healthy.
+
+---
+
+## ADR-032 — Disaster recovery: layered backups, numbered runbooks, drilled
+
+**Status:** Accepted (Phase 4).
+
+**Context:** §11 named the DR building blocks (Postgres PITR, Kafka RF 3, MinIO
+replication, `velero`) and the RPO/RTO targets, but there were no procedures — no
+one could actually restore anything under pressure, and nothing proved the
+backups were restorable.
+
+**Decision:**
+- **RPO ≤ 5 min, RTO ≤ 1 h.** RPO is met by continuous Postgres WAL archiving
+  (CloudNativePG) + Kafka RF 3 / `min.insync.replicas=2` + MinIO versioning &
+  replication. RTO is met by Argo CD reconstructing the entire platform from Git
+  and CloudNativePG in-place PITR / standby promotion.
+- **`docs/RUNBOOKS.md` — eight numbered runbooks** (RB-1…RB-8) plus a symptom →
+  runbook decision tree. Each is a copy-pasteable command sequence, not prose.
+  The Postgres and MinIO ones carry the exact `deploy/compose` commands they
+  were run with.
+- **Backups are drilled, not assumed.** `infra/dr/verify-restore.sh` takes a
+  logical dump of a service DB, restores it into a throwaway database, and
+  compares every table's row count — it runs in the `perf` CI job (the stack is
+  already up and seeded there) and fails the job on a mismatch.
+  `infra/dr/pg-backup.sh` is the local "dump everything" tool.
+- **The transactional outbox is a recovery primitive.** After a producer DB is
+  restored to an earlier point, `UPDATE outbox SET published_at = NULL WHERE …`
+  re-publishes; consumers dedupe on `processed_events` (a replay of an
+  already-handled event 23505s and is skipped), so re-driving is safe. A
+  Kafka-derived store (`search`/OpenSearch) is rebuilt by resetting the consumer
+  group to earliest.
+- **A drill log** lives at the bottom of `RUNBOOKS.md` — date, drill, RTO
+  achieved, findings — so the runbooks stay honest.
+
+**Alternatives:**
+- *Only logical `pg_dump`* — simple, but RPO is the dump interval (hours) and a
+  large DB's restore blows the RTO. PITR is the primary; dumps are the portable
+  fallback and the drill vehicle.
+- *`pgBackRest` / `wal-g` directly* — CloudNativePG wraps Barman and integrates
+  with the `Cluster` CR (`bootstrap.recovery`, `recoveryTarget`), so recovery is
+  declarative rather than a bespoke script.
+- *Back up OpenSearch / Redis* — deliberately not: both are derived state
+  (OpenSearch from `catalog`/`inventory` events, Redis is carts with a TTL and
+  rate-limit counters). Rebuilding from the source of truth is simpler than
+  keeping a second backup consistent.
+- *Untested backups* — the failure mode this whole ADR exists to prevent.
+
+**Consequences:** the `perf` CI job now also gates "the order DB is restorable".
+The runbooks assume the prod stack (CloudNativePG, Strimzi, MinIO replication);
+their cluster halves can't be exercised locally and are validated by review + the
+quarterly staging game-days the drill schedule mandates. Keep RB command blocks in
+step with the operators when their versions move.
