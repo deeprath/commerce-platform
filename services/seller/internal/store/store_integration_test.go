@@ -187,3 +187,33 @@ func TestStore_ListFiltersByStatus(t *testing.T) {
 		t.Fatalf("list pending: %v / %d", err, len(pending))
 	}
 }
+
+func TestStore_ListPaginates(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+	for i := 0; i < 3; i++ {
+		if _, err := st.Create(ctx, mustNew(t, string(rune('a'+i))+"o", "Page Shop "+string(rune('A'+i)))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p1, next, err := st.List(ctx, domain.Status(""), 2, "")
+	if err != nil || len(p1) != 2 || next == "" {
+		t.Fatalf("page 1: %v len=%d next=%q", err, len(p1), next)
+	}
+	p2, next2, err := st.List(ctx, domain.Status(""), 2, next)
+	if err != nil || len(p2) != 1 || next2 != "" {
+		t.Fatalf("page 2: %v len=%d next=%q", err, len(p2), next2)
+	}
+}
+
+func TestStore_UpdateAndTransitionNotFound(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+	if _, err := st.Update(ctx, "owner-with-no-shop", "Name", "", ""); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("Update(no shop) err = %v, want NotFound", err)
+	}
+	missing := "22222222-2222-2222-2222-222222222222"
+	if _, err := st.Transition(ctx, missing, func(s *domain.Shop) (bool, error) { return s.Activate() }); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("Transition(missing) err = %v, want NotFound", err)
+	}
+}

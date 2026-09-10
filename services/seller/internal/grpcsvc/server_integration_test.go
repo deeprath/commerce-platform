@@ -9,6 +9,7 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	commonv1 "github.com/deeprath/commerce-platform/gen/go/commerce/common/v1"
 	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
 	"github.com/deeprath/commerce-platform/pkg/auth"
 	"github.com/deeprath/commerce-platform/pkg/errs"
@@ -127,5 +128,109 @@ func TestSeller_CreateRequiresAuth(t *testing.T) {
 	s := newSrv(t)
 	if _, err := s.CreateShop(context.Background(), &sellerv1.CreateShopRequest{Name: "Anon Shop"}); !errs.Is(err, errs.KindUnauthenticated) {
 		t.Fatalf("anon CreateShop err = %v, want Unauthenticated", err)
+	}
+	if _, err := s.CreateShop(user("u"), &sellerv1.CreateShopRequest{Name: "x"}); !errs.Is(err, errs.KindInvalidArgument) {
+		t.Fatalf("CreateShop(bad name) err = %v, want InvalidArgument", err)
+	}
+}
+
+func TestSeller_GetShopSelectors(t *testing.T) {
+	s := newSrv(t)
+	sh, err := s.CreateShop(user("owner-x"), &sellerv1.CreateShopRequest{Name: "Selector Shop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ActivateShop(admin("op"), &sellerv1.ActivateShopRequest{Id: sh.GetId()}); err != nil {
+		t.Fatal(err)
+	}
+
+	// by id
+	byID, err := s.GetShop(context.Background(),
+		&sellerv1.GetShopRequest{Selector: &sellerv1.GetShopRequest_Id{Id: sh.GetId()}})
+	if err != nil || byID.GetSlug() != "selector-shop" {
+		t.Fatalf("GetShop by id: %v / %+v", err, byID)
+	}
+	// no selector -> InvalidArgument
+	if _, err := s.GetShop(context.Background(), &sellerv1.GetShopRequest{}); !errs.Is(err, errs.KindInvalidArgument) {
+		t.Fatalf("GetShop(no selector) err = %v, want InvalidArgument", err)
+	}
+	// unknown id -> NotFound
+	if _, err := s.GetShop(context.Background(),
+		&sellerv1.GetShopRequest{Selector: &sellerv1.GetShopRequest_Id{Id: "11111111-1111-1111-1111-111111111111"}}); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("GetShop(unknown id) err = %v, want NotFound", err)
+	}
+}
+
+func TestSeller_MyShopAndUpdateNeedAShop(t *testing.T) {
+	s := newSrv(t)
+	if _, err := s.GetMyShop(user("no-shop"), &sellerv1.GetMyShopRequest{}); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("GetMyShop(no shop) err = %v, want NotFound", err)
+	}
+	if _, err := s.UpdateShop(user("no-shop"), &sellerv1.UpdateShopRequest{Name: "Nope"}); !errs.Is(err, errs.KindNotFound) {
+		t.Fatalf("UpdateShop(no shop) err = %v, want NotFound", err)
+	}
+	if _, err := s.GetMyShop(context.Background(), &sellerv1.GetMyShopRequest{}); !errs.Is(err, errs.KindUnauthenticated) {
+		t.Fatalf("GetMyShop(anon) err = %v, want Unauthenticated", err)
+	}
+	if _, err := s.UpdateShop(context.Background(), &sellerv1.UpdateShopRequest{Name: "Nope"}); !errs.Is(err, errs.KindUnauthenticated) {
+		t.Fatalf("UpdateShop(anon) err = %v, want Unauthenticated", err)
+	}
+}
+
+func TestSeller_ListShopsFilterAndPaginate(t *testing.T) {
+	s := newSrv(t)
+	// three shops; activate one, suspend one, leave one pending.
+	var ids []string
+	for i, name := range []string{"List Shop A", "List Shop B", "List Shop C"} {
+		sh, err := s.CreateShop(user(string(rune('a'+i))+"-owner"), &sellerv1.CreateShopRequest{Name: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, sh.GetId())
+	}
+	if _, err := s.ActivateShop(admin("op"), &sellerv1.ActivateShopRequest{Id: ids[0]}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ActivateShop(admin("op"), &sellerv1.ActivateShopRequest{Id: ids[1]}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SuspendShop(admin("op"), &sellerv1.SuspendShopRequest{Id: ids[1], Reason: "test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	count := func(ctx context.Context, req *sellerv1.ListShopsRequest) int {
+		t.Helper()
+		res, err := s.ListShops(ctx, req)
+		if err != nil {
+			t.Fatalf("ListShops: %v", err)
+		}
+		return len(res.GetShops())
+	}
+	if n := count(admin("op"), &sellerv1.ListShopsRequest{Status: sellerv1.ShopStatus_SHOP_STATUS_ACTIVE}); n != 1 {
+		t.Fatalf("ACTIVE count = %d, want 1", n)
+	}
+	if n := count(admin("op"), &sellerv1.ListShopsRequest{Status: sellerv1.ShopStatus_SHOP_STATUS_SUSPENDED}); n != 1 {
+		t.Fatalf("SUSPENDED count = %d, want 1", n)
+	}
+	if n := count(admin("op"), &sellerv1.ListShopsRequest{Status: sellerv1.ShopStatus_SHOP_STATUS_PENDING_REVIEW}); n != 1 {
+		t.Fatalf("PENDING count = %d, want 1", n)
+	}
+
+	// page_size 2 -> a next page token that yields the remainder.
+	first, err := s.ListShops(admin("op"), &sellerv1.ListShopsRequest{Page: &commonv1.PageRequest{PageSize: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.GetShops()) != 2 || first.GetPage().GetNextPageToken() == "" {
+		t.Fatalf("first page = %d shops, token %q", len(first.GetShops()), first.GetPage().GetNextPageToken())
+	}
+	second, err := s.ListShops(admin("op"), &sellerv1.ListShopsRequest{
+		Page: &commonv1.PageRequest{PageSize: 2, PageToken: first.GetPage().GetNextPageToken()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.GetShops()) != 1 {
+		t.Fatalf("second page = %d shops, want 1", len(second.GetShops()))
 	}
 }

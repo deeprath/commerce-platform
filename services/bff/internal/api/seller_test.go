@@ -143,3 +143,40 @@ func TestSeller_MapsGrpcError(t *testing.T) {
 		t.Fatalf("status = %d, want 409", rec.Code)
 	}
 }
+
+func TestGetMyShop_AuthGate(t *testing.T) {
+	s := &Server{cl: &clients.Set{Seller: &fakeSeller{}}}
+	if rec := sellerReq(t, s, http.MethodGet, "/api/v1/seller/shops/me", "", false); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anon status = %d, want 401", rec.Code)
+	}
+	if rec := sellerReq(t, s, http.MethodGet, "/api/v1/seller/shops/me", "", true); rec.Code != http.StatusOK {
+		t.Fatalf("authed status = %d, want 200", rec.Code)
+	}
+}
+
+func TestUpdateShop_AuthGateAndForward(t *testing.T) {
+	fs := &fakeSeller{}
+	s := &Server{cl: &clients.Set{Seller: fs}}
+	if rec := sellerReq(t, s, http.MethodPut, "/api/v1/seller/shops/me", `{"name":"New"}`, false); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anon status = %d, want 401", rec.Code)
+	}
+	rec := sellerReq(t, s, http.MethodPut, "/api/v1/seller/shops/me", `{"name":"Renamed Shop","description":"d"}`, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Renamed Shop") {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
+func TestAdminActivateShop_ForwardsID(t *testing.T) {
+	fs := &fakeSeller{}
+	s := &Server{cl: &clients.Set{Seller: fs}}
+	rec := sellerReq(t, s, http.MethodPost, "/api/v1/admin/seller/shops/shop-42/activate", "", true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if fs.lastActivate.GetId() != "shop-42" {
+		t.Fatalf("forwarded id = %q", fs.lastActivate.GetId())
+	}
+}

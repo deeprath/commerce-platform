@@ -82,6 +82,66 @@ func TestShop_ApplyUpdate_KeepsSlug(t *testing.T) {
 	}
 }
 
+func TestShop_ApplyUpdate_Rejects(t *testing.T) {
+	sh, _ := domain.NewShop("u", "Good Name", "", "")
+	if err := sh.ApplyUpdate("x", "", ""); err == nil || reason(err) != "BAD_NAME" {
+		t.Fatalf("short name err = %v, want BAD_NAME", err)
+	}
+	if err := sh.ApplyUpdate("Still Good", "", "nope"); err == nil || reason(err) != "BAD_EMAIL" {
+		t.Fatalf("bad email err = %v, want BAD_EMAIL", err)
+	}
+	// The name must be unchanged after a rejected update.
+	if sh.Name != "Good Name" {
+		t.Fatalf("rejected update mutated the shop: %q", sh.Name)
+	}
+}
+
+func TestShop_LongDescriptionIsTruncated(t *testing.T) {
+	long := make([]rune, domain.MaxDescRunes+50)
+	for i := range long {
+		long[i] = 'a'
+	}
+	sh, err := domain.NewShop("u", "Shop", string(long), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len([]rune(sh.Description)) != domain.MaxDescRunes {
+		t.Fatalf("description len = %d, want %d", len([]rune(sh.Description)), domain.MaxDescRunes)
+	}
+	if err := sh.ApplyUpdate("Shop", string(long), ""); err != nil {
+		t.Fatal(err)
+	}
+	if len([]rune(sh.Description)) != domain.MaxDescRunes {
+		t.Fatalf("ApplyUpdate did not truncate: %d", len([]rune(sh.Description)))
+	}
+}
+
+func TestShop_TransitionFromInvalidState(t *testing.T) {
+	// A shop with a status the state machine doesn't know about (e.g. a value
+	// read from a future schema) is rejected, not silently transitioned.
+	sh := &domain.Shop{OwnerID: "u", Status: domain.Status("ARCHIVED")}
+	if _, err := sh.Activate(); err == nil || reason(err) != "BAD_STATE" {
+		t.Fatalf("Activate from ARCHIVED err = %v, want BAD_STATE", err)
+	}
+	if _, err := sh.Suspend("reason"); err == nil || reason(err) != "BAD_STATE" {
+		t.Fatalf("Suspend from ARCHIVED err = %v, want BAD_STATE", err)
+	}
+}
+
+func TestSlugify_CapsLength(t *testing.T) {
+	long := ""
+	for i := 0; i < 30; i++ {
+		long += "word "
+	}
+	s := domain.Slugify(long)
+	if len(s) > domain.MaxSlugLen {
+		t.Fatalf("slug len = %d, want <= %d", len(s), domain.MaxSlugLen)
+	}
+	if s == "" || s[len(s)-1] == '-' {
+		t.Fatalf("capped slug is malformed: %q", s)
+	}
+}
+
 func TestSlugify(t *testing.T) {
 	for in, want := range map[string]string{
 		"Hello World":      "hello-world",
