@@ -972,3 +972,64 @@ thing in `build-images`; the Dockerfile pins both the Envoy tag and the wasm
 release + sha256). The CRS version advances only when the module version is
 bumped — deliberate, and the bump is one ARG + one checksum + the OCI tag. First
 request after a cold start pays the wasm VM init (~tens of ms, once per worker).
+
+---
+
+## ADR-028 — Kubernetes workloads: one templated Helm chart, not a chart per service
+
+**Status:** Accepted (Phase 4).
+
+**Context:** Phases 0–3 built the services, their Dockerfiles, and the compose
+stack, plus the cluster's *platform* layer (`deploy/helm/platform` app-of-apps:
+istio, KEDA, kube-prometheus-stack, …) and raw istio config (`deploy/istio/`).
+But there were **no workload manifests** — nothing created the Deployments,
+Services, or ServiceAccounts. `deploy/istio/authorization-policy.yaml` already
+referenced `sa/bff` and `app: bff`, which nothing defined. Every remaining
+Phase 4 item (NetworkPolicies, per-service `AuthorizationPolicy`, KEDA
+`ScaledObject`s, PSS `restricted`, Argo Rollouts) needs that foundation.
+
+**Decision:**
+- **One chart, `deploy/helm/commerce-services`, that iterates a `services:` map**
+  and renders `ServiceAccount` + `Deployment` + `Service` + `PodDisruptionBudget`
+  per entry. ARCHITECTURE §9.3 had sketched "a subchart per service + a
+  `commerce-common` library chart"; 13 near-identical subcharts plus a library
+  chart is more moving parts than a single `range`. A service entry is a handful
+  of flags (`db`, `kafka`, `redis`, `auth`, `protocol`, `port`, `replicas`,
+  `resources`); the template owns everything else.
+- **PSS `restricted` is met in the template, not just enforced by the namespace
+  label.** Every pod: `runAsNonRoot`, `runAsUser: 65532` (the distroless nonroot
+  uid the images already use), `fsGroup`, `seccompProfile: RuntimeDefault`. Every
+  container: `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true` (+
+  a `/tmp` `emptyDir`), all capabilities dropped.
+- **Native `grpc` probes.** Every service registers `grpc.health.v1.Health`, so
+  liveness/readiness use the built-in `grpc:` probe (GA since k8s 1.27) rather
+  than a `grpc_health_probe` sidecar binary. The BFF uses `httpGet /healthz`.
+- **`GOMEMLIMIT` from the memory limit** (`_helpers.tpl` converts the limit to
+  `<N>MiB`), so the Go runtime GC targets the cgroup ceiling and the pod is far
+  less likely to OOM-kill under load.
+- **`automountServiceAccountToken: false`** on both the SA and the pod. No
+  workload calls the Kubernetes API; ambient-mesh SPIFFE identity derives from
+  the SA object, not a mounted token.
+- **No Secrets, NetworkPolicy, AuthorizationPolicy, HPA/KEDA, or Rollout in this
+  chart.** Those layer on top and key off the `app: <svc>` label / `sa/<svc>`
+  identity. Secrets come from the External Secrets Operator; `DATABASE_URL` is a
+  `secretKeyRef` to `<SERVICE>_DATABASE_URL`.
+- **Validated in CI without a cluster:** `helm lint` + `helm template |
+  kubeconform -strict -kubernetes-version 1.30.0`.
+
+**Alternatives:**
+- *Subchart per service + library chart* (the original §9.3 sketch) — the
+  canonical Helm pattern, but here every service's manifest is the same shape;
+  the per-service surface is pure config, which a values map expresses with less
+  YAML and one place to change the template.
+- *Kustomize base + overlays* — works, but the platform is already Helm + Argo
+  and mixing templating tools is a tax.
+- *Plain manifests + `envsubst`* — no schema, no typed values, no `helm lint`.
+- *An operator / CRD per service* — enormous overkill for 13 stateless Go
+  deployments.
+
+**Consequences:** adding a service is one `services:` entry + (if it has a DB) one
+secret key. The template is now load-bearing for 13 services, so a change to it
+is a fleet-wide change — hence the `kubeconform` gate. `values-dev.yaml` carries
+the kind-cluster deltas (1 replica, `pullPolicy: Never`, no PDB); prod sizing is a
+deploy-time values override.

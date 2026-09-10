@@ -518,23 +518,28 @@ These were weighed against Kong and accepted — see [`DECISIONS.md` ADR-011](DE
 
 ### 9.2 Kubernetes
 
-Per service:
-- `Deployment` (min 2 replicas in prod), `Service` (ClusterIP), `ServiceAccount` (unique,
-  minimal RBAC).
-- **Probes:** gRPC liveness + readiness on the health service; `startupProbe` for
-  migration-on-boot services.
-- **Resources:** requests set from load-test p95, limits ~2×; `GOMEMLIMIT` set from the
-  memory limit.
+Per service (rendered by `deploy/helm/commerce-services`, §9.3):
+- ✅ `Deployment` (2 replicas default, 3 for `bff` / `order` / `ext-authz`), `Service`
+  (ClusterIP, `appProtocol` set), `ServiceAccount` (unique, `automountServiceAccountToken:
+  false` — ambient SPIFFE identity is from the SA, not a token).
+- ✅ **Probes:** native `grpc` liveness + readiness on the health service (`httpGet
+  /healthz` for the BFF).
+- ✅ **Resources:** requests / limits per service; `GOMEMLIMIT` set from the memory limit.
 - **HPA** on CPU + custom metrics. **KEDA** `ScaledObject` on **Kafka consumer lag** for
   `search`, `notification`, `media`; on **gRPC RPS** for `bff`, `catalog`, `search`.
-- `PodDisruptionBudget` (`minAvailable: 1` / `50%`).
+  *(KEDA controller is in the app-of-apps; the `ScaledObject`s are a follow-on.)*
+- ✅ `PodDisruptionBudget` (`minAvailable: 1`).
 - **NetworkPolicy** (L3/L4): default-deny ingress+egress per namespace; explicit allows
   (`bff → domain services`, `order → payment/inventory/fulfillment`, `* → its own DB`,
   `* → Kafka`, `* → otel-collector`). No service can reach another service's DB.
 - **Istio `AuthorizationPolicy`** (L7 identity + path/method): default-deny, explicit allows
   by SPIFFE identity — complements NetworkPolicy, doesn't replace it (§8.1).
-- **Pod Security Standards: `restricted`** enforced by namespace label.
-- `topologySpreadConstraints` across zones; anti-affinity so replicas don't co-locate.
+- ✅ **Pod Security Standards: `restricted`** — enforced by the namespace label
+  (`deploy/istio/namespace.yaml`) **and** met by every pod: `runAsNonRoot`,
+  `runAsUser: 65532`, `seccompProfile: RuntimeDefault`, `allowPrivilegeEscalation: false`,
+  `readOnlyRootFilesystem: true` (+ a `/tmp` `emptyDir`), all capabilities dropped.
+- ✅ `topologySpreadConstraints` (`maxSkew: 1` over `kubernetes.io/hostname`,
+  `ScheduleAnyway`).
 - Namespaces labelled `istio.io/dataplane-mode=ambient` to join the mesh; `waypoint`
   proxies deployed in `order` / `payment` / `inventory` only.
 
@@ -549,11 +554,22 @@ available — the app doesn't care.
 
 ### 9.3 Helm
 
-- `deploy/helm/platform/` is an **umbrella chart**; each service is a **subchart** under
-  `deploy/helm/charts/<service>/` with a shared library chart (`commerce-common`) for the
-  boilerplate (Deployment/Service/HPA/PDB/NetworkPolicy/ServiceMonitor templates).
-- `values.yaml` (defaults) + `values-<env>.yaml` (`dev`, `staging`, `prod`) — image tag,
-  replica counts, resources, autoscaling thresholds, feature flags per env.
+- `deploy/helm/platform/` is the **app-of-apps**: one Argo CD `Application` per third-party
+  chart (istio, KEDA, kube-prometheus-stack, loki, tempo, otel-collector, Gateway API CRDs)
+  **and** one for `deploy/helm/commerce-services`.
+- `deploy/helm/commerce-services/` is **one templated chart** that renders
+  `ServiceAccount` + `Deployment` + `Service` + `PodDisruptionBudget` per service by
+  iterating a `services:` map in `values.yaml` — instead of ~13 near-identical subcharts.
+  Each entry is a few flags (`db`, `kafka`, `redis`, `auth`, `protocol`, `port`,
+  `replicas`, `resources`); the template does the rest (PSS-`restricted` securityContext,
+  native gRPC/HTTP probes, `GOMEMLIMIT` from the memory limit, `preStop` drain,
+  `topologySpreadConstraints`, `RollingUpdate maxUnavailable: 0`).
+- `values.yaml` (production-shaped defaults) + `values-dev.yaml` (kind: 1 replica, images
+  side-loaded, no PDB). Rendered manifests are schema-checked in CI (`helm template |
+  kubeconform -strict`).
+- HPA/KEDA `ScaledObject`s, `NetworkPolicy`, and the tightened per-service
+  `AuthorizationPolicy` are separate manifests layered on top (they key off the `app: <svc>`
+  label and the `sa/<svc>` identity this chart creates).
 - Secrets come from **External Secrets Operator** (`SecretStore` → Vault), never from
   `values`.
 - **Argo CD** watches `deploy/helm/` on `main` → auto-sync to `staging`, manual promote to
@@ -736,5 +752,5 @@ See [`SECURITY.md`](SECURITY.md) for job-by-job policy and the "did it actually 
 | **1 — Catalog & browse** | `catalog`, `media`, `search`, `bff`; `HTTPRoute`s for storefront; storefront browse + PDP; MinIO upload flow; Grafana platform + service dashboards (incl. mesh + gateway metrics). |
 | **2 — Cart & checkout** | `cart`, `pricing`, `inventory`, `order`, `payment` (PSP sandbox), the saga; `waypoint` proxies + `AuthorizationPolicy` for `order`/`payment`/`inventory`; ✅ checkout-funnel dashboard *(Phase 4)*; ✅ k6 load test (`perf/checkout-funnel.js` + weekly `perf.yml`). |
 | **3 — Fulfillment & comms** | ✅ `fulfillment`, `notification`, `review`; ✅ RMA/returns + partial refunds; ✅ admin API (operator mode on the list RPCs + BFF `/admin/*`); ✅ admin **SPA** (`web/admin`) + admin `HTTPRoute` on `admin.*` restricted by a source-IP `AuthorizationPolicy`. |
-| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); KEDA autoscaling; NetworkPolicies + tightened `AuthorizationPolicy` (default-deny everywhere); PSS `restricted`; **progressive delivery — Argo Rollouts + weighted `HTTPRoute` + traffic mirroring**; DR runbooks; pen-test remediation. |
+| **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; KEDA `ScaledObject`s; NetworkPolicies + tightened per-service `AuthorizationPolicy` (default-deny everywhere); **progressive delivery — Argo Rollouts + weighted `HTTPRoute` + traffic mirroring**; DR runbooks; pen-test remediation. |
 | **5 — Scale/optional** | ClickHouse analytics, CDN, multi-zone, OpenFGA fine-grained authz, marketplace/multi-seller model. |

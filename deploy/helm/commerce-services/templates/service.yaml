@@ -1,0 +1,21 @@
+{{- range $name, $rawSvc := .Values.services }}
+{{- $svc := mergeOverwrite (deepCopy $.Values.defaults) $rawSvc }}
+{{- $isHTTP := eq $svc.protocol "http" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Values.global.namespace }}
+  labels:
+    {{- include "commerce.labels" (dict "name" $name "root" $) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 4 }}
+  ports:
+    - name: {{ if $isHTTP }}http{{ else }}grpc{{ end }}
+      port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+      appProtocol: {{ if $isHTTP }}http{{ else }}grpc{{ end }}
+---
+{{- end }}

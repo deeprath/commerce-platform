@@ -133,5 +133,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
-      - run: helm lint deploy/helm/platform
-      - run: helm template deploy/helm/platform >/dev/null
+      - name: install kubeconform
+        run: |
+          curl -sSfL "https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+      - name: platform (app-of-apps)
+        run: |
+          helm lint deploy/helm/platform
+          helm template deploy/helm/platform >/dev/null
+      - name: commerce-services
+        run: |
+          helm lint deploy/helm/commerce-services
+          helm template deploy/helm/commerce-services \
+            | kubeconform -strict -summary -kubernetes-version 1.30.0 -schema-location default
