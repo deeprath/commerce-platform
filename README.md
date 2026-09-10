@@ -145,6 +145,7 @@ Local login: `testuser` / `testuser123` (seeded in the Keycloak realm import).
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The blueprint — 14 sections, service topology + checkout-saga diagrams. |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | ADR log — every technology choice, its alternatives, its consequences, and any reversal. |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Threat model, controls, the 4-tool CI scanning policy, and the "did it actually run" verification rule. |
+| [`docs/RUNBOOKS.md`](docs/RUNBOOKS.md) | Disaster-recovery procedures — DB restore / PITR, MinIO, Kafka, outbox re-drive, deploy rollback, region loss — with a drill log. |
 
 ## Status
 
