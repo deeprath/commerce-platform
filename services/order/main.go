@@ -22,10 +22,12 @@ import (
 	pricingv1 "github.com/deeprath/commerce-platform/gen/go/commerce/pricing/v1"
 	"github.com/deeprath/commerce-platform/pkg/auth"
 	"github.com/deeprath/commerce-platform/pkg/config"
+	"github.com/deeprath/commerce-platform/pkg/fga"
 	"github.com/deeprath/commerce-platform/pkg/grpcx"
 	"github.com/deeprath/commerce-platform/pkg/kafka"
 	"github.com/deeprath/commerce-platform/pkg/pgx"
 	"github.com/deeprath/commerce-platform/pkg/telemetry"
+	"github.com/deeprath/commerce-platform/services/order/internal/authz"
 	"github.com/deeprath/commerce-platform/services/order/internal/consumer"
 	"github.com/deeprath/commerce-platform/services/order/internal/grpcsvc"
 	"github.com/deeprath/commerce-platform/services/order/internal/saga"
@@ -111,10 +113,27 @@ func run() error {
 		return err
 	}
 
+	// Delegated order sharing (OpenFGA). Optional: without an endpoint the
+	// sharing RPCs report Unavailable and GetOrder is owner/operator-only.
+	var sharer authz.Sharer
+	if apiURL := config.String("OPENFGA_API_URL", ""); apiURL != "" {
+		fgaClient, ferr := fga.New(ctx, fga.Config{
+			APIURL:    apiURL,
+			StoreName: config.String("OPENFGA_STORE_NAME", authz.StoreName),
+			Model:     authz.Model,
+		})
+		if ferr != nil {
+			return ferr
+		}
+		slog.Info("openfga ready",
+			slog.String("store", fgaClient.StoreID()), slog.String("model", fgaClient.ModelID()))
+		sharer = fgaClient
+	}
+
 	// Checkout is authenticated; the saga forwards the caller's token downstream.
 	srv := grpcx.NewServer(grpcx.WithAuth(verifier,
 		"/grpc.health.v1.Health/Check", "/grpc.health.v1.Health/Watch"))
-	orderv1.RegisterOrderServiceServer(srv, grpcsvc.New(orch, st))
+	orderv1.RegisterOrderServiceServer(srv, grpcsvc.New(orch, st, sharer))
 	healthgrpc.RegisterHealthServer(srv, health.NewServer())
 	if svc.Environment == "local" {
 		reflection.Register(srv)

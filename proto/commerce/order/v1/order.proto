@@ -38,6 +38,18 @@ service OrderService {
   // order_manager role. On approval the order service refunds the returned
   // amount and restocks the returned units.
   rpc DecideReturn(DecideReturnRequest) returns (Return);
+
+  // ShareOrder grants another user delegated read access to one of the
+  // caller's orders (a relationship tuple in OpenFGA). Owner-only; idempotent.
+  rpc ShareOrder(ShareOrderRequest) returns (ShareOrderResponse);
+
+  // RevokeOrderShare removes a grant created by ShareOrder. Owner-only;
+  // idempotent (revoking a grant that isn't there succeeds).
+  rpc RevokeOrderShare(RevokeOrderShareRequest) returns (RevokeOrderShareResponse);
+
+  // ListOrderShares lists the users an order is currently shared with.
+  // Owner-only.
+  rpc ListOrderShares(ListOrderSharesRequest) returns (ListOrderSharesResponse);
 }
 
 enum OrderStatus {
@@ -108,6 +120,31 @@ message ListOrdersResponse {
 
 message CancelOrderRequest {
   string id = 1;
+}
+
+// --- sharing (delegated read access, backed by OpenFGA) ---
+
+message ShareOrderRequest {
+  string order_id = 1;
+  // Keycloak subject (the `sub` claim) of the user to grant read access to.
+  string grantee_subject = 2;
+}
+
+message ShareOrderResponse {}
+
+message RevokeOrderShareRequest {
+  string order_id = 1;
+  string grantee_subject = 2;
+}
+
+message RevokeOrderShareResponse {}
+
+message ListOrderSharesRequest {
+  string order_id = 1;
+}
+
+message ListOrderSharesResponse {
+  repeated string grantee_subjects = 1;
 }
 
 // --- events (topic: commerce.order.<event>) ---

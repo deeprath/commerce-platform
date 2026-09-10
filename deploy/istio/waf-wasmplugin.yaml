@@ -29,6 +29,10 @@ spec:
       edge:
         - "Include @demo-conf"
         - "Include @crs-setup-conf"
+        # The JSON API legitimately uses PUT (cart qty, admin catalog) and DELETE
+        # (cart items, order share revoke). Widen CRS 911100's allow-list before
+        # the rules load. See ADR-027 / ADR-035.
+        - "SecAction \"id:900200,phase:1,nolog,pass,t:none,setvar:'tx.allowed_methods=GET HEAD POST PUT PATCH DELETE OPTIONS'\""
         - "Include @owasp_crs/*.conf"
         - "SecRuleEngine On"
         - "SecRequestBodyAccess On"

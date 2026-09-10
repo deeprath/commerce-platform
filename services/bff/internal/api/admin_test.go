@@ -24,7 +24,32 @@ type fakeOrder struct {
 	lastGet    *orderv1.GetOrderRequest
 	lastReturn *orderv1.ListReturnsRequest
 	lastDecide *orderv1.DecideReturnRequest
+	lastShare  *orderv1.ShareOrderRequest
+	lastRevoke *orderv1.RevokeOrderShareRequest
+	lastShares *orderv1.ListOrderSharesRequest
 	err        error // when set, every method returns it
+}
+
+func (f *fakeOrder) ShareOrder(_ context.Context, in *orderv1.ShareOrderRequest, _ ...grpc.CallOption) (*orderv1.ShareOrderResponse, error) {
+	f.lastShare = in
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &orderv1.ShareOrderResponse{}, nil
+}
+func (f *fakeOrder) RevokeOrderShare(_ context.Context, in *orderv1.RevokeOrderShareRequest, _ ...grpc.CallOption) (*orderv1.RevokeOrderShareResponse, error) {
+	f.lastRevoke = in
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &orderv1.RevokeOrderShareResponse{}, nil
+}
+func (f *fakeOrder) ListOrderShares(_ context.Context, in *orderv1.ListOrderSharesRequest, _ ...grpc.CallOption) (*orderv1.ListOrderSharesResponse, error) {
+	f.lastShares = in
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &orderv1.ListOrderSharesResponse{GranteeSubjects: []string{"friend-a", "friend-b"}}, nil
 }
 
 func (f *fakeOrder) ListOrders(_ context.Context, in *orderv1.ListOrdersRequest, _ ...grpc.CallOption) (*orderv1.ListOrdersResponse, error) {

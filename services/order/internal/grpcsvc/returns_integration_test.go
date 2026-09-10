@@ -102,7 +102,7 @@ func seedFulfilled(t *testing.T, st *store.Store, owner string) *domain.Order {
 }
 
 func newServer(st *store.Store) *grpcsvc.Server {
-	return grpcsvc.New(saga.New(st, saga.Clients{Payment: fakePayment{}, Inventory: fakeInventory{}}), st)
+	return grpcsvc.New(saga.New(st, saga.Clients{Payment: fakePayment{}, Inventory: fakeInventory{}}), st, nil)
 }
 
 func TestReturnRPCs_EndToEnd(t *testing.T) {

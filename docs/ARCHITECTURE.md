@@ -86,6 +86,11 @@ replication (for Debezium CDC) are worth more here.
 ### 2.3 Supporting infra
 
 - **Keycloak** — OIDC provider, user store, RBAC source of truth. See §7.
+- **OpenFGA** *(Phase 5)* — relationship-based (ReBAC / Zanzibar-style) authorization
+  store, Postgres-backed. Holds fine-grained grants that don't fit realm roles or
+  owner-scoping — currently order sharing (`order#viewer`). Consulted by the `order` service
+  via `pkg/fga`; **additive only**, never a bypass. Provisioned by the platform app-of-apps
+  in k8s. See §7.3 and [DECISIONS.md ADR-035](DECISIONS.md).
 - **Istio (ambient mode)** — the service mesh. `ztunnel` (per-node) gives L4 mTLS between
   every service with zero app code; `waypoint` proxies add L7 policy (routing, retries,
   outlier detection, `AuthorizationPolicy`) only in the namespaces that need it. **Same Envoy
@@ -117,7 +122,7 @@ are drawn so that the **critical checkout path** touches as few services as poss
 | **inventory** | Stock levels per warehouse, reservations, backorders | `CheckAvailability`, `Reserve`, `Release`, `Commit` | `inventory.stock_changed`, `inventory.reservation_expired` | `order.cancelled` |
 | **cart** | Active carts (Redis), merge on login | `GetCart`, `AddItem`, `UpdateItem`, `RemoveItem`, `Clear` | `cart.checked_out` | `catalog.product_changed` (price/label refresh) |
 | **pricing** | List prices, promotions, coupons, tax rules, price calculation | `QuotePrice`, `ValidateCoupon`, `ApplyPromotions` | `pricing.price_changed`, `pricing.promotion_changed` | — |
-| **order** | Order aggregate, checkout **saga orchestrator**, order state machine, **returns (RMA)** | `CreateOrder`, `GetOrder`, `ListOrders`, `CancelOrder`, `RequestReturn`, `GetReturn`, `ListReturns`, `DecideReturn` | `order.created`, `order.confirmed`, `order.cancelled`, `order.fulfilled`, `order.return_requested`, `order.return_approved`, `order.return_rejected` | `payment.*`, `inventory.*`, `fulfillment.*` |
+| **order** | Order aggregate, checkout **saga orchestrator**, order state machine, **returns (RMA)**, **delegated sharing (OpenFGA)** | `CreateOrder`, `GetOrder`, `ListOrders`, `CancelOrder`, `RequestReturn`, `GetReturn`, `ListReturns`, `DecideReturn`, `ShareOrder`, `RevokeOrderShare`, `ListOrderShares` | `order.created`, `order.confirmed`, `order.cancelled`, `order.fulfilled`, `order.return_requested`, `order.return_approved`, `order.return_rejected` | `payment.*`, `inventory.*`, `fulfillment.*` |
 | **payment** | Payment intents, PSP integration, **partial/cumulative refunds**, webhook ingestion | `CreatePayment`, `ConfirmPayment`, `Refund`, `Void` | `payment.authorized`, `payment.failed`, `payment.refunded` | `order.created`, `order.cancelled` |
 | **fulfillment** | Shipments (one per order in v1), sandbox carrier, tracking | `GetShipment`, `ListShipments`, `MarkShipped`, `MarkDelivered`, `CancelShipment` | `fulfillment.shipment_created`, `fulfillment.shipped`, `fulfillment.delivered`, `fulfillment.cancelled` | `order.confirmed` |
 | **notification** | Transactional notifications: templates, delivery history, sandbox channel | `ListNotifications`, `SendTest` | `notification.sent` | `order.created`, `order.confirmed`, `order.cancelled`, `order.fulfilled`, `fulfillment.shipped`, `fulfillment.delivered` |
@@ -371,9 +376,15 @@ BFF  ──sets httpOnly, Secure, SameSite=Lax cookie (access+refresh)──▶ 
   - `RequireRole("order_manager")` / `RequireAnyRole(...)` guards per RPC / route.
 - **Resource-level** checks (e.g. "a customer may only read *their own* order") are enforced
   in each repository layer by `owner_id == principal.Subject`, never by role alone.
-- **Optional fine-grained layer (phase 2):** OpenFGA or Casbin for relationship-based rules
-  if a marketplace / team-account model appears. The interface in `pkg/auth` is designed so
-  this slots in without touching call sites.
+- **Fine-grained layer (OpenFGA, ReBAC):** relationship tuples in an OpenFGA store
+  (`pkg/fga` — a thin `net/http` client; the model lives with the service that owns it).
+  It is strictly **additive** — a `Check` only ever grants access *on top of* the role gate
+  and owner-scoping above, so an OpenFGA outage fails closed for delegated access and never
+  blocks a resource owner. First use (Phase 5): **order sharing** — an order's owner grants
+  another user `viewer` on `order:<id>` (`OrderService.ShareOrder` / `RevokeOrderShare` /
+  `ListOrderShares`); `GetOrder` consults the tuple only after owner/operator access has
+  already been denied. Same mechanism generalises to team accounts / a marketplace's
+  per-shop staff. See [DECISIONS.md ADR-035](DECISIONS.md).
 - The **ingress gateway + `ext-authz` service** do coarse edge checks (is there a token at
   all, is it structurally valid and unexpired, is the route admin-only) and the mesh's
   `AuthorizationPolicy` enforces which service may call which — but the **authoritative**
@@ -780,4 +791,4 @@ See [`SECURITY.md`](SECURITY.md) for job-by-job policy and the "did it actually 
 | **2 — Cart & checkout** | `cart`, `pricing`, `inventory`, `order`, `payment` (PSP sandbox), the saga; `waypoint` proxies + `AuthorizationPolicy` for `order`/`payment`/`inventory`; ✅ checkout-funnel dashboard *(Phase 4)*; ✅ k6 load test (`perf/checkout-funnel.js` + weekly `perf.yml`). |
 | **3 — Fulfillment & comms** | ✅ `fulfillment`, `notification`, `review`; ✅ RMA/returns + partial refunds; ✅ admin API (operator mode on the list RPCs + BFF `/admin/*`); ✅ admin **SPA** (`web/admin`) + admin `HTTPRoute` on `admin.*` restricted by a source-IP `AuthorizationPolicy`. |
 | **4 — Hardening** | ✅ SLO burn-rate alerts (Prometheus recording rules + multi-window multi-burn-rate alerts, compose + `PrometheusRule` CR) + checkout-funnel dashboard; ✅ ZAP authenticated active API scan; ✅ Coraza (OWASP CRS v4) WAF at the edge (compose Envoy + Istio `WasmPlugin`); ✅ per-service workload chart (`deploy/helm/commerce-services`) with **PSS `restricted`** pods; ✅ per-service **NetworkPolicies** (default-deny + call-graph-derived allows) + tightened per-service **`AuthorizationPolicy`** (SPIFFE identity, method-scoped for `payment`); ✅ **KEDA `ScaledObject`s** (gRPC RPS / Kafka lag / CPU per service); ✅ **progressive delivery** — Argo Rollouts canary for the BFF: weighted `bff-storefront` `HTTPRoute` via the Gateway API traffic-router plugin, traffic-mirror shadow step, background `AnalysisRun` on checkout health that auto-aborts; ✅ **DR runbooks** ([`RUNBOOKS.md`](RUNBOOKS.md) + `infra/dr/` scripts; Postgres + MinIO drills run against the live stack); pen-test remediation *(needs an engagement)*. |
-| **5 — Scale/optional** | ✅ ClickHouse analytics (`analytics` service → `events` + funnel MVs; Grafana ClickHouse datasource + funnel dashboard); ✅ browser clickstream ingestion (storefront beacon → BFF `POST /api/v1/events` → `commerce.clickstream.tracked` → `analytics` second consumer group → `clickstream` table + dashboard); CDN; multi-zone; OpenFGA fine-grained authz; marketplace/multi-seller model. |
+| **5 — Scale/optional** | ✅ ClickHouse analytics (`analytics` service → `events` + funnel MVs; Grafana ClickHouse datasource + funnel dashboard); ✅ browser clickstream ingestion (storefront beacon → BFF `POST /api/v1/events` → `commerce.clickstream.tracked` → `analytics` second consumer group → `clickstream` table + dashboard); ✅ OpenFGA fine-grained authz (ReBAC store + `pkg/fga`; delegated order sharing — `OrderService.ShareOrder`/`RevokeOrderShare`/`ListOrderShares`, additive over role + owner checks); CDN; multi-zone; marketplace/multi-seller model. |

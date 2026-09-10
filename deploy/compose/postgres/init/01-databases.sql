@@ -15,6 +15,7 @@ CREATE DATABASE notification;
 CREATE DATABASE review;
 CREATE DATABASE media;
 CREATE DATABASE keycloak;
+CREATE DATABASE openfga; -- fine-grained authz store (OpenFGA), not a service DB
 
 -- The compose POSTGRES_USER owns them all locally. Real environments give each
 -- service its own least-privileged role.

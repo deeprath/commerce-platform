@@ -104,6 +104,21 @@ applications:
       dashboard:
         enabled: true
 
+  # Fine-grained (ReBAC) authorization store. The order service consults it for
+  # delegated order sharing (ADR-035); the store + model are provisioned out of
+  # band (a Job / bootstrap), not by this chart.
+  - name: openfga
+    repoURL: https://openfga.github.io/helm-charts
+    chart: openfga
+    targetRevision: 0.2.31
+    namespace: commerce
+    helmValues: |
+      datastore:
+        engine: postgres
+        # URI from the ExternalSecret `openfga-datastore` (Postgres cluster).
+        uriSecret: openfga-datastore
+      replicaCount: 2
+
   - name: kube-prometheus-stack
     repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack

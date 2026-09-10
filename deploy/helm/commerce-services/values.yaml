@@ -205,6 +205,8 @@ services:
     auth: true
     replicas: 3
     callers: [bff]
+    egressExtra:
+      - { selector: { app: openfga }, port: 8080 } # delegated order sharing (ADR-035)
     autoscaling:
       enabled: true
       minReplicas: 3
@@ -216,6 +218,8 @@ services:
       PRICING_ADDR: pricing.commerce.svc.cluster.local:50051
       INVENTORY_ADDR: inventory.commerce.svc.cluster.local:50051
       PAYMENT_ADDR: payment.commerce.svc.cluster.local:50051
+      OPENFGA_API_URL: http://openfga.commerce.svc.cluster.local:8080
+      OPENFGA_STORE_NAME: commerce
 
   fulfillment:
     db: fulfillment

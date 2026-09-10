@@ -46,7 +46,12 @@ the *what*, this is the *how it's enforced and verified*.
 - **AuthZ:** `pkg/auth` verifies every JWT against Keycloak **JWKS** (cached, refreshed on
   `kid` miss), checks `iss`/`aud`/`exp`, extracts `realm_access.roles`. `RequireRole` guards
   per RPC/route. **Resource-level** ownership (`owner_id == principal.Subject`) enforced in
-  every repository — never role-only.
+  every repository — never role-only. **Fine-grained (ReBAC):** an OpenFGA store
+  (`pkg/fga`) holds relationship grants that don't fit roles — currently `order#viewer` for
+  delegated order sharing. It is **strictly additive**: a `Check` runs only *after* the role
+  gate and owner-scoping have already denied access, and any OpenFGA error there leaves the
+  denial in place — delegated access **fails closed**, and a resource owner is never blocked
+  by an OpenFGA outage. See [DECISIONS.md ADR-035](DECISIONS.md).
 - **Input validation:** protobuf field constraints (`protovalidate`) on every gRPC request;
   BFF validates and normalizes before fan-out; parameterized SQL only (`pgx`, no string
   building); OpenSearch queries built via the typed client, never string concatenation.
@@ -261,8 +266,13 @@ The tool most prone to "configured but never actually scanned anything." Guardra
     checkouts, 0 failures; plus hand-checked apostrophe/ampersand/unicode addresses
     (`Sean O'Brien`, `Smith & Sons`, `Düsseldorf`) and search terms (`25% off`, `C++ book`,
     `men's shirt (blue)`) — all pass.
-- **Tuning:** none needed at PL1 with CRS 4; exclusions would go in the `directives_map`
-  (`SecRuleRemoveById` / `ctl:ruleRemoveTargetById`), never a blanket rule disable.
+- **Tuning:** one deliberate policy widening — CRS 911100 (method enforcement) defaults to
+  `GET HEAD POST OPTIONS`, but the JSON API legitimately uses **`PUT`** (cart quantity,
+  admin catalog publish) and **`DELETE`** (cart item removal, order-share revoke). A
+  `SecAction id:900200` sets `tx.allowed_methods` to add `PUT PATCH DELETE` before the rules
+  load, in both `deploy/compose/envoy/envoy.yaml` and `deploy/istio/waf-wasmplugin.yaml`.
+  Any other exclusion would go in the `directives_map` (`SecRuleRemoveById` /
+  `ctl:ruleRemoveTargetById`), never a blanket rule disable.
 
 ---
 
