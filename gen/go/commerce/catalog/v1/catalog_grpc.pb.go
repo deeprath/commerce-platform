@@ -28,6 +28,7 @@ const (
 	CatalogService_CreateProduct_FullMethodName    = "/commerce.catalog.v1.CatalogService/CreateProduct"
 	CatalogService_UpdateProduct_FullMethodName    = "/commerce.catalog.v1.CatalogService/UpdateProduct"
 	CatalogService_ArchiveProduct_FullMethodName   = "/commerce.catalog.v1.CatalogService/ArchiveProduct"
+	CatalogService_ListShopProducts_FullMethodName = "/commerce.catalog.v1.CatalogService/ListShopProducts"
 )
 
 // CatalogServiceClient is the client API for CatalogService service.
@@ -52,6 +53,10 @@ type CatalogServiceClient interface {
 	// ArchiveProduct moves a product to ARCHIVED (soft delete); it stops
 	// appearing in ListProducts/search but existing orders still resolve it.
 	ArchiveProduct(ctx context.Context, in *ArchiveProductRequest, opts ...grpc.CallOption) (*ArchiveProductResponse, error)
+	// ListShopProducts returns a shop's products of ALL statuses (the seller's
+	// management view). The caller must be `shop#staff` of shop_id (or hold
+	// catalog_manager).
+	ListShopProducts(ctx context.Context, in *ListShopProductsRequest, opts ...grpc.CallOption) (*ListShopProductsResponse, error)
 }
 
 type catalogServiceClient struct {
@@ -122,6 +127,16 @@ func (c *catalogServiceClient) ArchiveProduct(ctx context.Context, in *ArchivePr
 	return out, nil
 }
 
+func (c *catalogServiceClient) ListShopProducts(ctx context.Context, in *ListShopProductsRequest, opts ...grpc.CallOption) (*ListShopProductsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListShopProductsResponse)
+	err := c.cc.Invoke(ctx, CatalogService_ListShopProducts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CatalogServiceServer is the server API for CatalogService service.
 // All implementations must embed UnimplementedCatalogServiceServer
 // for forward compatibility.
@@ -144,6 +159,10 @@ type CatalogServiceServer interface {
 	// ArchiveProduct moves a product to ARCHIVED (soft delete); it stops
 	// appearing in ListProducts/search but existing orders still resolve it.
 	ArchiveProduct(context.Context, *ArchiveProductRequest) (*ArchiveProductResponse, error)
+	// ListShopProducts returns a shop's products of ALL statuses (the seller's
+	// management view). The caller must be `shop#staff` of shop_id (or hold
+	// catalog_manager).
+	ListShopProducts(context.Context, *ListShopProductsRequest) (*ListShopProductsResponse, error)
 	mustEmbedUnimplementedCatalogServiceServer()
 }
 
@@ -171,6 +190,9 @@ func (UnimplementedCatalogServiceServer) UpdateProduct(context.Context, *UpdateP
 }
 func (UnimplementedCatalogServiceServer) ArchiveProduct(context.Context, *ArchiveProductRequest) (*ArchiveProductResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ArchiveProduct not implemented")
+}
+func (UnimplementedCatalogServiceServer) ListShopProducts(context.Context, *ListShopProductsRequest) (*ListShopProductsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListShopProducts not implemented")
 }
 func (UnimplementedCatalogServiceServer) mustEmbedUnimplementedCatalogServiceServer() {}
 func (UnimplementedCatalogServiceServer) testEmbeddedByValue()                        {}
@@ -301,6 +323,24 @@ func _CatalogService_ArchiveProduct_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CatalogService_ListShopProducts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListShopProductsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CatalogServiceServer).ListShopProducts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CatalogService_ListShopProducts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CatalogServiceServer).ListShopProducts(ctx, req.(*ListShopProductsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CatalogService_ServiceDesc is the grpc.ServiceDesc for CatalogService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -331,6 +371,10 @@ var CatalogService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ArchiveProduct",
 			Handler:    _CatalogService_ArchiveProduct_Handler,
+		},
+		{
+			MethodName: "ListShopProducts",
+			Handler:    _CatalogService_ListShopProducts_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

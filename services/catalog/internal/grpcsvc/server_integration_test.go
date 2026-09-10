@@ -43,6 +43,10 @@ func (f *fakeFGA) Delete(_ context.Context, u, r, o string) error {
 }
 func (f *fakeFGA) Read(context.Context, string) ([]fga.Tuple, error) { return nil, nil }
 
+func (f *fakeFGA) grantStaff(sub, shop string) {
+	f.t[k(fga.UserObject(sub), fga.RelationStaff, fga.ShopObject(shop))] = true
+}
+
 func newSrv(t *testing.T, f fga.API) *grpcsvc.Server {
 	t.Helper()
 	if testing.Short() {
@@ -148,6 +152,68 @@ func TestCatalog_SellerWriteRequiresShopStaff(t *testing.T) {
 	}
 	if _, err := s.ArchiveProduct(customer("seller-1"), &catalogv1.ArchiveProductRequest{Id: pid}); err != nil {
 		t.Fatalf("staff ArchiveProduct: %v", err)
+	}
+}
+
+func TestCatalog_ListShopProducts(t *testing.T) {
+	f := newFakeFGA()
+	s := newSrv(t, f)
+	const shop = "33333333-3333-3333-3333-333333333333"
+	f.grantStaff("seller-1", shop)
+
+	// empty shop_id -> InvalidArgument
+	if _, err := s.ListShopProducts(customer("seller-1"), &catalogv1.ListShopProductsRequest{}); !errs.Is(err, errs.KindInvalidArgument) {
+		t.Fatalf("empty shop_id err = %v, want InvalidArgument", err)
+	}
+	// a non-staff customer -> PermissionDenied
+	if _, err := s.ListShopProducts(customer("outsider"), &catalogv1.ListShopProductsRequest{ShopId: shop}); !errs.Is(err, errs.KindPermissionDenied) {
+		t.Fatalf("non-staff list err = %v, want PermissionDenied", err)
+	}
+
+	// seed 3 products: one stays DRAFT, one is activated, one is archived.
+	var ids []string
+	for i, sl := range []string{"lsp-a", "lsp-b", "lsp-c"} {
+		r, err := s.CreateProduct(customer("seller-1"), createReq(sl, shop))
+		if err != nil {
+			t.Fatalf("create %d: %v", i, err)
+		}
+		ids = append(ids, r.GetProduct().GetId())
+	}
+	if _, err := s.UpdateProduct(customer("seller-1"), &catalogv1.UpdateProductRequest{
+		Id: ids[1], Title: "b", CategoryId: "c",
+		ListPrice: &commonv1.Money{CurrencyCode: "USD", Units: 1000},
+		Status:    catalogv1.ProductStatus_PRODUCT_STATUS_ACTIVE,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ArchiveProduct(customer("seller-1"), &catalogv1.ArchiveProductRequest{Id: ids[2]}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The seller sees all three regardless of status.
+	res, err := s.ListShopProducts(customer("seller-1"), &catalogv1.ListShopProductsRequest{ShopId: shop})
+	if err != nil {
+		t.Fatalf("ListShopProducts: %v", err)
+	}
+	if len(res.GetProducts()) != 3 {
+		t.Fatalf("got %d products, want 3 (all statuses)", len(res.GetProducts()))
+	}
+	statuses := map[catalogv1.ProductStatus]int{}
+	for _, p := range res.GetProducts() {
+		statuses[p.GetStatus()]++
+		if p.GetShopId() != shop {
+			t.Fatalf("product from another shop leaked: %+v", p)
+		}
+	}
+	if statuses[catalogv1.ProductStatus_PRODUCT_STATUS_DRAFT] != 1 ||
+		statuses[catalogv1.ProductStatus_PRODUCT_STATUS_ACTIVE] != 1 ||
+		statuses[catalogv1.ProductStatus_PRODUCT_STATUS_ARCHIVED] != 1 {
+		t.Fatalf("status mix = %v", statuses)
+	}
+
+	// A platform catalog_manager may list any shop.
+	if _, err := s.ListShopProducts(mgr("op"), &catalogv1.ListShopProductsRequest{ShopId: shop}); err != nil {
+		t.Fatalf("catalog_manager ListShopProducts: %v", err)
 	}
 }
 

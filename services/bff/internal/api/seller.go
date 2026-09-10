@@ -150,6 +150,26 @@ func (s *Server) createShopProduct(c echo.Context) error {
 	return writeProto(c, 201, res)
 }
 
+// listShopProducts — GET /api/v1/seller/products (all statuses; the caller's own shop)
+func (s *Server) listShopProducts(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	shop, err := s.cl.Seller.GetMyShop(ctx, &sellerv1.GetMyShopRequest{})
+	if err != nil {
+		return fail(c, err)
+	}
+	res, err := s.cl.Catalog.ListShopProducts(ctx, &catalogv1.ListShopProductsRequest{
+		ShopId: shop.GetId(), Page: page(c),
+	})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
 // updateShopProduct — PUT /api/v1/seller/products/:id (catalog checks product#manager)
 func (s *Server) updateShopProduct(c echo.Context) error {
 	if !requireAuth(c) {

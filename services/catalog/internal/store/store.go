@@ -131,6 +131,46 @@ func (s *Store) List(ctx context.Context, categoryID string, limit int, cursor *
 	return out, next, nil
 }
 
+// ListByShop returns a shop's products of ALL statuses (draft/active/archived),
+// newest-first, keyset-paginated. For the seller's own management view.
+func (s *Store) ListByShop(ctx context.Context, shopID string, limit int, cursor *Cursor) ([]*domain.Product, *Cursor, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	args := []any{limit + 1, shopID}
+	q := `SELECT ` + productCols + ` FROM products WHERE shop_id = $2`
+	if cursor != nil {
+		args = append(args, cursor.CreatedAt, cursor.ID)
+		q += ` AND (created_at, id) < ($3, $4)`
+	}
+	q += ` ORDER BY created_at DESC, id DESC LIMIT $1`
+
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, nil, wrapPG(err)
+	}
+	defer rows.Close()
+
+	var out []*domain.Product
+	for rows.Next() {
+		p, err := scanProduct(rows)
+		if err != nil {
+			return nil, nil, err
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, wrapPG(err)
+	}
+	var next *Cursor
+	if len(out) > limit {
+		last := out[limit-1]
+		next = &Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
+		out = out[:limit]
+	}
+	return out, next, nil
+}
+
 func (s *Store) BatchGet(ctx context.Context, ids []string) ([]*domain.Product, error) {
 	if len(ids) == 0 {
 		return nil, nil
