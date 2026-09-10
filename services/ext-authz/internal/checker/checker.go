@@ -29,6 +29,7 @@ func DefaultConfig() Config {
 			"/healthz", "/readyz", "/metrics",
 			"/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/register",
 			"/api/v1/catalog", "/api/v1/search", // anonymous browse
+			"/api/v1/shops",  // public marketplace shop pages
 			"/api/v1/cart",   // guest carts (a cart_id cookie, not a login)
 			"/api/v1/events", // anonymous browser clickstream beacon (ADR-034)
 		},

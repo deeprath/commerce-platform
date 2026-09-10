@@ -78,6 +78,7 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	v1.GET("/catalog/products", s.listProducts)
 	v1.GET("/catalog/products/:slug", s.getProduct)
 	v1.GET("/search/autocomplete", s.autocomplete)
+	v1.GET("/shops/:slug", s.getShop) // marketplace shop page (only ACTIVE)
 
 	// --- clickstream ingestion (anonymous; navigator.sendBeacon) ---
 	v1.POST("/events", s.ingestEvents)
@@ -99,6 +100,11 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	v1.DELETE("/orders/:id/share/:grantee", s.revokeOrderShare)
 	v1.GET("/orders/:id/shares", s.listOrderShares)
 
+	// --- marketplace: the caller's own shop (require sign-in) ---
+	v1.POST("/seller/shops", s.createShop)
+	v1.GET("/seller/shops/me", s.getMyShop)
+	v1.PUT("/seller/shops/me", s.updateShop)
+
 	// --- admin (bearer/cookie forwarded; services enforce the role) ---
 	adm := v1.Group("/admin")
 	adm.POST("/catalog/products", s.createProduct)
@@ -114,6 +120,9 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	adm.POST("/shipments/:id/ship", s.adminShipShipment)
 	adm.POST("/shipments/:id/deliver", s.adminDeliverShipment)
 	adm.POST("/shipments/:id/cancel", s.adminCancelShipment)
+	adm.GET("/seller/shops", s.adminListShops)
+	adm.POST("/seller/shops/:id/activate", s.adminActivateShop)
+	adm.POST("/seller/shops/:id/suspend", s.adminSuspendShop)
 
 	return e
 }

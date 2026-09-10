@@ -17,4 +17,5 @@ use (
 	./services/pricing
 	./services/review
 	./services/search
+	./services/seller
 )

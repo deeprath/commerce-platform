@@ -14,6 +14,7 @@ CREATE DATABASE fulfillment;
 CREATE DATABASE notification;
 CREATE DATABASE review;
 CREATE DATABASE media;
+CREATE DATABASE seller;
 CREATE DATABASE keycloak;
 CREATE DATABASE openfga; -- fine-grained authz store (OpenFGA), not a service DB
 

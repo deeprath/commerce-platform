@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+// commerce.seller.v1 — the marketplace seller/shop aggregate.
+//
+// A shop is the unit a marketplace seller operates: it owns catalog listings
+// (a later slice), receives the seller's share of order revenue (a later
+// slice), and is the "sold by …" identity on the storefront. Any signed-in
+// user can open a shop; it starts PENDING_REVIEW and a platform operator
+// (shop_admin role) activates or suspends it. One shop per user in v1.
+package commerce.seller.v1;
+
+import "commerce/common/v1/types.proto";
+
+service SellerService {
+  // CreateShop opens a shop owned by the caller. Fails ALREADY_EXISTS if the
+  // caller already has one. The shop starts PENDING_REVIEW.
+  rpc CreateShop(CreateShopRequest) returns (Shop);
+
+  // GetMyShop returns the caller's own shop (any status), NOT_FOUND if none.
+  rpc GetMyShop(GetMyShopRequest) returns (Shop);
+
+  // GetShop returns a shop by slug or id. Public — but a non-owner /
+  // non-operator only ever sees an ACTIVE shop (NOT_FOUND otherwise).
+  rpc GetShop(GetShopRequest) returns (Shop);
+
+  // UpdateShop changes the caller's own shop's display fields (name /
+  // description / contact email). Owner only.
+  rpc UpdateShop(UpdateShopRequest) returns (Shop);
+
+  // ListShops lists shops, newest first, optionally filtered by status.
+  // Requires the shop_admin role.
+  rpc ListShops(ListShopsRequest) returns (ListShopsResponse);
+
+  // ActivateShop moves a shop from PENDING_REVIEW or SUSPENDED to ACTIVE.
+  // Requires the shop_admin role. Idempotent.
+  rpc ActivateShop(ActivateShopRequest) returns (Shop);
+
+  // SuspendShop moves an ACTIVE shop to SUSPENDED with a reason. Requires the
+  // shop_admin role. Idempotent.
+  rpc SuspendShop(SuspendShopRequest) returns (Shop);
+}
+
+enum ShopStatus {
+  SHOP_STATUS_UNSPECIFIED = 0;
+  SHOP_STATUS_PENDING_REVIEW = 1; // opened, awaiting operator approval
+  SHOP_STATUS_ACTIVE = 2; // live on the storefront
+  SHOP_STATUS_SUSPENDED = 3; // taken down by an operator
+}
+
+message Shop {
+  string id = 1;
+  string owner_id = 2; // Keycloak sub
+  string name = 3;
+  string slug = 4; // URL-safe, derived from name, unique
+  string description = 5;
+  string contact_email = 6;
+  ShopStatus status = 7;
+  string suspension_reason = 8; // set while SUSPENDED
+  string created_at = 9;
+  string updated_at = 10;
+}
+
+message CreateShopRequest {
+  string name = 1;
+  string description = 2;
+  string contact_email = 3;
+}
+
+message GetMyShopRequest {}
+
+message GetShopRequest {
+  oneof selector {
+    string id = 1;
+    string slug = 2;
+  }
+}
+
+message UpdateShopRequest {
+  string name = 1;
+  string description = 2;
+  string contact_email = 3;
+}
+
+message ListShopsRequest {
+  commerce.common.v1.PageRequest page = 1;
+  ShopStatus status = 2; // optional filter; UNSPECIFIED = any
+}
+
+message ListShopsResponse {
+  repeated Shop shops = 1;
+  commerce.common.v1.PageResponse page = 2;
+}
+
+message ActivateShopRequest {
+  string id = 1;
+}
+
+message SuspendShopRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+// --- events (topic: commerce.shop.<event>) ---
+
+message ShopCreated {
+  string shop_id = 1;
+  string owner_id = 2;
+  string name = 3;
+  string slug = 4;
+  string occurred_at = 5;
+}
+
+message ShopActivated {
+  string shop_id = 1;
+  string owner_id = 2;
+  string slug = 3;
+  string occurred_at = 4;
+}
+
+message ShopSuspended {
+  string shop_id = 1;
+  string owner_id = 2;
+  string reason = 3;
+  string occurred_at = 4;
+}

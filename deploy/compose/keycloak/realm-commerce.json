@@ -25,12 +25,13 @@
       { "name": "pricing_manager", "description": "Manage prices, promotions, coupons" },
       { "name": "order_manager", "description": "Full order lifecycle actions" },
       { "name": "finance", "description": "Payments/refunds reporting, reconciliation" },
+      { "name": "shop_admin", "description": "Review, activate and suspend marketplace shops" },
       {
         "name": "admin",
         "description": "All business operations",
         "composite": true,
         "composites": {
-          "realm": ["csr", "catalog_manager", "inventory_manager", "pricing_manager", "order_manager", "finance"]
+          "realm": ["csr", "catalog_manager", "inventory_manager", "pricing_manager", "order_manager", "finance", "shop_admin"]
         }
       },
       { "name": "platform_admin", "description": "User/role administration, system config" }

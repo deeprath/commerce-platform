@@ -13,12 +13,13 @@ import (
 	pricingv1 "github.com/deeprath/commerce-platform/gen/go/commerce/pricing/v1"
 	reviewv1 "github.com/deeprath/commerce-platform/gen/go/commerce/review/v1"
 	searchv1 "github.com/deeprath/commerce-platform/gen/go/commerce/search/v1"
+	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
 	"github.com/deeprath/commerce-platform/pkg/grpcx"
 )
 
 // Targets is the set of downstream addresses.
 type Targets struct {
-	Catalog, Media, Search, Cart, Pricing, Order, Payment, Fulfillment, Review string
+	Catalog, Media, Search, Cart, Pricing, Order, Payment, Fulfillment, Review, Seller string
 }
 
 type Set struct {
@@ -31,6 +32,7 @@ type Set struct {
 	Payment     paymentv1.PaymentServiceClient
 	Fulfillment fulfillmentv1.FulfillmentServiceClient
 	Review      reviewv1.ReviewServiceClient
+	Seller      sellerv1.SellerServiceClient
 
 	conns []*grpc.ClientConn
 }
@@ -63,6 +65,7 @@ func Dial(t Targets) (*Set, error) {
 		{t.Payment, func(c *grpc.ClientConn) { s.Payment = paymentv1.NewPaymentServiceClient(c) }},
 		{t.Fulfillment, func(c *grpc.ClientConn) { s.Fulfillment = fulfillmentv1.NewFulfillmentServiceClient(c) }},
 		{t.Review, func(c *grpc.ClientConn) { s.Review = reviewv1.NewReviewServiceClient(c) }},
+		{t.Seller, func(c *grpc.ClientConn) { s.Seller = sellerv1.NewSellerServiceClient(c) }},
 	} {
 		cc, err := conn(w.addr)
 		if err != nil {

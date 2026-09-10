@@ -1,0 +1,118 @@
+package api
+
+import (
+	"github.com/labstack/echo/v4"
+
+	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
+)
+
+// createShop — POST /api/v1/seller/shops
+func (s *Server) createShop(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	var in sellerv1.CreateShopRequest
+	if err := bindProto(c, &in); err != nil {
+		return err
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Seller.CreateShop(ctx, &in)
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 201, res)
+}
+
+// getMyShop — GET /api/v1/seller/shops/me
+func (s *Server) getMyShop(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Seller.GetMyShop(ctx, &sellerv1.GetMyShopRequest{})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// updateShop — PUT /api/v1/seller/shops/me
+func (s *Server) updateShop(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	var in sellerv1.UpdateShopRequest
+	if err := bindProto(c, &in); err != nil {
+		return err
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Seller.UpdateShop(ctx, &in)
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// getShop — GET /api/v1/shops/:slug (public; the service hides non-ACTIVE shops)
+func (s *Server) getShop(c echo.Context) error {
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Seller.GetShop(ctx, &sellerv1.GetShopRequest{
+		Selector: &sellerv1.GetShopRequest_Slug{Slug: c.Param("slug")},
+	})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// adminListShops — GET /api/v1/admin/seller/shops?status=
+func (s *Server) adminListShops(c echo.Context) error {
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	req := &sellerv1.ListShopsRequest{Page: page(c)}
+	switch c.QueryParam("status") {
+	case "PENDING_REVIEW":
+		req.Status = sellerv1.ShopStatus_SHOP_STATUS_PENDING_REVIEW
+	case "ACTIVE":
+		req.Status = sellerv1.ShopStatus_SHOP_STATUS_ACTIVE
+	case "SUSPENDED":
+		req.Status = sellerv1.ShopStatus_SHOP_STATUS_SUSPENDED
+	}
+	res, err := s.cl.Seller.ListShops(ctx, req)
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// adminActivateShop — POST /api/v1/admin/seller/shops/:id/activate
+func (s *Server) adminActivateShop(c echo.Context) error {
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Seller.ActivateShop(ctx, &sellerv1.ActivateShopRequest{Id: c.Param("id")})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// adminSuspendShop — POST /api/v1/admin/seller/shops/:id/suspend {"reason": "..."}
+func (s *Server) adminSuspendShop(c echo.Context) error {
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if err := bindJSON(c, &body); err != nil {
+		return err
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Seller.SuspendShop(ctx, &sellerv1.SuspendShopRequest{Id: c.Param("id"), Reason: body.Reason})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
