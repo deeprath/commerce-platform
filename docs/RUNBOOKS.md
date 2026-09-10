@@ -42,6 +42,7 @@ Design context is in [`ARCHITECTURE.md`](ARCHITECTURE.md) §11 and
 | A Kafka broker is down / partitions under-replicated | **RB-5** |
 | A downstream service lost its DB and its Kafka-derived state is stale | RB-1/RB-2 to restore the DB, then **RB-6** to re-drive events. |
 | A deploy is bad (errors, latency, failed canary) | **RB-7** |
+| One availability zone is down | **RB-9** (mostly automatic — verify, don't fail the region) |
 | The cluster / region is gone | **RB-8** |
 
 ---
@@ -275,6 +276,45 @@ the problem, RB-2.
 
 ---
 
+## RB-9 — Single availability-zone loss
+
+A single-AZ outage is designed to be a **non-event** — the platform absorbs it
+without an operator (see [DECISIONS.md ADR-037](DECISIONS.md)). This runbook is
+mostly *verification*.
+
+**What the platform does on its own:**
+- **Pods:** `topologySpreadConstraints` on `topology.kubernetes.io/zone` keep at
+  least one replica in each surviving zone. `bff` / `order` / `payment` use
+  `DoNotSchedule` (with `replicas ≥ 3`), so a healthy zone always has a copy.
+- **Voluntary drains:** the critical services' PDBs are `maxUnavailable: 34%`, so
+  a node-pool upgrade rolling one zone at a time never evicts more than that
+  zone's share; `minAvailable: 1` elsewhere.
+- **East-west traffic:** each service's `<svc>-locality` DestinationRule ejects
+  the dead zone's endpoints via `outlierDetection` and `localityLbSetting`
+  fails calls over to the next zone. In-zone preference resumes automatically
+  when the zone returns.
+- **Capacity:** KEDA/HPA see the raised per-pod load and scale the survivors up
+  (bounded by `maxReplicas`).
+
+**Operator checklist (only if alerts fire):**
+1. Confirm it's one zone: `kubectl get nodes -L topology.kubernetes.io/zone` —
+   `NotReady` clustered in one zone.
+2. Check spread held: `kubectl get pods -n commerce -o wide | grep -c <zone>` for
+   each surviving zone; every critical service should still list ≥ 1 elsewhere.
+3. Watch autoscaling: `kubectl get hpa,scaledobject -n commerce` — survivors
+   should be scaling toward `maxReplicas`. If a service is pinned at `max` and
+   shedding load, raise `maxReplicas` and re-sync Argo CD.
+4. If pods are `Pending` on a critical service (its `DoNotSchedule` zone
+   constraint can't be met because another zone is *also* degraded), temporarily
+   relax it: `helm upgrade … --set services.<svc>.topologySpread.zone.whenUnsatisfiable=ScheduleAnyway`.
+5. Stateful deps (Postgres/Kafka/MinIO) ride their own multi-AZ replication —
+   no action here; if a Postgres primary was in the dead zone, CloudNativePG
+   promotes a replica automatically (verify with `kubectl get cluster`).
+
+**Do not** fail the whole region (RB-8) for one zone.
+
+---
+
 ## Drills
 
 | What | Cadence | How |
@@ -282,6 +322,7 @@ the problem, RB-2.
 | Postgres restore verification | every CI run of the `dr` job + weekly on staging | `infra/dr/verify-restore.sh` (dump → restore into a scratch DB → row-count compare) |
 | PITR to a random timestamp | quarterly, staging | RB-2 against real backup store |
 | MinIO object + bucket restore | quarterly | RB-3 / RB-4 on a `dr-drill/` prefix |
+| Single-zone loss (**RB-9**) | quarterly, staging | cordon+drain one zone's nodes; assert checkout stays green (k6) and pods stay spread |
 | Full RB-8 game day | twice a year | scripted region failover, timed against the RTO |
 
 Record each drill (date, RTO achieved, issues) below.

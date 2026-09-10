@@ -7,6 +7,8 @@ global:
     enabled: false # no KEDA / Prometheus in a bare kind cluster
   rollout:
     enabled: false # no Argo Rollouts controller in a bare kind cluster
+  multiZone:
+    enabled: false # single-node kind: no zones, no DestinationRules
   image:
     tag: dev
     pullPolicy: Never

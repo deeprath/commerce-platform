@@ -39,10 +39,24 @@ spec:
       topologySpreadConstraints:
         - maxSkew: {{ $svc.topologySpread.maxSkew }}
           topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
+          whenUnsatisfiable: {{ $svc.topologySpread.node.whenUnsatisfiable }}
           labelSelector:
             matchLabels:
               {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 14 }}
+          # Spread each ReplicaSet independently so a rollout's new pods don't
+          # count against the old ones' skew.
+          matchLabelKeys:
+            - pod-template-hash
+        {{- if and $g.multiZone.enabled $svc.topologySpread.zone.enabled }}
+        - maxSkew: {{ $svc.topologySpread.maxSkew }}
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: {{ $svc.topologySpread.zone.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "commerce.selectorLabels" (dict "name" $name) | nindent 14 }}
+          matchLabelKeys:
+            - pod-template-hash
+        {{- end }}
       {{- end }}
       containers:
         - name: {{ $name }}
