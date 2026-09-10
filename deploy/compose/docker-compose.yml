@@ -561,6 +561,20 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  # One-shot demo-catalog seeder. Idempotent — runs on every `up`, exits 0 once
+  # the products exist. Also gives every product a stock row (catalog emits
+  # product_changed -> inventory consumer). See deploy/compose/seed/.
+  catalog-seed:
+    image: curlimages/curl:${CURL_TAG}
+    entrypoint: ["sh", "/seed/seed.sh"]
+    volumes: ["./seed:/seed:ro"]
+    depends_on:
+      bff: { condition: service_started }
+      keycloak: { condition: service_healthy }
+    restart: "no"
+    networks: [commerce]
+    logging: *default-logging
+
   storefront:
     build:
       context: ../..

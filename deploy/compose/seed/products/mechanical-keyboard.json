@@ -1,0 +1,11 @@
+{
+  "slug": "mechanical-keyboard",
+  "title": "65% Mechanical Keyboard",
+  "description": "Hot-swappable 65% mechanical keyboard, tactile switches, PBT keycaps, USB-C.",
+  "category_id": "gear",
+  "list_price": {
+    "currency_code": "USD",
+    "units": "89",
+    "nanos": 0
+  }
+}

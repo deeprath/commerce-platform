@@ -117,14 +117,12 @@ versioning ceremony. `go.work` keeps each service an independently buildable mod
 
 ## Getting started (local)
 
-> Scaffolding is not generated yet — this section is the intended workflow.
-
 ```bash
 task proto        # generate Go + TS stubs from proto/ via buf
 task up           # docker-compose: all services + Postgres, Redis, Kafka, OpenSearch,
-                  #   MinIO, Keycloak, and the Grafana/Prometheus/Loki/Tempo stack
-task migrate      # run all service migrations
-task seed         # demo catalog + a testuser
+                  #   MinIO, Keycloak, and the Grafana/Prometheus/Loki/Tempo stack.
+                  #   Service migrations run at startup; a one-shot seeder publishes
+                  #   a small demo catalog (also `task seed` to re-run it).
 task test         # unit + integration (integration uses testcontainers)
 ```
 
