@@ -108,7 +108,7 @@ export function track(type: TrackType, props: TrackProps = {}): void {
     flushEvents();
     return;
   }
-  if (!timer) timer = setTimeout(flushEvents, FLUSH_DELAY_MS);
+  timer ??= setTimeout(flushEvents, FLUSH_DELAY_MS);
 }
 
 // Money (protojson) -> integer minor units, matching the server's convention.
