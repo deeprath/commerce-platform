@@ -6,6 +6,8 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -135,18 +137,32 @@ func BearerFromAuthHeader(h string) (string, bool) {
 	return "", false
 }
 
-// ParseInsecure decodes a token WITHOUT verifying its signature and checks only
-// that it is structurally a JWT and not expired (with 60s leeway). This is what
-// the ingress ext-authz uses to shed obviously-bad requests early. It MUST NOT
-// be used to establish identity — services call Verify for that.
+// ParseInsecure decodes a token's claims WITHOUT verifying its signature and
+// checks only that it is structurally a JWT (three base64url segments, a
+// JSON header and a JSON claims payload) and not expired (with 60s leeway).
+// This is what the ingress ext-authz uses to shed obviously-bad requests
+// early. It MUST NOT be used to establish identity — services call Verify
+// for that.
+//
+// This deliberately does not go through jwt-go's Parse/ParseUnverified: those
+// names invite exactly the "looks like a verified parse" misuse this function
+// exists to avoid (an option like WithValidMethods reads as if it restricts
+// which algorithms are *accepted*, but ParseUnverified never checks a
+// signature under any algorithm, so it does nothing here). A plain
+// base64url+JSON decode makes the "no signature check happens, ever" property
+// visible directly in the code instead of resting on a parser option that
+// looks stronger than it is.
 func ParseInsecure(raw string) (jwt.MapClaims, error) {
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return nil, errs.New(errs.KindUnauthenticated, "TOKEN_MALFORMED", "not a JWT")
+	}
+	var header struct{}
+	if err := decodeJWTSegment(parts[0], &header); err != nil {
+		return nil, errs.Wrap(err, errs.KindUnauthenticated, "TOKEN_MALFORMED", "not a JWT")
+	}
 	claims := jwt.MapClaims{}
-	// WithValidMethods still doesn't verify the signature (ParseUnverified never
-	// does) but it does reject an "alg: none"/mismatched-algorithm token at the
-	// structural-check stage instead of blindly trusting its header, closing the
-	// classic algorithm-confusion class of issue even for this fast, unverified path.
-	p := jwt.NewParser(jwt.WithoutClaimsValidation(), jwt.WithValidMethods([]string{"RS256"}))
-	if _, _, err := p.ParseUnverified(raw, claims); err != nil {
+	if err := decodeJWTSegment(parts[1], &claims); err != nil {
 		return nil, errs.Wrap(err, errs.KindUnauthenticated, "TOKEN_MALFORMED", "not a JWT")
 	}
 	if exp, err := claims.GetExpirationTime(); err == nil && exp != nil {
@@ -155,4 +171,15 @@ func ParseInsecure(raw string) (jwt.MapClaims, error) {
 		}
 	}
 	return claims, nil
+}
+
+// decodeJWTSegment base64url-decodes one dot-separated JWT segment and
+// unmarshals it as JSON into v. Used only for the unverified structural check
+// above — never for anything that trusts the decoded content.
+func decodeJWTSegment(segment string, v any) error {
+	raw, err := base64.RawURLEncoding.DecodeString(segment)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, v)
 }
