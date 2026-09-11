@@ -68,6 +68,17 @@ type Verifier struct {
 }
 
 // NewVerifier builds a Verifier and starts background JWKS refresh.
+//
+// A JWKS endpoint that is unreachable or errors on the initial fetch does NOT
+// fail this call — keyfunc's underlying HTTP client logs the failure and
+// returns a key set that is simply empty (this is a hardcoded upstream
+// behavior, not a choice made here). The practical effect is fail-closed:
+// every subsequent Verify call rejects with "unknown kid" until the next
+// background refresh succeeds. But it means a health check that only checks
+// this function's error return will not catch "Keycloak was unreachable at
+// boot" — the service reports healthy while rejecting every token. Verify
+// the JWKS URL is actually reachable independently if that distinction
+// matters for your startup probe.
 func NewVerifier(ctx context.Context, cfg Config) (*Verifier, error) {
 	if cfg.JWKSURL == "" || cfg.Issuer == "" {
 		return nil, fmt.Errorf("auth: JWKSURL and Issuer are required")
