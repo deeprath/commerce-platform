@@ -152,18 +152,21 @@ func BearerFromAuthHeader(h string) (string, bool) {
 // base64url+JSON decode makes the "no signature check happens, ever" property
 // visible directly in the code instead of resting on a parser option that
 // looks stronger than it is.
+// notAJWTMsg is shared by every structural rejection in ParseInsecure below.
+const notAJWTMsg = "not a JWT"
+
 func ParseInsecure(raw string) (jwt.MapClaims, error) {
 	parts := strings.Split(raw, ".")
 	if len(parts) != 3 {
-		return nil, errs.New(errs.KindUnauthenticated, "TOKEN_MALFORMED", "not a JWT")
+		return nil, errs.New(errs.KindUnauthenticated, "TOKEN_MALFORMED", notAJWTMsg)
 	}
 	var header struct{}
 	if err := decodeJWTSegment(parts[0], &header); err != nil {
-		return nil, errs.Wrap(err, errs.KindUnauthenticated, "TOKEN_MALFORMED", "not a JWT")
+		return nil, errs.Wrap(err, errs.KindUnauthenticated, "TOKEN_MALFORMED", notAJWTMsg)
 	}
 	claims := jwt.MapClaims{}
 	if err := decodeJWTSegment(parts[1], &claims); err != nil {
-		return nil, errs.Wrap(err, errs.KindUnauthenticated, "TOKEN_MALFORMED", "not a JWT")
+		return nil, errs.Wrap(err, errs.KindUnauthenticated, "TOKEN_MALFORMED", notAJWTMsg)
 	}
 	if exp, err := claims.GetExpirationTime(); err == nil && exp != nil {
 		if time.Now().Add(-60 * time.Second).After(exp.Time) {
