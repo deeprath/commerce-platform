@@ -62,13 +62,13 @@ func manager(sub string) context.Context {
 
 func seed(t *testing.T, st *store.Store, orderID, owner string) *domain.Shipment {
 	t.Helper()
-	sh, err := st.CreateFromOrder(context.Background(), orderID, owner,
+	created, err := st.CreateFromOrder(context.Background(), orderID, owner,
 		domain.Address{FullName: "Buyer", Line1: "1 Main St", City: "Springfield", Region: "IL", PostalCode: "62701", CountryCode: "US"},
-		[]domain.Item{{ProductID: "p1", Title: "Desk Lamp", Quantity: 2}}, "seed:"+orderID)
-	if err != nil {
-		t.Fatalf("seed shipment: %v", err)
+		[]store.ShopItems{{Items: []domain.Item{{ProductID: "p1", Title: "Desk Lamp", Quantity: 2}}}}, "seed:"+orderID)
+	if err != nil || len(created) != 1 {
+		t.Fatalf("seed shipment: %v %+v", err, created)
 	}
-	return sh
+	return created[0]
 }
 
 func TestGetAndList_OwnerScoping(t *testing.T) {

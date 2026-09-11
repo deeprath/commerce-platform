@@ -34,6 +34,9 @@ message QuoteLine {
   int32 quantity = 3;
   commerce.common.v1.Money unit_price = 4;
   commerce.common.v1.Money line_total = 5; // unit_price * quantity
+  // Owning marketplace shop, copied from the catalog product. Empty => a
+  // first-party line. Passed through to the order service unchanged.
+  string shop_id = 6;
 }
 
 message Quote {

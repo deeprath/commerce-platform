@@ -166,15 +166,12 @@ func (o *Orchestrator) OnPaymentFailed(ctx context.Context, eventID, orderID, re
 	return nil
 }
 
-// OnShipmentDelivered: the order's shipment was delivered — move CONFIRMED ->
-// FULFILLED. Idempotent and safe for an already-cancelled order (no-op).
-func (o *Orchestrator) OnShipmentDelivered(ctx context.Context, eventID, orderID string) error {
-	_, err := o.store.Apply(ctx, orderID, eventID, func(o *domain.Order) error {
-		if o.Status != domain.StatusConfirmed {
-			return nil // not confirmed (cancelled, or already fulfilled) — ignore
-		}
-		return o.Fulfill()
-	})
+// OnShipmentDelivered: one of the order's shop shipments was delivered. Once
+// every shop group has delivered (domain.Order.ShopGroups), the order moves
+// CONFIRMED -> FULFILLED; until then this just records the shop's delivery.
+// Idempotent and safe for an already-cancelled order (no-op).
+func (o *Orchestrator) OnShipmentDelivered(ctx context.Context, eventID, orderID, shopID string) error {
+	_, err := o.store.ApplyShipmentDelivered(ctx, orderID, shopID, eventID)
 	return err
 }
 
@@ -248,7 +245,7 @@ func linesFromQuote(q *pricingv1.Quote) []domain.Line {
 	out := make([]domain.Line, 0, len(q.GetLines()))
 	for _, l := range q.GetLines() {
 		out = append(out, domain.Line{
-			ProductID: l.GetProductId(), Title: l.GetTitle(), Quantity: l.GetQuantity(),
+			ProductID: l.GetProductId(), Title: l.GetTitle(), Quantity: l.GetQuantity(), ShopID: l.GetShopId(),
 			UnitPrice: moneyFrom(l.GetUnitPrice()), LineTotal: moneyFrom(l.GetLineTotal()),
 		})
 	}

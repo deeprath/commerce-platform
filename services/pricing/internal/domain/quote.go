@@ -46,6 +46,10 @@ type Line struct {
 	Quantity  int32
 	UnitPrice Money
 	LineTotal Money
+	// ShopID is the owning marketplace shop, copied from the catalog product.
+	// Empty => a first-party line. Not part of the pricing math or the quote
+	// signature (it's derived from ProductID, already covered there).
+	ShopID string
 }
 
 // Quote is the fully priced result.

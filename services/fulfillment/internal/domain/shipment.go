@@ -39,6 +39,10 @@ type Shipment struct {
 	ShippedAt      *time.Time
 	DeliveredAt    *time.Time
 	CancelReason   string
+	// ShopID is the marketplace shop that owns this shipment's items; empty
+	// => first-party. An order with lines from several shops (plus possibly
+	// first-party lines) gets one shipment per distinct shop_id.
+	ShopID string
 }
 
 // CanTransitionTo reports whether the shipment may move to `to`.

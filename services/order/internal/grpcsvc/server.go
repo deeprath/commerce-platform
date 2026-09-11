@@ -148,7 +148,7 @@ func toProto(o *domain.Order) *orderv1.Order {
 	}
 	for _, l := range o.Lines {
 		out.Lines = append(out.Lines, &orderv1.OrderLine{
-			ProductId: l.ProductID, Title: l.Title, Quantity: l.Quantity,
+			ProductId: l.ProductID, Title: l.Title, Quantity: l.Quantity, ShopId: l.ShopID,
 			UnitPrice: m(l.UnitPrice), LineTotal: m(l.LineTotal),
 		})
 	}

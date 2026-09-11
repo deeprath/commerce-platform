@@ -53,11 +53,13 @@ func TestAdvancerSweep_DrivesPendingToDelivered(t *testing.T) {
 	ctx := context.Background()
 	st := store.New(spinUp(t))
 
-	sh, err := st.CreateFromOrder(ctx, "order-1", "owner-1",
-		domain.Address{FullName: "Buyer"}, []domain.Item{{ProductID: "p1", Quantity: 1}}, "e:0:1")
-	if err != nil {
-		t.Fatalf("seed: %v", err)
+	created, err := st.CreateFromOrder(ctx, "order-1", "owner-1",
+		domain.Address{FullName: "Buyer"},
+		[]store.ShopItems{{Items: []domain.Item{{ProductID: "p1", Quantity: 1}}}}, "e:0:1")
+	if err != nil || len(created) != 1 {
+		t.Fatalf("seed: %v %+v", err, created)
 	}
+	sh := created[0]
 
 	// Zero delays => every due shipment advances one step per sweep.
 	a := New(st, time.Minute, 0, 0)
@@ -84,11 +86,14 @@ func TestAdvancerSweep_DrivesPendingToDelivered(t *testing.T) {
 	}
 
 	// A long threshold leaves a fresh PENDING shipment untouched.
-	fresh, _ := st.CreateFromOrder(ctx, "order-2", "owner-2",
-		domain.Address{}, nil, "e:0:2")
+	fresh, err := st.CreateFromOrder(ctx, "order-2", "owner-2",
+		domain.Address{}, []store.ShopItems{{}}, "e:0:2")
+	if err != nil || len(fresh) != 1 {
+		t.Fatalf("seed fresh: %v %+v", err, fresh)
+	}
 	slow := New(st, time.Minute, time.Hour, time.Hour)
 	slow.sweep(ctx)
-	got, _ = st.Get(ctx, fresh.ID, "")
+	got, _ = st.Get(ctx, fresh[0].ID, "")
 	if got.Status != domain.StatusPending {
 		t.Fatalf("fresh shipment advanced despite 1h threshold: %s", got.Status)
 	}
@@ -98,11 +103,12 @@ func TestAdvancerSweep_DrivesPendingToDelivered(t *testing.T) {
 func TestAdvancerRun_TicksThenStops(t *testing.T) {
 	ctx := context.Background()
 	st := store.New(spinUp(t))
-	sh, err := st.CreateFromOrder(ctx, "order-run", "owner-run",
-		domain.Address{}, []domain.Item{{ProductID: "p1", Quantity: 1}}, "e:9:1")
-	if err != nil {
-		t.Fatalf("seed: %v", err)
+	created, err := st.CreateFromOrder(ctx, "order-run", "owner-run",
+		domain.Address{}, []store.ShopItems{{Items: []domain.Item{{ProductID: "p1", Quantity: 1}}}}, "e:9:1")
+	if err != nil || len(created) != 1 {
+		t.Fatalf("seed: %v %+v", err, created)
 	}
+	sh := created[0]
 
 	runCtx, cancel := context.WithCancel(ctx)
 	a := New(st, 20*time.Millisecond, 0, 0)

@@ -7,9 +7,13 @@ syntax = "proto3";
 // moves a shipment PENDING -> SHIPPED -> DELIVERED on a short delay. In
 // production the advancer is replaced by a signature-verified carrier webhook —
 // the emitted events are identical either way. The order service consumes
-// commerce.fulfillment.delivered and moves the order to FULFILLED.
+// commerce.fulfillment.delivered and moves the order to FULFILLED once every
+// one of the order's shipments has been delivered.
 //
-// v1 simplification: exactly one shipment per order (no split shipments).
+// An order's lines are grouped by shop_id into one shipment per shop (plus one
+// for any first-party lines, shop_id "") — a marketplace order spanning two
+// shops produces two independent shipments, each carrying only that shop's
+// items and advancing through PENDING/SHIPPED/DELIVERED on its own.
 package commerce.fulfillment.v1;
 
 import "commerce/common/v1/types.proto";
@@ -60,6 +64,9 @@ message Shipment {
   string shipped_at = 10;
   string delivered_at = 11;
   string cancel_reason = 12;
+  // The shop this shipment's items belong to; empty => first-party items.
+  // One order can have multiple shipments, at most one per distinct shop_id.
+  string shop_id = 13;
 }
 
 message GetShipmentRequest {
@@ -101,6 +108,7 @@ message ShipmentCreated {
   string order_id = 2;
   string owner_id = 3;
   string occurred_at = 4;
+  string shop_id = 5;
 }
 
 message ShipmentShipped {
@@ -110,6 +118,7 @@ message ShipmentShipped {
   string carrier = 4;
   string tracking_number = 5;
   string occurred_at = 6;
+  string shop_id = 7;
 }
 
 message ShipmentDelivered {
@@ -117,6 +126,10 @@ message ShipmentDelivered {
   string order_id = 2;
   string owner_id = 3;
   string occurred_at = 4;
+  // The order service consumes this to know which of the order's shop
+  // groups just delivered, so it can wait for every group before marking
+  // the order FULFILLED.
+  string shop_id = 5;
 }
 
 message ShipmentCancelled {
@@ -125,4 +138,5 @@ message ShipmentCancelled {
   string owner_id = 3;
   string reason = 4;
   string occurred_at = 5;
+  string shop_id = 6;
 }

@@ -50,9 +50,9 @@ func (s *Store) Insert(ctx context.Context, o *domain.Order) error {
 	}
 	for _, l := range o.Lines {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO order_lines (order_id, product_id, title, quantity, unit_price_cents, line_total_cents)
-			VALUES ($1,$2,$3,$4,$5,$6)`,
-			o.ID, l.ProductID, l.Title, l.Quantity, l.UnitPrice.Cents, l.LineTotal.Cents); err != nil {
+			INSERT INTO order_lines (order_id, product_id, title, quantity, unit_price_cents, line_total_cents, shop_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+			o.ID, l.ProductID, l.Title, l.Quantity, l.UnitPrice.Cents, l.LineTotal.Cents, l.ShopID); err != nil {
 			return wrap(err)
 		}
 	}
@@ -117,7 +117,7 @@ func (s *Store) get(ctx context.Context, q querier, id, ownerID string) (*domain
 	_ = json.Unmarshal(shipTo, &o.ShipTo)
 
 	rows, err := q.Query(ctx,
-		`SELECT product_id, title, quantity, unit_price_cents, line_total_cents FROM order_lines WHERE order_id = $1 ORDER BY product_id`, id)
+		`SELECT product_id, title, quantity, unit_price_cents, line_total_cents, shop_id FROM order_lines WHERE order_id = $1 ORDER BY product_id`, id)
 	if err != nil {
 		return nil, wrap(err)
 	}
@@ -125,7 +125,7 @@ func (s *Store) get(ctx context.Context, q querier, id, ownerID string) (*domain
 	for rows.Next() {
 		var l domain.Line
 		var up, lt int64
-		if err := rows.Scan(&l.ProductID, &l.Title, &l.Quantity, &up, &lt); err != nil {
+		if err := rows.Scan(&l.ProductID, &l.Title, &l.Quantity, &up, &lt, &l.ShopID); err != nil {
 			return nil, wrap(err)
 		}
 		l.UnitPrice = domain.Money{Currency: cur, Cents: up}
@@ -250,6 +250,76 @@ func (s *Store) Apply(ctx context.Context, orderID, eventID string, fn func(*dom
 	return o, nil
 }
 
+// ApplyShipmentDelivered records that shopID's shipment delivered for orderID
+// and, if every one of the order's shop groups (domain.Order.ShopGroups) has
+// now delivered, transitions the order CONFIRMED -> FULFILLED and writes the
+// order.fulfilled outbox row. Idempotent two ways: eventID dedupes a
+// redelivered Kafka record (processed_events, like Apply), and the
+// (order_id, shop_id) primary key dedupes a redelivered event for a shop that
+// already recorded its delivery. An order not in CONFIRMED (already
+// cancelled or fulfilled) is left untouched.
+func (s *Store) ApplyShipmentDelivered(ctx context.Context, orderID, shopID, eventID string) (*domain.Order, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, wrap(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if eventID != "" {
+		_, err := tx.Exec(ctx, `INSERT INTO processed_events (event_id) VALUES ($1)`, eventID)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, nil // already processed
+		}
+		if err != nil {
+			return nil, wrap(err)
+		}
+	}
+
+	o, err := s.get(ctx, tx, orderID, "")
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO order_shipment_deliveries (order_id, shop_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+		orderID, shopID); err != nil {
+		return nil, wrap(err)
+	}
+
+	if o.Status != domain.StatusConfirmed {
+		return o, wrap(tx.Commit(ctx)) // not (or no longer) waiting on shipments
+	}
+
+	required := o.ShopGroups()
+	var delivered int
+	if err := tx.QueryRow(ctx,
+		`SELECT count(DISTINCT shop_id) FROM order_shipment_deliveries WHERE order_id = $1 AND shop_id = ANY($2)`,
+		orderID, required).Scan(&delivered); err != nil {
+		return nil, wrap(err)
+	}
+	if delivered < len(required) {
+		return o, wrap(tx.Commit(ctx)) // still waiting on the order's other shop(s)
+	}
+
+	if err := o.Fulfill(); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE orders SET status = $2, cancel_reason = $3, payment_id = $4, reservation_id = $5, updated_at = now()
+		WHERE id = $1`,
+		o.ID, string(o.Status), o.CancelReason, o.PaymentID, o.ReservationID); err != nil {
+		return nil, wrap(err)
+	}
+	if err := outboxTransition(ctx, tx, o); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, wrap(err)
+	}
+	return o, nil
+}
+
 type querier interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 	Query(context.Context, string, ...any) (pgx.Rows, error)
@@ -311,7 +381,7 @@ func linesProto(lines []domain.Line) []*orderv1.OrderLine {
 		uu, un := l.UnitPrice.UnitsNanos()
 		lu, ln := l.LineTotal.UnitsNanos()
 		out = append(out, &orderv1.OrderLine{
-			ProductId: l.ProductID, Title: l.Title, Quantity: l.Quantity,
+			ProductId: l.ProductID, Title: l.Title, Quantity: l.Quantity, ShopId: l.ShopID,
 			UnitPrice: &commonv1.Money{CurrencyCode: l.UnitPrice.Currency, Units: uu, Nanos: un},
 			LineTotal: &commonv1.Money{CurrencyCode: l.LineTotal.Currency, Units: lu, Nanos: ln},
 		})

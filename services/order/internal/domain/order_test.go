@@ -53,6 +53,33 @@ func TestFulfillTransitions(t *testing.T) {
 	}
 }
 
+func TestShopGroups(t *testing.T) {
+	o := &Order{Lines: []Line{
+		{ProductID: "p1", ShopID: "shop-b"},
+		{ProductID: "p2", ShopID: ""}, // first-party
+		{ProductID: "p3", ShopID: "shop-a"},
+		{ProductID: "p4", ShopID: "shop-b"}, // duplicate group, deduped
+	}}
+	got := o.ShopGroups()
+	want := []string{"", "shop-a", "shop-b"}
+	if len(got) != len(want) {
+		t.Fatalf("groups = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("groups = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestShopGroups_AllFirstParty(t *testing.T) {
+	o := &Order{Lines: []Line{{ProductID: "p1"}, {ProductID: "p2"}}}
+	got := o.ShopGroups()
+	if len(got) != 1 || got[0] != "" {
+		t.Fatalf("groups = %v, want a single empty (first-party) group", got)
+	}
+}
+
 func TestMoneyRoundTrip(t *testing.T) {
 	m := FromUnitsNanos("USD", 43, 190000000)
 	if m.Cents != 4319 {

@@ -57,7 +57,7 @@ func Handler(sg *saga.Orchestrator) func(context.Context, *kgo.Record) error {
 			if err := proto.Unmarshal(r.Value, &e); err != nil {
 				return skip(ctx, r, err)
 			}
-			return sg.OnShipmentDelivered(ctx, eventID, e.GetOrderId())
+			return sg.OnShipmentDelivered(ctx, eventID, e.GetOrderId(), e.GetShopId())
 
 		default:
 			return nil

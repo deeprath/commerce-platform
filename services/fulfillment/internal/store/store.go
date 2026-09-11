@@ -28,16 +28,24 @@ type Store struct{ pool *pgxpool.Pool }
 func New(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 
 const cols = `id, order_id, owner_id, status, carrier, tracking_number, ship_to, items,
-	cancel_reason, created_at, shipped_at, delivered_at`
+	cancel_reason, created_at, shipped_at, delivered_at, shop_id`
 
-// CreateFromOrder inserts the shipment for a confirmed order plus its
-// fulfillment.shipment_created outbox row, and records eventID in
-// processed_events — all atomically. It is idempotent: a duplicate order
-// (or a re-delivered event) returns the existing shipment without emitting a
-// second created event. A duplicate eventID short-circuits with (nil, nil).
+// ShopItems is one shop's slice of a confirmed order's lines — the unit
+// CreateFromOrder turns into a single shipment.
+type ShopItems struct {
+	ShopID string
+	Items  []domain.Item
+}
+
+// CreateFromOrder inserts one shipment per shop group (see ShopItems) for a
+// confirmed order, plus each shipment's fulfillment.shipment_created outbox
+// row, and records eventID in processed_events — all atomically. It is
+// idempotent: a duplicate (order, shop) pair (a re-delivered event) is
+// skipped rather than re-created, and does not emit a second created event.
+// A duplicate eventID short-circuits with (nil, nil).
 func (s *Store) CreateFromOrder(
-	ctx context.Context, orderID, ownerID string, shipTo domain.Address, items []domain.Item, eventID string,
-) (*domain.Shipment, error) {
+	ctx context.Context, orderID, ownerID string, shipTo domain.Address, groups []ShopItems, eventID string,
+) ([]*domain.Shipment, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, wrap(err)
@@ -55,50 +63,47 @@ func (s *Store) CreateFromOrder(
 	}
 
 	shipToJSON, _ := json.Marshal(shipTo)
-	itemsJSON, _ := json.Marshal(items)
 
-	// ON CONFLICT DO NOTHING (not a bare INSERT) so a duplicate order_id does not
-	// abort the transaction — we still need to commit the processed_events row.
-	var id string
-	err = tx.QueryRow(ctx, `
-		INSERT INTO shipments (order_id, owner_id, ship_to, items)
-		VALUES ($1,$2,$3,$4)
-		ON CONFLICT (order_id) DO NOTHING
-		RETURNING id`,
-		orderID, ownerID, shipToJSON, itemsJSON).Scan(&id)
+	var created []*domain.Shipment
+	for _, g := range groups {
+		itemsJSON, _ := json.Marshal(g.Items)
 
-	if errors.Is(err, pgx.ErrNoRows) {
-		// A shipment for this order already exists (redelivered event with a new
-		// offset). Commit the processed_events row and return the existing one,
-		// without emitting a second created event.
-		existing, gerr := scanOne(ctx, tx, `SELECT `+cols+` FROM shipments WHERE order_id = $1`, orderID)
-		if gerr != nil {
-			return nil, gerr
+		// ON CONFLICT DO NOTHING (not a bare INSERT) so a duplicate (order,
+		// shop) pair does not abort the transaction — we still need to
+		// commit the processed_events row and create the other groups.
+		var id string
+		err = tx.QueryRow(ctx, `
+			INSERT INTO shipments (order_id, shop_id, owner_id, ship_to, items)
+			VALUES ($1,$2,$3,$4,$5)
+			ON CONFLICT (order_id, shop_id) DO NOTHING
+			RETURNING id`,
+			orderID, g.ShopID, ownerID, shipToJSON, itemsJSON).Scan(&id)
+
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue // this shop's shipment already exists (redelivered event)
 		}
-		if err := tx.Commit(ctx); err != nil {
+		if err != nil {
 			return nil, wrap(err)
 		}
-		return existing, nil
-	}
-	if err != nil {
-		return nil, wrap(err)
+
+		sh, err := scanOne(ctx, tx, `SELECT `+cols+` FROM shipments WHERE id = $1`, id)
+		if err != nil {
+			return nil, err
+		}
+		if err := emitOutbox(ctx, tx, "commerce.fulfillment.shipment_created",
+			sh.OrderID, &fulfillmentv1.ShipmentCreated{
+				ShipmentId: sh.ID, OrderId: sh.OrderID, OwnerId: sh.OwnerID,
+				ShopId: sh.ShopID, OccurredAt: nowRFC3339(),
+			}); err != nil {
+			return nil, err
+		}
+		created = append(created, sh)
 	}
 
-	sh, err := scanOne(ctx, tx, `SELECT `+cols+` FROM shipments WHERE id = $1`, id)
-	if err != nil {
-		return nil, err
-	}
-	if err := emitOutbox(ctx, tx, "commerce.fulfillment.shipment_created",
-		sh.OrderID, &fulfillmentv1.ShipmentCreated{
-			ShipmentId: sh.ID, OrderId: sh.OrderID, OwnerId: sh.OwnerID,
-			OccurredAt: nowRFC3339(),
-		}); err != nil {
-		return nil, err
-	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, wrap(err)
 	}
-	return sh, nil
+	return created, nil
 }
 
 // Get returns one shipment. ownerID "" skips the owner-scope check.
@@ -265,16 +270,16 @@ func eventFor(sh *domain.Shipment) (string, proto.Message) {
 	case domain.StatusShipped:
 		return "commerce.fulfillment.shipped", &fulfillmentv1.ShipmentShipped{
 			ShipmentId: sh.ID, OrderId: sh.OrderID, OwnerId: sh.OwnerID,
-			Carrier: sh.Carrier, TrackingNumber: sh.TrackingNumber, OccurredAt: now,
+			Carrier: sh.Carrier, TrackingNumber: sh.TrackingNumber, ShopId: sh.ShopID, OccurredAt: now,
 		}
 	case domain.StatusDelivered:
 		return "commerce.fulfillment.delivered", &fulfillmentv1.ShipmentDelivered{
-			ShipmentId: sh.ID, OrderId: sh.OrderID, OwnerId: sh.OwnerID, OccurredAt: now,
+			ShipmentId: sh.ID, OrderId: sh.OrderID, OwnerId: sh.OwnerID, ShopId: sh.ShopID, OccurredAt: now,
 		}
 	case domain.StatusCancelled:
 		return "commerce.fulfillment.cancelled", &fulfillmentv1.ShipmentCancelled{
 			ShipmentId: sh.ID, OrderId: sh.OrderID, OwnerId: sh.OwnerID,
-			Reason: sh.CancelReason, OccurredAt: now,
+			Reason: sh.CancelReason, ShopId: sh.ShopID, OccurredAt: now,
 		}
 	default:
 		return "", nil
@@ -307,7 +312,7 @@ func scanRow(r rowScanner) (*domain.Shipment, error) {
 	)
 	if err := r.Scan(
 		&sh.ID, &sh.OrderID, &sh.OwnerID, &sh.Status, &sh.Carrier, &sh.TrackingNumber,
-		&shipToJSON, &itemJSON, &sh.CancelReason, &sh.CreatedAt, &shippedAt, &deliverAt,
+		&shipToJSON, &itemJSON, &sh.CancelReason, &sh.CreatedAt, &shippedAt, &deliverAt, &sh.ShopID,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, err

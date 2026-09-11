@@ -119,6 +119,7 @@ func toProto(sh *domain.Shipment) *fulfillmentv1.Shipment {
 		},
 		CancelReason: sh.CancelReason,
 		CreatedAt:    sh.CreatedAt.Format(time.RFC3339),
+		ShopId:       sh.ShopID,
 	}
 	if sh.ShippedAt != nil {
 		out.ShippedAt = sh.ShippedAt.Format(time.RFC3339)
