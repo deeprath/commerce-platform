@@ -16,10 +16,14 @@ export default defineConfig({
     },
   },
   test: {
-    // Pure logic tests today (api client, formatters). Switch to "happy-dom"
-    // when component tests are added.
-    environment: "node",
+    // jsdom backs both the pure logic tests and the page/component tests
+    // under src/pages and src/components. happy-dom was tried first (it's
+    // lighter) but doesn't dispatch a form's submit event when a type="submit"
+    // button inside it is clicked, which silently no-ops every form-submit
+    // test in this app (SellerProducts, Checkout, etc.) — jsdom does.
+    environment: "jsdom",
     globals: true,
+    setupFiles: ["./src/setupTests.ts"],
     coverage: {
       // lcov feeds SonarCloud (sonar-project.properties); text is for local runs.
       provider: "v8",
