@@ -233,6 +233,29 @@ a:hover {
   background: #cbd5e1;
   cursor: not-allowed;
 }
+.sold-by {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0 0 8px;
+}
+.sold-by-link {
+  font-weight: 600;
+}
+
+/* shop storefront page */
+.shop-page .back {
+  display: inline-block;
+  margin-bottom: 16px;
+}
+.shop-header {
+  margin-bottom: 24px;
+}
+.shop-header h1 {
+  margin: 0 0 8px;
+}
+.shop-header .desc {
+  margin: 0;
+}
 
 /* login */
 .login {

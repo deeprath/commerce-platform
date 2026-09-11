@@ -71,6 +71,23 @@ func (s *Server) getShop(c echo.Context) error {
 	return writeProto(c, 200, res)
 }
 
+// listShopPublicProducts — GET /api/v1/shops/:slug/products (public; ACTIVE only)
+func (s *Server) listShopPublicProducts(c echo.Context) error {
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	shop, err := s.cl.Seller.GetShop(ctx, &sellerv1.GetShopRequest{
+		Selector: &sellerv1.GetShopRequest_Slug{Slug: c.Param("slug")},
+	})
+	if err != nil {
+		return fail(c, err) // NOT_FOUND for a missing/non-ACTIVE shop, same as getShop
+	}
+	res, err := s.cl.Catalog.ListProducts(ctx, &catalogv1.ListProductsRequest{ShopId: shop.GetId(), Page: page(c)})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
 type staffBody struct {
 	Subject string `json:"subject"`
 }

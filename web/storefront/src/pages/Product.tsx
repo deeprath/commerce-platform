@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, mediaUrl } from "../api";
 import { formatMoney } from "../types";
-import type { Product as P } from "../types";
+import type { Product as P, SoldBy } from "../types";
 import { useCart } from "../cart-context";
 import { track } from "../track";
 
@@ -11,6 +11,7 @@ export function Product() {
   const nav = useNavigate();
   const { add } = useCart();
   const [product, setProduct] = useState<P | null>(null);
+  const [soldBy, setSoldBy] = useState<SoldBy | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -24,6 +25,7 @@ export function Product() {
       .then((r) => {
         if (cancelled) return;
         setProduct(r.product);
+        setSoldBy(r.sold_by ?? null);
         track("product_view", { product_id: r.product.id, path: `/p/${slug}` });
       })
       .catch(
@@ -74,6 +76,14 @@ export function Product() {
         </div>
         <div className="pdp-info">
           <h1>{product.title}</h1>
+          {soldBy && (
+            <p className="sold-by">
+              Sold by{" "}
+              <Link to={`/shops/${soldBy.slug}`} className="sold-by-link">
+                {soldBy.name}
+              </Link>
+            </p>
+          )}
           <p className="price big">{formatMoney(product.list_price)}</p>
           <p className="desc">{product.description}</p>
           {Object.keys(product.attributes ?? {}).length > 0 && (

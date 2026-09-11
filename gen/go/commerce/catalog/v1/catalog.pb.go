@@ -299,8 +299,12 @@ func (x *GetProductResponse) GetProduct() *Product {
 type ListProductsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Optional category filter. Empty => all categories.
-	CategoryId    string          `protobuf:"bytes,1,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
-	Page          *v1.PageRequest `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	CategoryId string          `protobuf:"bytes,1,opt,name=category_id,json=categoryId,proto3" json:"category_id,omitempty"`
+	Page       *v1.PageRequest `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	// Optional marketplace shop filter, for a shop's public storefront page.
+	// Empty => any shop (and first-party). Always ACTIVE-only, like the
+	// unfiltered list — this is the public browse RPC, not ListShopProducts.
+	ShopId        string `protobuf:"bytes,3,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -347,6 +351,13 @@ func (x *ListProductsRequest) GetPage() *v1.PageRequest {
 		return x.Page
 	}
 	return nil
+}
+
+func (x *ListProductsRequest) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
 }
 
 type ListProductsResponse struct {
@@ -1000,11 +1011,12 @@ const file_commerce_catalog_v1_catalog_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04slug\x18\x02 \x01(\tR\x04slug\"L\n" +
 	"\x12GetProductResponse\x126\n" +
-	"\aproduct\x18\x01 \x01(\v2\x1c.commerce.catalog.v1.ProductR\aproduct\"k\n" +
+	"\aproduct\x18\x01 \x01(\v2\x1c.commerce.catalog.v1.ProductR\aproduct\"\x84\x01\n" +
 	"\x13ListProductsRequest\x12\x1f\n" +
 	"\vcategory_id\x18\x01 \x01(\tR\n" +
 	"categoryId\x123\n" +
-	"\x04page\x18\x02 \x01(\v2\x1f.commerce.common.v1.PageRequestR\x04page\"\x86\x01\n" +
+	"\x04page\x18\x02 \x01(\v2\x1f.commerce.common.v1.PageRequestR\x04page\x12\x17\n" +
+	"\ashop_id\x18\x03 \x01(\tR\x06shopId\"\x86\x01\n" +
 	"\x14ListProductsResponse\x128\n" +
 	"\bproducts\x18\x01 \x03(\v2\x1c.commerce.catalog.v1.ProductR\bproducts\x124\n" +
 	"\x04page\x18\x02 \x01(\v2 .commerce.common.v1.PageResponseR\x04page\"+\n" +

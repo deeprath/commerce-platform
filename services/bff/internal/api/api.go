@@ -23,6 +23,7 @@ import (
 	commonv1 "github.com/deeprath/commerce-platform/gen/go/commerce/common/v1"
 	mediav1 "github.com/deeprath/commerce-platform/gen/go/commerce/media/v1"
 	searchv1 "github.com/deeprath/commerce-platform/gen/go/commerce/search/v1"
+	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
 	"github.com/deeprath/commerce-platform/pkg/errs"
 	"github.com/deeprath/commerce-platform/services/bff/internal/auth"
 	"github.com/deeprath/commerce-platform/services/bff/internal/clients"
@@ -78,7 +79,8 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	v1.GET("/catalog/products", s.listProducts)
 	v1.GET("/catalog/products/:slug", s.getProduct)
 	v1.GET("/search/autocomplete", s.autocomplete)
-	v1.GET("/shops/:slug", s.getShop) // marketplace shop page (only ACTIVE)
+	v1.GET("/shops/:slug", s.getShop)                         // marketplace shop page (only ACTIVE)
+	v1.GET("/shops/:slug/products", s.listShopPublicProducts) // that shop's ACTIVE listings
 
 	// --- clickstream ingestion (anonymous; navigator.sendBeacon) ---
 	v1.POST("/events", s.ingestEvents)
@@ -229,7 +231,40 @@ func (s *Server) getProduct(c echo.Context) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeProto(c, 200, res)
+	return s.writeProductWithSoldBy(c, ctx, res.GetProduct())
+}
+
+// writeProductWithSoldBy writes {"product": ..., "sold_by": {...}} — the same
+// shape as writeProto(GetProductResponse) plus a "sold_by" shop summary when
+// the product belongs to a marketplace shop. The shop lookup is best-effort:
+// if it fails, the PDP still renders, just without attribution.
+func (s *Server) writeProductWithSoldBy(c echo.Context, ctx context.Context, p *catalogv1.Product) error {
+	if p.GetShopId() == "" {
+		return writeProto(c, 200, &catalogv1.GetProductResponse{Product: p})
+	}
+	shop, err := s.cl.Seller.GetShop(ctx, &sellerv1.GetShopRequest{
+		Selector: &sellerv1.GetShopRequest_Id{Id: p.GetShopId()},
+	})
+	if err != nil {
+		return writeProto(c, 200, &catalogv1.GetProductResponse{Product: p})
+	}
+	pb, err := marshaler.Marshal(p)
+	if err != nil {
+		return c.JSON(500, errs.HTTPError{Status: 500, Code: "INTERNAL", Reason: "MARSHAL"})
+	}
+	return c.JSON(200, struct {
+		Product json.RawMessage `json:"product"`
+		SoldBy  soldByView      `json:"sold_by"`
+	}{
+		Product: pb,
+		SoldBy:  soldByView{ID: shop.GetId(), Name: shop.GetName(), Slug: shop.GetSlug()},
+	})
+}
+
+type soldByView struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 
 func (s *Server) autocomplete(c echo.Context) error {

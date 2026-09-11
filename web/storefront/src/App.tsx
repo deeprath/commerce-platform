@@ -3,6 +3,7 @@ import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { track } from "./track";
 import { Browse } from "./pages/Browse";
 import { Product } from "./pages/Product";
+import { Shop } from "./pages/Shop";
 import { Login } from "./pages/Login";
 import { Cart } from "./pages/Cart";
 import { Checkout } from "./pages/Checkout";
@@ -83,6 +84,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<Browse />} />
           <Route path="/p/:slug" element={<Product />} />
+          <Route path="/shops/:slug" element={<Shop />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout authed={authed} />} />
           <Route path="/orders" element={<Orders authed={authed} />} />

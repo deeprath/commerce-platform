@@ -86,14 +86,19 @@ func (s *Store) GetBySlug(ctx context.Context, slug string) (*domain.Product, er
 	return scanProduct(row)
 }
 
-// List returns ACTIVE products newest-first, optionally filtered by category,
-// paginated by a created_at|id keyset cursor.
-func (s *Store) List(ctx context.Context, categoryID string, limit int, cursor *Cursor) ([]*domain.Product, *Cursor, error) {
+// List returns ACTIVE products newest-first, optionally filtered by category
+// and/or marketplace shop (for a shop's public page), paginated by a
+// created_at|id keyset cursor.
+func (s *Store) List(ctx context.Context, categoryID, shopID string, limit int, cursor *Cursor) ([]*domain.Product, *Cursor, error) {
 	where := "status='ACTIVE'"
 	args := []any{}
 	if categoryID != "" {
 		args = append(args, categoryID)
 		where += " AND category_id=$" + strconv.Itoa(len(args))
+	}
+	if shopID != "" {
+		args = append(args, shopID)
+		where += " AND shop_id=$" + strconv.Itoa(len(args))
 	}
 	return s.listPage(ctx, where, args, limit, cursor)
 }

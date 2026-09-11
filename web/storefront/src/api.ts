@@ -5,6 +5,9 @@ import type {
   CartView,
   Order,
   CheckoutResponse,
+  SoldBy,
+  Shop,
+  ProductListResponse,
 } from "./types";
 
 export interface Address {
@@ -83,12 +86,23 @@ export const api = {
     return req<SearchResponse>(`/catalog/products?${qs.toString()}`);
   },
 
-  product(slug: string): Promise<{ product: Product }> {
+  product(slug: string): Promise<{ product: Product; sold_by?: SoldBy }> {
     return req(`/catalog/products/${encodeURIComponent(slug)}`);
   },
 
   autocomplete(q: string): Promise<{ suggestions: string[] }> {
     return req(`/search/autocomplete?q=${encodeURIComponent(q)}`);
+  },
+
+  // --- marketplace storefront pages ---
+  shop(slug: string): Promise<Shop> {
+    return req(`/shops/${encodeURIComponent(slug)}`);
+  },
+  shopProducts(slug: string, pageToken?: string): Promise<ProductListResponse> {
+    const qs = new URLSearchParams();
+    if (pageToken) qs.set("page_token", pageToken);
+    const q = qs.toString();
+    return req(`/shops/${encodeURIComponent(slug)}/products${q ? `?${q}` : ""}`);
   },
 
   login(username: string, password: string): Promise<{ authenticated: boolean; expires_in: number }> {

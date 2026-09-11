@@ -155,6 +155,37 @@ func TestCatalog_SellerWriteRequiresShopStaff(t *testing.T) {
 	}
 }
 
+func TestCatalog_ListProducts_ShopFilterIsPublicAndActiveOnly(t *testing.T) {
+	f := newFakeFGA()
+	s := newSrv(t, f)
+	const shop = "44444444-4444-4444-4444-444444444444"
+	f.grantStaff("seller-1", shop)
+
+	act, err := s.CreateProduct(customer("seller-1"), createReq("lp-active", shop))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateProduct(customer("seller-1"), createReq("lp-draft", shop)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateProduct(customer("seller-1"), &catalogv1.UpdateProductRequest{
+		Id: act.GetProduct().GetId(), Title: "T", CategoryId: "c",
+		ListPrice: &commonv1.Money{CurrencyCode: "USD", Units: 1000},
+		Status:    catalogv1.ProductStatus_PRODUCT_STATUS_ACTIVE,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Anonymous / no principal at all — the public browse RPC needs no auth.
+	res, err := s.ListProducts(context.Background(), &catalogv1.ListProductsRequest{ShopId: shop})
+	if err != nil {
+		t.Fatalf("ListProducts(shop_id): %v", err)
+	}
+	if len(res.GetProducts()) != 1 || res.GetProducts()[0].GetStatus() != catalogv1.ProductStatus_PRODUCT_STATUS_ACTIVE {
+		t.Fatalf("got %+v, want just the ACTIVE one", res.GetProducts())
+	}
+}
+
 func TestCatalog_ListShopProducts(t *testing.T) {
 	f := newFakeFGA()
 	s := newSrv(t, f)
