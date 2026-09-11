@@ -8,6 +8,10 @@ import { Login } from "./pages/Login";
 import { Cart } from "./pages/Cart";
 import { Checkout } from "./pages/Checkout";
 import { Orders, OrderDetail } from "./pages/Orders";
+import { SellerDashboard } from "./pages/SellerDashboard";
+import { SellerProducts } from "./pages/SellerProducts";
+import { SellerStaff } from "./pages/SellerStaff";
+import { SellerPayouts } from "./pages/SellerPayouts";
 import { api, setUnauthorizedHandler } from "./api";
 import { CartProvider } from "./cart";
 import { useCart } from "./cart-context";
@@ -26,6 +30,7 @@ function Header({ authed, onSignOut }: { authed: boolean; onSignOut: () => void 
         {authed ? (
           <>
             <Link to="/orders">Orders</Link>
+            <Link to="/seller">Seller</Link>
             <button className="linkbtn" onClick={onSignOut}>
               Sign out
             </button>
@@ -89,6 +94,10 @@ export function App() {
           <Route path="/checkout" element={<Checkout authed={authed} />} />
           <Route path="/orders" element={<Orders authed={authed} />} />
           <Route path="/orders/:id" element={<OrderDetail authed={authed} />} />
+          <Route path="/seller" element={<SellerDashboard authed={authed} />} />
+          <Route path="/seller/products" element={<SellerProducts authed={authed} />} />
+          <Route path="/seller/staff" element={<SellerStaff authed={authed} />} />
+          <Route path="/seller/payouts" element={<SellerPayouts authed={authed} />} />
           <Route path="/login" element={<Login onAuthed={onAuthed} />} />
           <Route path="*" element={<p className="muted">Not found.</p>} />
         </Routes>

@@ -46,6 +46,26 @@ export interface ProductListResponse {
   page: PageResponse;
 }
 
+export interface ShopStaff {
+  owner_subject: string;
+  staff_subjects: string[];
+}
+
+export interface Payout {
+  id: string;
+  order_id: string;
+  shop_id: string;
+  amount: Money;
+  status: string;
+  created_at: string;
+  paid_at: string;
+}
+
+export interface PayoutListResponse {
+  payouts: Payout[];
+  page: PageResponse;
+}
+
 export interface Hit {
   product_id: string;
   slug: string;

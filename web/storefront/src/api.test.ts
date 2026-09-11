@@ -98,6 +98,84 @@ describe("api", () => {
   });
 });
 
+describe("seller api", () => {
+  it("creates a shop", async () => {
+    const f = mockFetch(201, { id: "shop-1", name: "My Shop" });
+    await api.createShop({ name: "My Shop", description: "d", contact_email: "a@b.com" });
+    expect(f.mock.calls[0][0]).toBe("/api/v1/seller/shops");
+    expect(f.mock.calls[0][1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(f.mock.calls[0][1]!.body as string)).toMatchObject({ name: "My Shop" });
+  });
+
+  it("gets and updates the caller's own shop", async () => {
+    const f = mockFetch(200, { id: "shop-1", name: "My Shop" });
+    await api.getMyShop();
+    expect(f.mock.calls[0][0]).toBe("/api/v1/seller/shops/me");
+
+    await api.updateShop({ name: "New Name" });
+    expect(f.mock.calls[1][0]).toBe("/api/v1/seller/shops/me");
+    expect(f.mock.calls[1][1]).toMatchObject({ method: "PUT" });
+  });
+
+  it("lists, adds, and removes shop staff", async () => {
+    const f = mockFetch(200, { owner_subject: "owner-1", staff_subjects: ["helper-a"] });
+    await api.listShopStaff();
+    expect(f.mock.calls[0][0]).toBe("/api/v1/seller/shops/me/staff");
+
+    await api.addShopStaff("helper-b");
+    expect(f.mock.calls[1][1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(f.mock.calls[1][1]!.body as string)).toEqual({ subject: "helper-b" });
+
+    await api.removeShopStaff("helper-b");
+    expect(f.mock.calls[2][0]).toBe("/api/v1/seller/shops/me/staff/helper-b");
+    expect(f.mock.calls[2][1]).toMatchObject({ method: "DELETE" });
+  });
+
+  it("lists the caller's own shop products, with an optional page token", async () => {
+    const f = mockFetch(200, { products: [], page: {} });
+    await api.listMyShopProducts();
+    expect(f.mock.calls[0][0]).toBe("/api/v1/seller/products");
+    await api.listMyShopProducts("cursor-2");
+    expect(f.mock.calls[1][0]).toContain("page_token=cursor-2");
+  });
+
+  it("creates, updates, and archives a shop product", async () => {
+    const f = mockFetch(201, { product: { id: "p1" } });
+    await api.createShopProduct({
+      slug: "widget",
+      title: "Widget",
+      category_id: "c1",
+      list_price: { currency_code: "USD", units: "10" },
+    });
+    expect(f.mock.calls[0][0]).toBe("/api/v1/seller/products");
+    expect(f.mock.calls[0][1]).toMatchObject({ method: "POST" });
+
+    await api.updateShopProduct("p1", {
+      title: "Widget 2",
+      category_id: "c1",
+      list_price: { currency_code: "USD", units: "12" },
+      status: "PRODUCT_STATUS_ACTIVE",
+    });
+    expect(f.mock.calls[1][0]).toBe("/api/v1/seller/products/p1");
+    expect(f.mock.calls[1][1]).toMatchObject({ method: "PUT" });
+
+    await api.archiveShopProduct("p1");
+    expect(f.mock.calls[2][0]).toBe("/api/v1/seller/products/p1/archive");
+    expect(f.mock.calls[2][1]).toMatchObject({ method: "POST" });
+  });
+
+  it("lists shop payouts, forwarding status and page token filters", async () => {
+    const f = mockFetch(200, { payouts: [], page: {} });
+    await api.listShopPayouts();
+    expect(f.mock.calls[0][0]).toBe("/api/v1/seller/payouts");
+
+    await api.listShopPayouts("PENDING", "cursor-3");
+    const url = f.mock.calls[1][0] as string;
+    expect(url).toContain("status=PENDING");
+    expect(url).toContain("page_token=cursor-3");
+  });
+});
+
 describe("formatMoney", () => {
   it("combines units and nanos", () => {
     expect(formatMoney({ currency_code: "USD", units: "29", nanos: 990000000 })).toBe("$29.99");
