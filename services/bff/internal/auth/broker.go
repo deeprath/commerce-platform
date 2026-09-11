@@ -30,6 +30,12 @@ func NewBroker(tokenURL, clientID, clientSecret string, cookieSecure bool) *Brok
 	}
 }
 
+// CookieSecure reports the Secure flag every cookie the BFF sets should carry
+// (true in every deployment except local http dev). Other cookie-setting code
+// in the BFF (e.g. the cart id cookie) shares this instead of hardcoding its
+// own. Safe on a nil receiver (tests construct a Server without a Broker).
+func (b *Broker) CookieSecure() bool { return b != nil && b.cookieSecure }
+
 type TokenResult struct {
 	AccessToken  string
 	RefreshToken string
@@ -92,9 +98,11 @@ func (b *Broker) SetCookies(w http.ResponseWriter, t *TokenResult) {
 	}
 }
 
-// ClearCookies expires the auth cookies.
+// ClearCookies expires the auth cookies. Secure must match what SetCookies used
+// — some browsers won't let a non-Secure Set-Cookie overwrite/delete a cookie
+// that was set Secure.
 func (b *Broker) ClearCookies(w http.ResponseWriter) {
 	for _, n := range []string{"access_token", "refresh_token"} {
-		http.SetCookie(w, &http.Cookie{Name: n, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+		http.SetCookie(w, &http.Cookie{Name: n, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: b.cookieSecure})
 	}
 }

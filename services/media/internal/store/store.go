@@ -69,9 +69,9 @@ func (s *Store) MarkReady(ctx context.Context, a *domain.Asset, servedURL string
 	return wrap(tx.Commit(ctx))
 }
 
-type row interface{ Scan(...any) error }
+type rowScanner interface{ Scan(...any) error }
 
-func scan(r row) (*domain.Asset, error) {
+func scan(r rowScanner) (*domain.Asset, error) {
 	var a domain.Asset
 	var status string
 	err := r.Scan(&a.Key, &a.Bucket, &a.ContentType, &a.SizeBytes, &status, &a.CreatedBy, &a.CreatedAt, &a.UpdatedAt)

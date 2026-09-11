@@ -118,7 +118,7 @@ export function Browse() {
         <section className="results">
           {loading && <p className="muted">Loading…</p>}
           {err && <p className="error">Couldn’t load products: {err}</p>}
-          {!loading && !err && data && data.hits.length === 0 && (
+          {!loading && !err && data?.hits.length === 0 && (
             <p className="muted">No products match your search.</p>
           )}
           {data && data.hits.length > 0 && (

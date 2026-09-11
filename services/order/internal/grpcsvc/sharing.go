@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	orderv1 "github.com/deeprath/commerce-platform/gen/go/commerce/order/v1"
-	"github.com/deeprath/commerce-platform/pkg/auth"
 	"github.com/deeprath/commerce-platform/pkg/errs"
 	"github.com/deeprath/commerce-platform/pkg/fga"
 )
@@ -13,9 +12,9 @@ import (
 // ownedOrder resolves an order the caller must own. Operators do NOT bypass
 // this: sharing is a customer action on their own order.
 func (s *Server) ownedOrder(ctx context.Context, orderID string) (string, error) {
-	p := auth.FromContext(ctx)
-	if p == nil {
-		return "", errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
+	p, err := principal(ctx)
+	if err != nil {
+		return "", err
 	}
 	if s.fgac == nil {
 		return "", errs.New(errs.KindUnavailable, "SHARING_DISABLED", "order sharing is not configured")

@@ -154,22 +154,32 @@ func (c *Client) RawSearch(ctx context.Context, body []byte) (*SearchResult, err
 
 // SearchResult is the slice of the OpenSearch response the service needs.
 type SearchResult struct {
-	Hits struct {
-		Total struct {
-			Value int64 `json:"value"`
-		} `json:"total"`
-		Hits []struct {
-			ID     string  `json:"_id"`
-			Score  float64 `json:"_score"`
-			Source Doc     `json:"_source"`
-		} `json:"hits"`
-	} `json:"hits"`
-	Aggregations map[string]struct {
-		Buckets []struct {
-			Key      any   `json:"key"`
-			DocCount int64 `json:"doc_count"`
-		} `json:"buckets"`
-	} `json:"aggregations"`
+	Hits         hitsSection            `json:"hits"`
+	Aggregations map[string]aggregation `json:"aggregations"`
+}
+
+type hitsSection struct {
+	Total totalCount `json:"total"`
+	Hits  []hit      `json:"hits"`
+}
+
+type totalCount struct {
+	Value int64 `json:"value"`
+}
+
+type hit struct {
+	ID     string  `json:"_id"`
+	Score  float64 `json:"_score"`
+	Source Doc     `json:"_source"`
+}
+
+type aggregation struct {
+	Buckets []bucket `json:"buckets"`
+}
+
+type bucket struct {
+	Key      any   `json:"key"`
+	DocCount int64 `json:"doc_count"`
 }
 
 const mappingJSON = `{

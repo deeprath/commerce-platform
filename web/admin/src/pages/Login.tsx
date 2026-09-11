@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 
-export function Login({ onAuthed }: { onAuthed: () => void }) {
+export function Login({ onAuthed }: Readonly<{ onAuthed: () => void }>) {
   const [username, setUsername] = useState("adminuser");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -27,11 +27,11 @@ export function Login({ onAuthed }: { onAuthed: () => void }) {
       <h1>◆ Commerce Admin</h1>
       <form onSubmit={submit}>
         <label>
-          Username
+          Username{" "}
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
         </label>
         <label>
-          Password
+          Password{" "}
           <input
             type="password"
             value={password}

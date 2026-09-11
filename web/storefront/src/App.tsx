@@ -16,7 +16,7 @@ import { api, setUnauthorizedHandler } from "./api";
 import { CartProvider } from "./cart";
 import { useCart } from "./cart-context";
 
-function Header({ authed, onSignOut }: { authed: boolean; onSignOut: () => void }) {
+function Header({ authed, onSignOut }: Readonly<{ authed: boolean; onSignOut: () => void }>) {
   const { count } = useCart();
   return (
     <header className="site-header">

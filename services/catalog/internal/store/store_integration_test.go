@@ -66,12 +66,15 @@ func newDraft(t *testing.T, slug string) *domain.Product {
 	return p
 }
 
+// The sub-tests below share one product across one live Postgres instance and
+// run in declaration order (t.Run without t.Parallel), since each step
+// depends on the state the previous one left behind — split out of one flat
+// function into named steps purely to keep each step's own branching simple.
 func TestCreateReadArchiveAndOutbox(t *testing.T) {
 	ctx := context.Background()
 	pool := spinUp(t)
 	st := store.New(pool)
 
-	// Create
 	created, err := st.Create(ctx, newDraft(t, "widget-one"))
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -80,67 +83,74 @@ func TestCreateReadArchiveAndOutbox(t *testing.T) {
 		t.Fatalf("bad created product: %+v", created)
 	}
 
-	// Duplicate slug -> AlreadyExists
-	if _, err := st.Create(ctx, newDraft(t, "widget-one")); !errs.Is(err, errs.KindAlreadyExists) {
-		t.Fatalf("dup slug => %v", err)
-	}
+	t.Run("duplicate slug is AlreadyExists", func(t *testing.T) {
+		if _, err := st.Create(ctx, newDraft(t, "widget-one")); !errs.Is(err, errs.KindAlreadyExists) {
+			t.Fatalf("dup slug => %v", err)
+		}
+	})
 
-	// Get by id and slug
-	got, err := st.Get(ctx, created.ID)
-	if err != nil || got.Slug != "widget-one" {
-		t.Fatalf("get by id: %+v %v", got, err)
-	}
-	if _, err := st.GetBySlug(ctx, "widget-one"); err != nil {
-		t.Fatalf("get by slug: %v", err)
-	}
-	if _, err := st.Get(ctx, "00000000-0000-0000-0000-000000000000"); !errs.Is(err, errs.KindNotFound) {
-		t.Fatalf("missing id => %v", err)
-	}
-	if _, err := st.Get(ctx, "not-a-uuid"); !errs.Is(err, errs.KindNotFound) {
-		t.Fatalf("non-uuid id should be NotFound, not a DB error: %v", err)
-	}
+	t.Run("get by id, by slug, and the not-found paths", func(t *testing.T) {
+		got, err := st.Get(ctx, created.ID)
+		if err != nil || got.Slug != "widget-one" {
+			t.Fatalf("get by id: %+v %v", got, err)
+		}
+		if _, err := st.GetBySlug(ctx, "widget-one"); err != nil {
+			t.Fatalf("get by slug: %v", err)
+		}
+		if _, err := st.Get(ctx, "00000000-0000-0000-0000-000000000000"); !errs.Is(err, errs.KindNotFound) {
+			t.Fatalf("missing id => %v", err)
+		}
+		if _, err := st.Get(ctx, "not-a-uuid"); !errs.Is(err, errs.KindNotFound) {
+			t.Fatalf("non-uuid id should be NotFound, not a DB error: %v", err)
+		}
+	})
 
-	// Activate then it shows in List
-	if err := got.ApplyUpdate(got.Title, got.Description, got.CategoryID, got.ListPrice,
-		got.MediaKeys, got.Attributes, domain.StatusActive); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.Update(ctx, got); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-	list, _, err := st.List(ctx, "", "", 10, nil)
-	if err != nil || len(list) != 1 {
-		t.Fatalf("list active: %d %v", len(list), err)
-	}
+	t.Run("activate then archive changes List membership", func(t *testing.T) {
+		got, err := st.Get(ctx, created.ID)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if err := got.ApplyUpdate(got.Title, got.Description, got.CategoryID, got.ListPrice,
+			got.MediaKeys, got.Attributes, domain.StatusActive); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.Update(ctx, got); err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		list, _, err := st.List(ctx, "", "", 10, nil)
+		if err != nil || len(list) != 1 {
+			t.Fatalf("list active: %d %v", len(list), err)
+		}
 
-	// Archive removes it from List
-	if _, err := st.Archive(ctx, created.ID); err != nil {
-		t.Fatalf("archive: %v", err)
-	}
-	list, _, _ = st.List(ctx, "", "", 10, nil)
-	if len(list) != 0 {
-		t.Fatalf("archived product still listed: %d", len(list))
-	}
+		if _, err := st.Archive(ctx, created.ID); err != nil {
+			t.Fatalf("archive: %v", err)
+		}
+		list, _, _ = st.List(ctx, "", "", 10, nil)
+		if len(list) != 0 {
+			t.Fatalf("archived product still listed: %d", len(list))
+		}
+	})
 
-	// Outbox: one row per write (create, update, archive) = 3, topic + decodable payload
-	var n int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox WHERE topic='commerce.catalog.product_changed'`).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 3 {
-		t.Fatalf("expected 3 outbox rows, got %d", n)
-	}
-	var payload []byte
-	if err := pool.QueryRow(ctx, `SELECT payload FROM outbox ORDER BY id LIMIT 1`).Scan(&payload); err != nil {
-		t.Fatal(err)
-	}
-	var evt catalogv1.ProductChanged
-	if err := proto.Unmarshal(payload, &evt); err != nil {
-		t.Fatalf("outbox payload not a ProductChanged: %v", err)
-	}
-	if evt.GetChange() != catalogv1.ChangeType_CHANGE_TYPE_CREATED || evt.GetProductId() != created.ID {
-		t.Fatalf("unexpected first event: %+v", &evt)
-	}
+	t.Run("outbox has one row per write, first is the created event", func(t *testing.T) {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox WHERE topic='commerce.catalog.product_changed'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 3 {
+			t.Fatalf("expected 3 outbox rows, got %d", n)
+		}
+		var payload []byte
+		if err := pool.QueryRow(ctx, `SELECT payload FROM outbox ORDER BY id LIMIT 1`).Scan(&payload); err != nil {
+			t.Fatal(err)
+		}
+		var evt catalogv1.ProductChanged
+		if err := proto.Unmarshal(payload, &evt); err != nil {
+			t.Fatalf("outbox payload not a ProductChanged: %v", err)
+		}
+		if evt.GetChange() != catalogv1.ChangeType_CHANGE_TYPE_CREATED || evt.GetProductId() != created.ID {
+			t.Fatalf("unexpected first event: %+v", &evt)
+		}
+	})
 }
 
 func TestListKeysetPagination(t *testing.T) {

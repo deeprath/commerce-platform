@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -24,7 +25,8 @@ func (s *Server) cartID(c echo.Context) string {
 	id := "c_" + uuid.NewString()
 	http.SetCookie(c.Response().Writer, &http.Cookie{
 		Name: cartCookie, Value: id, Path: "/",
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 60 * 60 * 24 * 30,
+		HttpOnly: true, Secure: s.broker.CookieSecure(), SameSite: http.SameSiteLaxMode,
+		MaxAge: 60 * 60 * 24 * 30,
 	})
 	return id
 }
@@ -75,15 +77,25 @@ func (s *Server) respondCart(c echo.Context, raw *cartv1.Cart, couponCode string
 		ID: raw.GetId(), TotalQuantity: raw.GetTotalQuantity(),
 		CouponCode: couponCode, Items: []cartLineView{},
 	}
-	if len(raw.GetItems()) == 0 {
+	items := raw.GetItems()
+	if len(items) == 0 {
 		return c.JSON(200, view)
 	}
 
 	ctx, cancel := outCtx(c)
 	defer cancel()
 
-	ids := make([]string, 0, len(raw.GetItems()))
-	for _, it := range raw.GetItems() {
+	byID := s.batchProductsByID(ctx, items)
+	quote := s.quoteCartItems(ctx, &view, items, couponCode)
+	view.Items = append(view.Items, cartLineViews(items, byID, quote)...)
+	applyQuoteTotals(&view, quote)
+	return c.JSON(200, view)
+}
+
+// batchProductsByID resolves every line's product (slug/title/media) in one call.
+func (s *Server) batchProductsByID(ctx context.Context, items []*cartv1.CartItem) map[string]*catalogv1.Product {
+	ids := make([]string, 0, len(items))
+	for _, it := range items {
 		ids = append(ids, it.GetProductId())
 	}
 	batch, _ := s.cl.Catalog.BatchGetProducts(ctx, &catalogv1.BatchGetProductsRequest{Ids: ids})
@@ -91,26 +103,35 @@ func (s *Server) respondCart(c echo.Context, raw *cartv1.Cart, couponCode string
 	for _, p := range batch.GetProducts() {
 		byID[p.GetId()] = p
 	}
+	return byID
+}
 
-	quoteItems := make([]*pricingv1.QuoteLineInput, 0, len(raw.GetItems()))
-	for _, it := range raw.GetItems() {
+// quoteCartItems prices the cart. A bad coupon must not break the cart view —
+// it records the error on view and retries without the coupon.
+func (s *Server) quoteCartItems(ctx context.Context, view *cartView, items []*cartv1.CartItem, couponCode string) *pricingv1.Quote {
+	quoteItems := make([]*pricingv1.QuoteLineInput, 0, len(items))
+	for _, it := range items {
 		quoteItems = append(quoteItems, &pricingv1.QuoteLineInput{ProductId: it.GetProductId(), Quantity: it.GetQuantity()})
 	}
 	quote, qErr := s.cl.Pricing.QuotePrice(ctx, &pricingv1.QuoteRequest{
 		Items: quoteItems, CurrencyCode: "USD", CouponCode: couponCode,
 	})
 	if qErr != nil {
-		// A bad coupon must not break the cart view; retry without it.
 		view.CouponError = errs.FromGRPC(qErr).Reason
 		quote, _ = s.cl.Pricing.QuotePrice(ctx, &pricingv1.QuoteRequest{Items: quoteItems, CurrencyCode: "USD"})
 		view.CouponCode = ""
 	}
+	return quote
+}
+
+// cartLineViews joins each cart item with its product and priced line.
+func cartLineViews(items []*cartv1.CartItem, byID map[string]*catalogv1.Product, quote *pricingv1.Quote) []cartLineView {
 	lineByID := map[string]*pricingv1.QuoteLine{}
 	for _, l := range quote.GetLines() {
 		lineByID[l.GetProductId()] = l
 	}
-
-	for _, it := range raw.GetItems() {
+	out := make([]cartLineView, 0, len(items))
+	for _, it := range items {
 		lv := cartLineView{ProductID: it.GetProductId(), Quantity: it.GetQuantity()}
 		if p := byID[it.GetProductId()]; p != nil {
 			lv.Slug, lv.Title = p.GetSlug(), p.GetTitle()
@@ -121,16 +142,20 @@ func (s *Server) respondCart(c echo.Context, raw *cartv1.Cart, couponCode string
 		if ql := lineByID[it.GetProductId()]; ql != nil {
 			lv.UnitPrice, lv.LineTotal = moneyView(ql.GetUnitPrice()), moneyView(ql.GetLineTotal())
 		}
-		view.Items = append(view.Items, lv)
+		out = append(out, lv)
 	}
-	if quote != nil {
-		view.Subtotal, view.Discount = moneyView(quote.GetSubtotal()), moneyView(quote.GetDiscount())
-		view.Tax, view.Total = moneyView(quote.GetTax()), moneyView(quote.GetTotal())
-		if quote.GetCouponCode() != "" {
-			view.CouponCode = quote.GetCouponCode()
-		}
+	return out
+}
+
+func applyQuoteTotals(view *cartView, quote *pricingv1.Quote) {
+	if quote == nil {
+		return
 	}
-	return c.JSON(200, view)
+	view.Subtotal, view.Discount = moneyView(quote.GetSubtotal()), moneyView(quote.GetDiscount())
+	view.Tax, view.Total = moneyView(quote.GetTax()), moneyView(quote.GetTotal())
+	if quote.GetCouponCode() != "" {
+		view.CouponCode = quote.GetCouponCode()
+	}
 }
 
 func (s *Server) getCart(c echo.Context) error {

@@ -15,7 +15,7 @@ const NAV = [
   { to: "/shipments", label: "Shipments" },
 ];
 
-function Shell({ onSignOut, children }: { onSignOut: () => void; children: React.ReactNode }) {
+function Shell({ onSignOut, children }: Readonly<{ onSignOut: () => void; children: React.ReactNode }>) {
   return (
     <div className="shell">
       <aside className="sidebar">

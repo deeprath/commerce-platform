@@ -34,16 +34,28 @@ interface QueuedEvent extends TrackProps {
 let queue: QueuedEvent[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 
+// A per-tab correlation id, not a security token — but prefer a real entropy
+// source over Math.random() whenever one is available (every evergreen
+// browser has at least crypto.getRandomValues), falling back to a
+// non-cryptographic id only on very old browsers with no Web Crypto API.
+function randomID(): string {
+  if (typeof crypto !== "undefined") {
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    if (typeof crypto.getRandomValues === "function") {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      return Array.from(bytes, (b: number) => b.toString(16).padStart(2, "0")).join("");
+    }
+  }
+  return String(Date.now()) + Math.random().toString(16).slice(2);
+}
+
 // Per-tab id, stable for the life of the tab session. Best-effort: private
 // modes / disabled storage just yield "" and the server still counts the beacon.
 function sessionId(): string {
   try {
     let id = sessionStorage.getItem(SESSION_KEY);
     if (!id) {
-      id =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : String(Date.now()) + Math.random().toString(16).slice(2);
+      id = randomID();
       sessionStorage.setItem(SESSION_KEY, id);
     }
     return id;

@@ -134,6 +134,12 @@ func (s *Store) Release(ctx context.Context, resID string) error {
 	})
 }
 
+// reservationItem is one product/quantity line of a reservation.
+type reservationItem struct {
+	id  string
+	qty int
+}
+
 func (s *Store) finish(ctx context.Context, resID, target string, apply func(onHand, reserved, qty int) (int, int)) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -141,57 +147,17 @@ func (s *Store) finish(ctx context.Context, resID, target string, apply func(onH
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var status string
-	err = tx.QueryRow(ctx, `SELECT status FROM reservations WHERE id = $1 FOR UPDATE`, resID).Scan(&status)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil // unknown id: nothing to do
-	}
-	if err != nil {
-		return wrap(err)
-	}
-	if status != "HELD" {
-		return nil // already committed or released: idempotent
+	held, err := reservationIsHeld(ctx, tx, resID)
+	if err != nil || !held {
+		return err // NotFound/not-HELD both return (nil, err) — nothing more to do
 	}
 
-	rows, err := tx.Query(ctx, `SELECT product_id, quantity FROM reservation_items WHERE reservation_id = $1`, resID)
+	items, err := loadReservationItems(ctx, tx, resID)
 	if err != nil {
-		return wrap(err)
+		return err
 	}
-	type item struct {
-		id  string
-		qty int
-	}
-	var items []item
-	for rows.Next() {
-		var it item
-		if err := rows.Scan(&it.id, &it.qty); err != nil {
-			rows.Close()
-			return wrap(err)
-		}
-		items = append(items, it)
-	}
-	rows.Close()
-
 	for _, it := range items {
-		var l Level
-		if err := tx.QueryRow(ctx,
-			`SELECT on_hand, reserved FROM stock WHERE product_id = $1 FOR UPDATE`, it.id).
-			Scan(&l.OnHand, &l.Reserved); err != nil {
-			return wrap(err)
-		}
-		nh, nr := apply(l.OnHand, l.Reserved, it.qty)
-		if nr < 0 {
-			nr = 0
-		}
-		if nh < 0 {
-			nh = 0
-		}
-		if _, err := tx.Exec(ctx,
-			`UPDATE stock SET on_hand = $2, reserved = $3, updated_at = now() WHERE product_id = $1`,
-			it.id, nh, nr); err != nil {
-			return wrap(err)
-		}
-		if err := outboxStock(ctx, tx, it.id, nh, nr); err != nil {
+		if err := applyStockDelta(ctx, tx, it, apply); err != nil {
 			return err
 		}
 	}
@@ -201,6 +167,63 @@ func (s *Store) finish(ctx context.Context, resID, target string, apply func(onH
 		return wrap(err)
 	}
 	return wrap(tx.Commit(ctx))
+}
+
+// reservationIsHeld reports whether resID exists and is still HELD, row-locking
+// it for the rest of the caller's transaction. A missing id is not an error —
+// callers treat "not held" (missing or already resolved) as an idempotent no-op.
+func reservationIsHeld(ctx context.Context, tx pgx.Tx, resID string) (bool, error) {
+	var status string
+	err := tx.QueryRow(ctx, `SELECT status FROM reservations WHERE id = $1 FOR UPDATE`, resID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil // unknown id: nothing to do
+	}
+	if err != nil {
+		return false, wrap(err)
+	}
+	return status == "HELD", nil
+}
+
+func loadReservationItems(ctx context.Context, tx pgx.Tx, resID string) ([]reservationItem, error) {
+	rows, err := tx.Query(ctx, `SELECT product_id, quantity FROM reservation_items WHERE reservation_id = $1`, resID)
+	if err != nil {
+		return nil, wrap(err)
+	}
+	defer rows.Close()
+
+	var items []reservationItem
+	for rows.Next() {
+		var it reservationItem
+		if err := rows.Scan(&it.id, &it.qty); err != nil {
+			return nil, wrap(err)
+		}
+		items = append(items, it)
+	}
+	return items, wrap(rows.Err())
+}
+
+// applyStockDelta row-locks one product's stock, applies apply to it (clamped
+// at zero), persists the result, and emits its outbox row.
+func applyStockDelta(ctx context.Context, tx pgx.Tx, it reservationItem, apply func(onHand, reserved, qty int) (int, int)) error {
+	var l Level
+	if err := tx.QueryRow(ctx,
+		`SELECT on_hand, reserved FROM stock WHERE product_id = $1 FOR UPDATE`, it.id).
+		Scan(&l.OnHand, &l.Reserved); err != nil {
+		return wrap(err)
+	}
+	nh, nr := apply(l.OnHand, l.Reserved, it.qty)
+	if nr < 0 {
+		nr = 0
+	}
+	if nh < 0 {
+		nh = 0
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE stock SET on_hand = $2, reserved = $3, updated_at = now() WHERE product_id = $1`,
+		it.id, nh, nr); err != nil {
+		return wrap(err)
+	}
+	return outboxStock(ctx, tx, it.id, nh, nr)
 }
 
 // AdjustStock changes on_hand by delta.

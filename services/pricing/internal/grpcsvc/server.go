@@ -48,16 +48,52 @@ func (s *Server) QuotePrice(ctx context.Context, req *pricingv1.QuoteRequest) (*
 		return nil, errs.New(errs.KindInvalidArgument, "NO_ITEMS", "at least one item is required")
 	}
 
-	ids := make([]string, 0, len(req.GetItems()))
+	qty, err := quantitiesByProduct(req.GetItems())
+	if err != nil {
+		return nil, err
+	}
+
+	byID, err := s.catalogProductsByID(ctx, qty)
+	if err != nil {
+		return nil, err
+	}
+
+	lines, err := priceLines(qty, byID, cur)
+	if err != nil {
+		return nil, err
+	}
+
+	coupon, err := s.resolveCoupon(ctx, req.GetCouponCode())
+	if err != nil {
+		return nil, err
+	}
+
+	taxBps := s.tax.For(req.GetShipTo().GetCountryCode())
+	q, err := domain.Price(cur, lines, coupon, taxBps, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return toProtoQuote(q), nil
+}
+
+// quantitiesByProduct validates every requested line and collapses duplicate
+// product ids into one summed quantity.
+func quantitiesByProduct(items []*pricingv1.QuoteLineInput) (map[string]int32, error) {
 	qty := map[string]int32{}
-	for _, it := range req.GetItems() {
+	for _, it := range items {
 		if it.GetQuantity() <= 0 {
 			return nil, errs.New(errs.KindInvalidArgument, "BAD_QUANTITY", "quantity must be > 0")
 		}
-		ids = append(ids, it.GetProductId())
 		qty[it.GetProductId()] += it.GetQuantity()
 	}
+	return qty, nil
+}
 
+func (s *Server) catalogProductsByID(ctx context.Context, qty map[string]int32) (map[string]*catalogv1.Product, error) {
+	ids := make([]string, 0, len(qty))
+	for id := range qty {
+		ids = append(ids, id)
+	}
 	batch, err := s.catalog.BatchGetProducts(ctx, &catalogv1.BatchGetProductsRequest{Ids: ids})
 	if err != nil {
 		return nil, errs.Wrap(err, errs.KindUnavailable, "CATALOG_UNAVAILABLE", "cannot resolve product prices")
@@ -66,7 +102,12 @@ func (s *Server) QuotePrice(ctx context.Context, req *pricingv1.QuoteRequest) (*
 	for _, p := range batch.GetProducts() {
 		byID[p.GetId()] = p
 	}
+	return byID, nil
+}
 
+// priceLines joins each requested product with its catalog price, failing if
+// any product is unknown or priced in a different currency than the quote.
+func priceLines(qty map[string]int32, byID map[string]*catalogv1.Product, cur string) ([]domain.Line, error) {
 	var lines []domain.Line
 	for id, q := range qty {
 		p := byID[id]
@@ -82,25 +123,22 @@ func (s *Server) QuotePrice(ctx context.Context, req *pricingv1.QuoteRequest) (*
 			UnitPrice: domain.FromUnitsNanos(cur, mp.GetUnits(), mp.GetNanos()),
 		})
 	}
+	return lines, nil
+}
 
-	var coupon *domain.Coupon
-	if code := req.GetCouponCode(); code != "" {
-		c, err := s.store.GetCoupon(ctx, code)
-		if err != nil {
-			if errs.Is(err, errs.KindNotFound) {
-				return nil, errs.New(errs.KindFailedPrecondition, "COUPON_UNKNOWN", "coupon code is not recognised")
-			}
-			return nil, err
-		}
-		coupon = c
+// resolveCoupon looks up code, if given; "" means no coupon (not an error).
+func (s *Server) resolveCoupon(ctx context.Context, code string) (*domain.Coupon, error) {
+	if code == "" {
+		return nil, nil
 	}
-
-	taxBps := s.tax.For(req.GetShipTo().GetCountryCode())
-	q, err := domain.Price(cur, lines, coupon, taxBps, time.Now())
+	c, err := s.store.GetCoupon(ctx, code)
 	if err != nil {
+		if errs.Is(err, errs.KindNotFound) {
+			return nil, errs.New(errs.KindFailedPrecondition, "COUPON_UNKNOWN", "coupon code is not recognised")
+		}
 		return nil, err
 	}
-	return toProtoQuote(q), nil
+	return c, nil
 }
 
 func (s *Server) ValidateCoupon(ctx context.Context, req *pricingv1.ValidateCouponRequest) (*pricingv1.CouponInfo, error) {

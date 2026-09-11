@@ -10,7 +10,7 @@ export interface CardItem {
   primary_media_key: string;
 }
 
-export function ProductCard({ hit }: { hit: CardItem }) {
+export function ProductCard({ hit }: Readonly<{ hit: CardItem }>) {
   return (
     <article className="card">
       <div className="card-img">

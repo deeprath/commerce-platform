@@ -141,7 +141,11 @@ func BearerFromAuthHeader(h string) (string, bool) {
 // be used to establish identity — services call Verify for that.
 func ParseInsecure(raw string) (jwt.MapClaims, error) {
 	claims := jwt.MapClaims{}
-	p := jwt.NewParser(jwt.WithoutClaimsValidation())
+	// WithValidMethods still doesn't verify the signature (ParseUnverified never
+	// does) but it does reject an "alg: none"/mismatched-algorithm token at the
+	// structural-check stage instead of blindly trusting its header, closing the
+	// classic algorithm-confusion class of issue even for this fast, unverified path.
+	p := jwt.NewParser(jwt.WithoutClaimsValidation(), jwt.WithValidMethods([]string{"RS256"}))
 	if _, _, err := p.ParseUnverified(raw, claims); err != nil {
 		return nil, errs.Wrap(err, errs.KindUnauthenticated, "TOKEN_MALFORMED", "not a JWT")
 	}

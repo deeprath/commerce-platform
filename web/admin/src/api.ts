@@ -19,7 +19,7 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
   if (!res.ok) {

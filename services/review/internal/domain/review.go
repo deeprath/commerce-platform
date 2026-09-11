@@ -76,9 +76,9 @@ func ValidModerationTarget(to Status) bool {
 	return to == StatusPublished || to == StatusHidden
 }
 
-func truncate(s string, max int) string {
-	if utf8.RuneCountInString(s) <= max {
+func truncate(s string, limit int) string {
+	if utf8.RuneCountInString(s) <= limit {
 		return s
 	}
-	return string([]rune(s)[:max])
+	return string([]rune(s)[:limit])
 }

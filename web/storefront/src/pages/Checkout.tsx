@@ -19,7 +19,7 @@ const BLANK: Address = {
 
 type Phase = "form" | "paying" | "done" | "error";
 
-export function Checkout({ authed }: { authed: boolean }) {
+export function Checkout({ authed }: Readonly<{ authed: boolean }>) {
   const nav = useNavigate();
   const { cart, loading, refresh } = useCart();
   const [addr, setAddr] = useState<Address>(BLANK);
@@ -182,21 +182,7 @@ export function Checkout({ authed }: { authed: boolean }) {
 
           {phase === "done" && (
             <div className="pay-step">
-              {msg === "ORDER_STATUS_CONFIRMED" ? (
-                <>
-                  <h3>Order confirmed 🎉</h3>
-                  <p>
-                    Thanks! Your order <code>{orderId.slice(0, 8)}</code> is confirmed.
-                  </p>
-                </>
-              ) : msg === "ORDER_STATUS_CANCELLED" ? (
-                <>
-                  <h3>Payment didn’t go through</h3>
-                  <p className="muted">The order was cancelled and stock released. Try again.</p>
-                </>
-              ) : (
-                <p className="muted">Order status: {msg}</p>
-              )}
+              <DoneMessage msg={msg} orderId={orderId} />
               <button className="checkout-btn" onClick={() => nav(`/orders/${orderId}`)}>
                 View order
               </button>
@@ -249,4 +235,27 @@ export function Checkout({ authed }: { authed: boolean }) {
       </div>
     </div>
   );
+}
+
+// The "done" step's headline + body, keyed off the order's final status.
+function DoneMessage({ msg, orderId }: Readonly<{ msg: string | null; orderId: string }>) {
+  if (msg === "ORDER_STATUS_CONFIRMED") {
+    return (
+      <>
+        <h3>Order confirmed 🎉</h3>
+        <p>
+          Thanks! Your order <code>{orderId.slice(0, 8)}</code> is confirmed.
+        </p>
+      </>
+    );
+  }
+  if (msg === "ORDER_STATUS_CANCELLED") {
+    return (
+      <>
+        <h3>Payment didn’t go through</h3>
+        <p className="muted">The order was cancelled and stock released. Try again.</p>
+      </>
+    );
+  }
+  return <p className="muted">Order status: {msg}</p>;
 }
