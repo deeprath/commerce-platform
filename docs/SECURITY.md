@@ -202,6 +202,17 @@ behaviour doesn't drift. Four invocations,
 - **First run (2026-09-09):** the job runs but **self-skips** its scan step with a `::notice::`
   because the `SONAR_TOKEN` repo secret does not exist yet. Add the secret (steps above) to
   turn it on — nothing else needs to change.
+- **Frontend scope gap, found and fixed (2026-09-11):** every run since the token was added
+  had actually only ever analysed Go — `sonar.sources`/`sonar.tests` never listed `web/`, and
+  neither frontend app had a coverage script or provider installed, so "TypeScript (`web/`)"
+  above described the intended scope, not what was happening. Fixed: `@vitest/coverage-v8` +
+  a `test:coverage` script (`vitest run --coverage`, lcov reporter) in both `web/admin` and
+  `web/storefront`; `sonar-project.properties` now lists `web/admin/src,web/storefront/src` in
+  both `sonar.sources` and `sonar.tests` (same both-lists pattern already used for `pkg,services`,
+  since Sonar tells test files from source files within a directory via `sonar.test.inclusions`,
+  not by directory alone) and points `sonar.javascript.lcov.reportPaths`/
+  `sonar.typescript.lcov.reportPaths` at each app's `coverage/lcov.info`; the `security.yml`
+  `sonarcloud` job runs `npm run test:coverage` for both apps before the scan step.
 
 ### 5.4 OWASP ZAP — dynamic scanning
 
