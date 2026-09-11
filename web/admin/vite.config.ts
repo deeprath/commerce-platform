@@ -16,8 +16,13 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "node",
+    // jsdom backs both the pure logic tests and the page/component tests
+    // under src/pages. See web/storefront/vite.config.ts's comment: happy-dom
+    // doesn't dispatch a form's submit event on a type="submit" button click,
+    // which silently no-ops every form-submit test in an app like this one.
+    environment: "jsdom",
     globals: true,
+    setupFiles: ["./src/setupTests.ts"],
     coverage: {
       // lcov feeds SonarCloud (sonar-project.properties); text is for local runs.
       provider: "v8",
