@@ -5,6 +5,7 @@ import (
 
 	fulfillmentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/fulfillment/v1"
 	orderv1 "github.com/deeprath/commerce-platform/gen/go/commerce/order/v1"
+	payoutv1 "github.com/deeprath/commerce-platform/gen/go/commerce/payout/v1"
 	"github.com/deeprath/commerce-platform/pkg/errs"
 )
 
@@ -156,6 +157,39 @@ func (s *Server) adminCancelShipment(c echo.Context) error {
 	res, err := s.cl.Fulfillment.CancelShipment(ctx, &fulfillmentv1.CancelShipmentRequest{
 		Id: c.Param("id"), Reason: in.Reason,
 	})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// adminListPayouts — GET /api/v1/admin/payouts?shop_id=&status= (finance role;
+// omitting shop_id lists every shop's payouts)
+func (s *Server) adminListPayouts(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Payout.ListPayouts(ctx, &payoutv1.ListPayoutsRequest{
+		ShopId: c.QueryParam("shop_id"), Status: c.QueryParam("status"), Page: page(c),
+	})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// adminMarkPayoutPaid — POST /api/v1/admin/payouts/:id/mark-paid (finance
+// role). The sandbox settlement sweep does this automatically; exposed for an
+// operator to force a settlement without waiting.
+func (s *Server) adminMarkPayoutPaid(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	res, err := s.cl.Payout.MarkPaid(ctx, &payoutv1.MarkPaidRequest{Id: c.Param("id")})
 	if err != nil {
 		return fail(c, err)
 	}

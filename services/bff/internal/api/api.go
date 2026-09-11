@@ -114,6 +114,8 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	v1.POST("/seller/products", s.createShopProduct)
 	v1.PUT("/seller/products/:id", s.updateShopProduct)
 	v1.POST("/seller/products/:id/archive", s.archiveShopProduct)
+	// the caller's own shop's payouts (read-only; finance settles them)
+	v1.GET("/seller/payouts", s.listShopPayouts)
 
 	// --- admin (bearer/cookie forwarded; services enforce the role) ---
 	adm := v1.Group("/admin")
@@ -133,6 +135,8 @@ func (s *Server) Router(allowedOrigins []string) *echo.Echo {
 	adm.GET("/seller/shops", s.adminListShops)
 	adm.POST("/seller/shops/:id/activate", s.adminActivateShop)
 	adm.POST("/seller/shops/:id/suspend", s.adminSuspendShop)
+	adm.GET("/payouts", s.adminListPayouts)
+	adm.POST("/payouts/:id/mark-paid", s.adminMarkPayoutPaid)
 
 	return e
 }

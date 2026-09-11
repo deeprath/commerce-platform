@@ -14,6 +14,7 @@ use (
 	./services/notification
 	./services/order
 	./services/payment
+	./services/payout
 	./services/pricing
 	./services/review
 	./services/search

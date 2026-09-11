@@ -639,6 +639,32 @@ services:
     networks: [commerce]
     logging: *default-logging
 
+  payout:
+    build: { context: ../.., dockerfile: deploy/docker/payout.Dockerfile }
+    environment:
+      GRPC_ADDR: ":50051"
+      ENVIRONMENT: local
+      LOG_LEVEL: debug
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/payout?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/certs
+      KEYCLOAK_ISSUER: http://localhost:8081/realms/commerce
+      OPENFGA_API_URL: http://openfga:8080 # a seller reading their own shop's payouts (ADR-043)
+      OPENFGA_STORE_NAME: commerce
+      # Short sandbox-settlement delay so the demo lifecycle completes quickly.
+      SETTLEMENT_SWEEP_INTERVAL: 10s
+      SETTLEMENT_PENDING_AFTER: 20s
+    ports: ["50066:50051"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      openfga: { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [commerce]
+    logging: *default-logging
+
   analytics:
     build: { context: ../.., dockerfile: deploy/docker/analytics.Dockerfile }
     environment:
@@ -675,6 +701,8 @@ services:
       PAYMENT_ADDR: payment:50051
       FULFILLMENT_ADDR: fulfillment:50051
       REVIEW_ADDR: review:50051
+      SELLER_ADDR: seller:50051
+      PAYOUT_ADDR: payout:50051
       KAFKA_BROKERS: kafka:9092 # clickstream ingestion (POST /api/v1/events)
       KEYCLOAK_TOKEN_URL: http://keycloak:8080/realms/commerce/protocol/openid-connect/token
       KEYCLOAK_CLIENT_ID: bff
@@ -692,6 +720,8 @@ services:
       payment: { condition: service_started }
       fulfillment: { condition: service_started }
       review: { condition: service_started }
+      seller: { condition: service_started }
+      payout: { condition: service_started }
       kafka: { condition: service_healthy }
       keycloak: { condition: service_healthy }
       otel-collector: { condition: service_started }

@@ -4,6 +4,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	catalogv1 "github.com/deeprath/commerce-platform/gen/go/commerce/catalog/v1"
+	payoutv1 "github.com/deeprath/commerce-platform/gen/go/commerce/payout/v1"
 	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
 	"github.com/deeprath/commerce-platform/pkg/errs"
 )
@@ -180,6 +181,28 @@ func (s *Server) listShopProducts(c echo.Context) error {
 	}
 	res, err := s.cl.Catalog.ListShopProducts(ctx, &catalogv1.ListShopProductsRequest{
 		ShopId: shop.GetId(), Page: page(c),
+	})
+	if err != nil {
+		return fail(c, err)
+	}
+	return writeProto(c, 200, res)
+}
+
+// listShopPayouts — GET /api/v1/seller/payouts (the caller's own shop; payout
+// checks shop#staff, redundant with the GetMyShop resolution here but the
+// authoritative check lives in the service).
+func (s *Server) listShopPayouts(c echo.Context) error {
+	if !requireAuth(c) {
+		return nil
+	}
+	ctx, cancel := outCtx(c)
+	defer cancel()
+	shop, err := s.cl.Seller.GetMyShop(ctx, &sellerv1.GetMyShopRequest{})
+	if err != nil {
+		return fail(c, err)
+	}
+	res, err := s.cl.Payout.ListPayouts(ctx, &payoutv1.ListPayoutsRequest{
+		ShopId: shop.GetId(), Page: page(c), Status: c.QueryParam("status"),
 	})
 	if err != nil {
 		return fail(c, err)
