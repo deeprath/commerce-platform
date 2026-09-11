@@ -11,9 +11,13 @@
 // moves a shipment PENDING -> SHIPPED -> DELIVERED on a short delay. In
 // production the advancer is replaced by a signature-verified carrier webhook —
 // the emitted events are identical either way. The order service consumes
-// commerce.fulfillment.delivered and moves the order to FULFILLED.
+// commerce.fulfillment.delivered and moves the order to FULFILLED once every
+// one of the order's shipments has been delivered.
 //
-// v1 simplification: exactly one shipment per order (no split shipments).
+// An order's lines are grouped by shop_id into one shipment per shop (plus one
+// for any first-party lines, shop_id "") — a marketplace order spanning two
+// shops produces two independent shipments, each carrying only that shop's
+// items and advancing through PENDING/SHIPPED/DELIVERED on its own.
 
 package fulfillmentv1
 
@@ -162,8 +166,11 @@ type Shipment struct {
 	ShippedAt      string                 `protobuf:"bytes,10,opt,name=shipped_at,json=shippedAt,proto3" json:"shipped_at,omitempty"`
 	DeliveredAt    string                 `protobuf:"bytes,11,opt,name=delivered_at,json=deliveredAt,proto3" json:"delivered_at,omitempty"`
 	CancelReason   string                 `protobuf:"bytes,12,opt,name=cancel_reason,json=cancelReason,proto3" json:"cancel_reason,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The shop this shipment's items belong to; empty => first-party items.
+	// One order can have multiple shipments, at most one per distinct shop_id.
+	ShopId        string `protobuf:"bytes,13,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Shipment) Reset() {
@@ -276,6 +283,13 @@ func (x *Shipment) GetDeliveredAt() string {
 func (x *Shipment) GetCancelReason() string {
 	if x != nil {
 		return x.CancelReason
+	}
+	return ""
+}
+
+func (x *Shipment) GetShopId() string {
+	if x != nil {
+		return x.ShopId
 	}
 	return ""
 }
@@ -600,6 +614,7 @@ type ShipmentCreated struct {
 	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
 	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	OccurredAt    string                 `protobuf:"bytes,4,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	ShopId        string                 `protobuf:"bytes,5,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -662,6 +677,13 @@ func (x *ShipmentCreated) GetOccurredAt() string {
 	return ""
 }
 
+func (x *ShipmentCreated) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
+}
+
 type ShipmentShipped struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ShipmentId     string                 `protobuf:"bytes,1,opt,name=shipment_id,json=shipmentId,proto3" json:"shipment_id,omitempty"`
@@ -670,6 +692,7 @@ type ShipmentShipped struct {
 	Carrier        string                 `protobuf:"bytes,4,opt,name=carrier,proto3" json:"carrier,omitempty"`
 	TrackingNumber string                 `protobuf:"bytes,5,opt,name=tracking_number,json=trackingNumber,proto3" json:"tracking_number,omitempty"`
 	OccurredAt     string                 `protobuf:"bytes,6,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	ShopId         string                 `protobuf:"bytes,7,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -746,12 +769,23 @@ func (x *ShipmentShipped) GetOccurredAt() string {
 	return ""
 }
 
+func (x *ShipmentShipped) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
+}
+
 type ShipmentDelivered struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ShipmentId    string                 `protobuf:"bytes,1,opt,name=shipment_id,json=shipmentId,proto3" json:"shipment_id,omitempty"`
-	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
-	OccurredAt    string                 `protobuf:"bytes,4,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	ShipmentId string                 `protobuf:"bytes,1,opt,name=shipment_id,json=shipmentId,proto3" json:"shipment_id,omitempty"`
+	OrderId    string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	OwnerId    string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	OccurredAt string                 `protobuf:"bytes,4,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	// The order service consumes this to know which of the order's shop
+	// groups just delivered, so it can wait for every group before marking
+	// the order FULFILLED.
+	ShopId        string `protobuf:"bytes,5,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -814,6 +848,13 @@ func (x *ShipmentDelivered) GetOccurredAt() string {
 	return ""
 }
 
+func (x *ShipmentDelivered) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
+}
+
 type ShipmentCancelled struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ShipmentId    string                 `protobuf:"bytes,1,opt,name=shipment_id,json=shipmentId,proto3" json:"shipment_id,omitempty"`
@@ -821,6 +862,7 @@ type ShipmentCancelled struct {
 	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
 	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
 	OccurredAt    string                 `protobuf:"bytes,5,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	ShopId        string                 `protobuf:"bytes,6,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -890,6 +932,13 @@ func (x *ShipmentCancelled) GetOccurredAt() string {
 	return ""
 }
 
+func (x *ShipmentCancelled) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
+}
+
 var File_commerce_fulfillment_v1_fulfillment_proto protoreflect.FileDescriptor
 
 const file_commerce_fulfillment_v1_fulfillment_proto_rawDesc = "" +
@@ -899,7 +948,7 @@ const file_commerce_fulfillment_v1_fulfillment_proto_rawDesc = "" +
 	"\n" +
 	"product_id\x18\x01 \x01(\tR\tproductId\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x1a\n" +
-	"\bquantity\x18\x03 \x01(\x05R\bquantity\"\xcd\x03\n" +
+	"\bquantity\x18\x03 \x01(\x05R\bquantity\"\xe6\x03\n" +
 	"\bShipment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x19\n" +
@@ -915,7 +964,8 @@ const file_commerce_fulfillment_v1_fulfillment_proto_rawDesc = "" +
 	"shipped_at\x18\n" +
 	" \x01(\tR\tshippedAt\x12!\n" +
 	"\fdelivered_at\x18\v \x01(\tR\vdeliveredAt\x12#\n" +
-	"\rcancel_reason\x18\f \x01(\tR\fcancelReason\"$\n" +
+	"\rcancel_reason\x18\f \x01(\tR\fcancelReason\x12\x17\n" +
+	"\ashop_id\x18\r \x01(\tR\x06shopId\"$\n" +
 	"\x12GetShipmentRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"~\n" +
 	"\x14ListShipmentsRequest\x12\x19\n" +
@@ -933,14 +983,15 @@ const file_commerce_fulfillment_v1_fulfillment_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"?\n" +
 	"\x15CancelShipmentRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x89\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xa2\x01\n" +
 	"\x0fShipmentCreated\x12\x1f\n" +
 	"\vshipment_id\x18\x01 \x01(\tR\n" +
 	"shipmentId\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x19\n" +
 	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12\x1f\n" +
 	"\voccurred_at\x18\x04 \x01(\tR\n" +
-	"occurredAt\"\xcc\x01\n" +
+	"occurredAt\x12\x17\n" +
+	"\ashop_id\x18\x05 \x01(\tR\x06shopId\"\xe5\x01\n" +
 	"\x0fShipmentShipped\x12\x1f\n" +
 	"\vshipment_id\x18\x01 \x01(\tR\n" +
 	"shipmentId\x12\x19\n" +
@@ -949,14 +1000,16 @@ const file_commerce_fulfillment_v1_fulfillment_proto_rawDesc = "" +
 	"\acarrier\x18\x04 \x01(\tR\acarrier\x12'\n" +
 	"\x0ftracking_number\x18\x05 \x01(\tR\x0etrackingNumber\x12\x1f\n" +
 	"\voccurred_at\x18\x06 \x01(\tR\n" +
-	"occurredAt\"\x8b\x01\n" +
+	"occurredAt\x12\x17\n" +
+	"\ashop_id\x18\a \x01(\tR\x06shopId\"\xa4\x01\n" +
 	"\x11ShipmentDelivered\x12\x1f\n" +
 	"\vshipment_id\x18\x01 \x01(\tR\n" +
 	"shipmentId\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x19\n" +
 	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12\x1f\n" +
 	"\voccurred_at\x18\x04 \x01(\tR\n" +
-	"occurredAt\"\xa3\x01\n" +
+	"occurredAt\x12\x17\n" +
+	"\ashop_id\x18\x05 \x01(\tR\x06shopId\"\xbc\x01\n" +
 	"\x11ShipmentCancelled\x12\x1f\n" +
 	"\vshipment_id\x18\x01 \x01(\tR\n" +
 	"shipmentId\x12\x19\n" +
@@ -964,7 +1017,8 @@ const file_commerce_fulfillment_v1_fulfillment_proto_rawDesc = "" +
 	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x1f\n" +
 	"\voccurred_at\x18\x05 \x01(\tR\n" +
-	"occurredAt*\xa9\x01\n" +
+	"occurredAt\x12\x17\n" +
+	"\ashop_id\x18\x06 \x01(\tR\x06shopId*\xa9\x01\n" +
 	"\x0eShipmentStatus\x12\x1f\n" +
 	"\x1bSHIPMENT_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17SHIPMENT_STATUS_PENDING\x10\x01\x12\x1b\n" +

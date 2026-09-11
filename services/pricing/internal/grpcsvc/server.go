@@ -78,7 +78,7 @@ func (s *Server) QuotePrice(ctx context.Context, req *pricingv1.QuoteRequest) (*
 			return nil, errs.New(errs.KindFailedPrecondition, "CURRENCY_MISMATCH", "product priced in a different currency").WithMeta("product_id", id)
 		}
 		lines = append(lines, domain.Line{
-			ProductID: id, Title: p.GetTitle(), Quantity: q,
+			ProductID: id, Title: p.GetTitle(), Quantity: q, ShopID: p.GetShopId(),
 			UnitPrice: domain.FromUnitsNanos(cur, mp.GetUnits(), mp.GetNanos()),
 		})
 	}
@@ -134,7 +134,7 @@ func toProtoQuote(q *domain.Quote) *pricingv1.Quote {
 	}
 	for _, l := range q.Lines {
 		out.Lines = append(out.Lines, &pricingv1.QuoteLine{
-			ProductId: l.ProductID, Title: l.Title, Quantity: l.Quantity,
+			ProductId: l.ProductID, Title: l.Title, Quantity: l.Quantity, ShopId: l.ShopID,
 			UnitPrice: money(l.UnitPrice), LineTotal: money(l.LineTotal),
 		})
 	}

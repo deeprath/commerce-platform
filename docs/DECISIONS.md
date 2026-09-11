@@ -1821,3 +1821,78 @@ than an error, consistent with the platform's general fail-closed-on-authz /
 fail-open-on-enrichment posture. Deferred to follow-on slices: split orders
 (an order spanning shops becomes N sub-orders for fulfillment/payout), split
 payments/payouts, and a seller dashboard.
+
+---
+
+## ADR-042 — Marketplace, slice 5: fulfillment split by shop
+
+**Status:** accepted · Phase 5 · builds on ADR-040, ADR-041
+
+**Context:** an order's lines can now belong to different shops, but
+fulfillment still shipped the whole order as one parcel from one warehouse —
+unworkable once two different sellers each need to pack and ship only their
+own items. Checkout itself (one cart, one quote, one payment) stays a single
+transaction for the buyer; splitting *that* is the separately-planned "split
+payments/payouts" slice. This slice only splits the side that must physically
+differ per seller: fulfillment.
+
+**Decision:**
+- **`shop_id` threaded through the priced-line chain**: `catalog.Product.shop_id`
+  (already there, ADR-040) → `pricing.QuoteLine.shop_id` (pricing already
+  calls `catalog.BatchGetProducts` for price/title, so this is a passthrough,
+  no new call) → `order.OrderLine.shop_id` (copied 1:1 from the quote at
+  checkout) → carried on `commerce.order.confirmed` (one shared `OrderLine`
+  message backs both the `Order` aggregate and the event).
+- **Fulfillment groups a confirmed order's lines by `shop_id`** into one
+  shipment per distinct group (first-party lines, `shop_id ""`, form their own
+  group same as before) — `CreateFromOrder` now takes `[]ShopItems` and
+  creates/returns one `Shipment` row per group in a single transaction, each
+  independently advancing PENDING → SHIPPED → DELIVERED. The `shipments`
+  table's uniqueness moves from `UNIQUE(order_id)` to `UNIQUE(order_id, shop_id)`.
+  Every `fulfillment.*` event gains `shop_id`.
+- **The order only reaches FULFILLED once every shop group has delivered.**
+  `OnShipmentDelivered` no longer flips the order on the first
+  `fulfillment.delivered` it sees; the order service now records "this shop's
+  group delivered" per (order, shop) in a new `order_shipment_deliveries`
+  table and compares that set against `domain.Order.ShopGroups()` (the distinct
+  shop_ids across the order's own lines, computed locally — no RPC back to
+  fulfillment needed). This is event-driven rather than a synchronous status
+  check specifically to avoid adding an authenticated service-to-service RPC
+  call from a Kafka consumer context (which carries no caller bearer token).
+  Both idempotency layers stay intact: `processed_events` dedupes a redelivered
+  Kafka record, and the `(order_id, shop_id)` primary key dedupes a shop's
+  delivery being recorded twice.
+- **Checkout, payment, and the storefront are unchanged.** One cart, one
+  quote, one payment intent, one order total, one buyer-facing order — this
+  slice is invisible to the BFF and storefront; it only changes how many
+  shipment rows fulfillment creates and when the order transitions.
+
+**Alternatives:**
+- *True sub-order aggregates (a parent order + N child orders, one per shop)*
+  — considered and explicitly deferred (an AskUserQuestion during planning
+  confirmed the shipment-level split as the right scope for this slice); it
+  would touch the order domain model, saga, events, and every order-reading
+  surface (BFF, storefront) for a distinction (separate order *records*) that
+  isn't yet needed — the fulfillment split already gives each seller an
+  independently-tracked shipment.
+- *Order polls fulfillment synchronously on delivery* — `OnShipmentDelivered`
+  could call `fulfillment.ListShipments(order_id)` and check every status
+  instead of tracking deliveries itself. Rejected: that call runs from a Kafka
+  consumer with no user bearer token, so it would need either a new
+  service-to-service auth path or a public/unauthenticated read RPC; tracking
+  the delivered set locally needs neither.
+- *Denormalize the full shop group list onto the order row* instead of
+  deriving `ShopGroups()` from `order_lines` each time — the lines are already
+  loaded by `Get`/`Apply`, so deriving is one dedup+sort in memory versus an
+  extra column to keep in sync.
+
+**Consequences:** `shipments` and `order_lines` both gain a `shop_id` column
+(migrations, backward-compatible: existing rows default to `''`, i.e.
+first-party, unchanged behavior). A first-party-only order still produces
+exactly one shipment and fulfills exactly as before — nothing changes for the
+common case. A cancelled shipment is not treated as "delivered" and does not
+count toward the order's fulfilled set, matching the pre-existing gap where a
+cancelled shipment already left a single-shipment order stuck short of
+FULFILLED (not introduced by this slice). Deferred to follow-on slices: split
+payments/payouts (charging/remitting per shop), and a seller dashboard
+surfacing a shop's shipments.

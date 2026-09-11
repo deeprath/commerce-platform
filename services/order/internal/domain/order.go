@@ -2,6 +2,7 @@
 package domain
 
 import (
+	"sort"
 	"time"
 
 	"github.com/deeprath/commerce-platform/pkg/errs"
@@ -35,6 +36,9 @@ type Line struct {
 	Quantity  int32
 	UnitPrice Money
 	LineTotal Money
+	// ShopID is the owning marketplace shop, copied from pricing at checkout
+	// time. Empty => a first-party line.
+	ShopID string
 }
 
 type Address struct {
@@ -59,6 +63,23 @@ type Order struct {
 	CancelReason     string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+// ShopGroups returns the distinct shop_ids across the order's lines, sorted,
+// with "" (first-party) included as its own group when present. This is the
+// set of shipments fulfillment will create for the order — one per group —
+// and what the order waits on before it can be marked FULFILLED.
+func (o *Order) ShopGroups() []string {
+	seen := map[string]bool{}
+	var groups []string
+	for _, l := range o.Lines {
+		if !seen[l.ShopID] {
+			seen[l.ShopID] = true
+			groups = append(groups, l.ShopID)
+		}
+	}
+	sort.Strings(groups)
+	return groups
 }
 
 // CanTransitionTo reports whether the order may move to `to`.

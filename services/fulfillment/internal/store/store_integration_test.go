@@ -60,16 +60,26 @@ func items() []domain.Item {
 	return []domain.Item{{ProductID: "p1", Title: "Desk Lamp", Quantity: 2}}
 }
 
+// groups is the single first-party shop group most tests seed with — one
+// shipment, shop_id "".
+func groups() []store.ShopItems {
+	return []store.ShopItems{{Items: items()}}
+}
+
 func TestCreateFromOrder_EnrichmentIdempotencyAndOutbox(t *testing.T) {
 	ctx := context.Background()
 	pool := spinUp(t)
 	st := store.New(pool)
 
-	sh, err := st.CreateFromOrder(ctx, "order-1", "owner-1", addr(), items(), "commerce.order.confirmed:0:1")
+	created, err := st.CreateFromOrder(ctx, "order-1", "owner-1", addr(), groups(), "commerce.order.confirmed:0:1")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if sh == nil || sh.Status != domain.StatusPending || sh.OrderID != "order-1" || sh.OwnerID != "owner-1" {
+	if len(created) != 1 {
+		t.Fatalf("want exactly 1 shipment, got %+v", created)
+	}
+	sh := created[0]
+	if sh.Status != domain.StatusPending || sh.OrderID != "order-1" || sh.OwnerID != "owner-1" {
 		t.Fatalf("bad shipment: %+v", sh)
 	}
 	if len(sh.Items) != 1 || sh.Items[0].Title != "Desk Lamp" || sh.ShipTo.City != "Springfield" {
@@ -77,18 +87,19 @@ func TestCreateFromOrder_EnrichmentIdempotencyAndOutbox(t *testing.T) {
 	}
 
 	// Same event id again -> short-circuit, no new shipment, no extra outbox row.
-	dup, err := st.CreateFromOrder(ctx, "order-1", "owner-1", addr(), items(), "commerce.order.confirmed:0:1")
+	dup, err := st.CreateFromOrder(ctx, "order-1", "owner-1", addr(), groups(), "commerce.order.confirmed:0:1")
 	if err != nil || dup != nil {
 		t.Fatalf("duplicate event id should short-circuit: %+v %v", dup, err)
 	}
 
-	// New event id, same order -> returns the existing shipment, still no 2nd created event.
-	again, err := st.CreateFromOrder(ctx, "order-1", "owner-1", addr(), items(), "commerce.order.confirmed:0:9")
+	// New event id, same order+shop -> that group is skipped (already exists),
+	// so nothing new is returned and still no 2nd created event.
+	again, err := st.CreateFromOrder(ctx, "order-1", "owner-1", addr(), groups(), "commerce.order.confirmed:0:9")
 	if err != nil {
 		t.Fatalf("redelivered event: %v", err)
 	}
-	if again == nil || again.ID != sh.ID {
-		t.Fatalf("redelivery should return the existing shipment, got %+v", again)
+	if len(again) != 0 {
+		t.Fatalf("redelivery of an existing (order,shop) should create nothing, got %+v", again)
 	}
 
 	var n int
@@ -100,15 +111,103 @@ func TestCreateFromOrder_EnrichmentIdempotencyAndOutbox(t *testing.T) {
 	}
 }
 
+// A marketplace order spanning two shops (plus a first-party group) produces
+// one shipment per group, each with only that group's items, in one atomic
+// CreateFromOrder call.
+func TestCreateFromOrder_SplitsByShopGroup(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+
+	created, err := st.CreateFromOrder(ctx, "order-multi", "owner-1", addr(), []store.ShopItems{
+		{ShopID: "", Items: []domain.Item{{ProductID: "fp", Title: "First Party", Quantity: 1}}},
+		{ShopID: "shop-a", Items: []domain.Item{{ProductID: "a1", Title: "Shop A Item", Quantity: 1}}},
+		{ShopID: "shop-b", Items: []domain.Item{{ProductID: "b1", Title: "Shop B Item", Quantity: 2}}},
+	}, "e:multi:1")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if len(created) != 3 {
+		t.Fatalf("want 3 shipments (one per group), got %+v", created)
+	}
+	byShop := map[string]*domain.Shipment{}
+	for _, sh := range created {
+		if sh.OrderID != "order-multi" {
+			t.Fatalf("shipment for the wrong order: %+v", sh)
+		}
+		byShop[sh.ShopID] = sh
+	}
+	if len(byShop["shop-a"].Items) != 1 || byShop["shop-a"].Items[0].ProductID != "a1" {
+		t.Fatalf("shop-a shipment has the wrong items: %+v", byShop["shop-a"])
+	}
+	if len(byShop["shop-b"].Items) != 1 || byShop["shop-b"].Items[0].ProductID != "b1" {
+		t.Fatalf("shop-b shipment has the wrong items: %+v", byShop["shop-b"])
+	}
+	if len(byShop[""].Items) != 1 || byShop[""].Items[0].ProductID != "fp" {
+		t.Fatalf("first-party shipment has the wrong items: %+v", byShop[""])
+	}
+
+	// One shipment_created event per group.
+	var n int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM outbox WHERE topic='commerce.fulfillment.shipment_created' AND key=$1`,
+		[]byte("order-multi")).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Fatalf("expected 3 shipment_created events, got %d", n)
+	}
+
+	// Listing by order returns all three.
+	all, _, err := st.List(ctx, "owner-1", "order-multi", "", 10, "")
+	if err != nil || len(all) != 3 {
+		t.Fatalf("List by order = %v, n=%d", err, len(all))
+	}
+}
+
+// A partially-processed redelivery (e.g. a crash after one group's insert
+// committed under an earlier offset) only creates the groups still missing.
+func TestCreateFromOrder_PartialRedeliverySkipsExistingGroups(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+
+	first, err := st.CreateFromOrder(ctx, "order-partial", "owner-1", addr(), []store.ShopItems{
+		{ShopID: "shop-a", Items: items()},
+	}, "e:partial:1")
+	if err != nil || len(first) != 1 {
+		t.Fatalf("seed shop-a: %v %+v", err, first)
+	}
+
+	// A later delivery (different offset) carries both groups; shop-a already
+	// exists and is skipped, shop-b is newly created.
+	second, err := st.CreateFromOrder(ctx, "order-partial", "owner-1", addr(), []store.ShopItems{
+		{ShopID: "shop-a", Items: items()},
+		{ShopID: "shop-b", Items: items()},
+	}, "e:partial:2")
+	if err != nil {
+		t.Fatalf("redeliver: %v", err)
+	}
+	if len(second) != 1 || second[0].ShopID != "shop-b" {
+		t.Fatalf("want only the new shop-b shipment, got %+v", second)
+	}
+
+	all, _, err := st.List(ctx, "owner-1", "order-partial", "", 10, "")
+	if err != nil || len(all) != 2 {
+		t.Fatalf("List by order = %v, n=%d, want 2 total shipments", err, len(all))
+	}
+}
+
 func TestTransition_StateMachineAndEvents(t *testing.T) {
 	ctx := context.Background()
 	pool := spinUp(t)
 	st := store.New(pool)
 
-	sh, err := st.CreateFromOrder(ctx, "order-2", "owner-2", addr(), items(), "e:0:1")
-	if err != nil {
-		t.Fatalf("seed: %v", err)
+	created, err := st.CreateFromOrder(ctx, "order-2", "owner-2", addr(), groups(), "e:0:1")
+	if err != nil || len(created) != 1 {
+		t.Fatalf("seed: %v %+v", err, created)
 	}
+	sh := created[0]
 
 	shipped, err := st.Transition(ctx, sh.ID, domain.StatusShipped, "UPS", "1Z1", "")
 	if err != nil {
@@ -187,7 +286,7 @@ func TestDueForAdvance(t *testing.T) {
 	pool := spinUp(t)
 	st := store.New(pool)
 
-	if _, err := st.CreateFromOrder(ctx, "order-3", "owner-3", addr(), items(), "e:1:1"); err != nil {
+	if _, err := st.CreateFromOrder(ctx, "order-3", "owner-3", addr(), groups(), "e:1:1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
@@ -223,10 +322,11 @@ func TestStoreEdgePaths(t *testing.T) {
 		t.Fatalf("Transition(missing): want NotFound, got %v", err)
 	}
 
-	sh, err := st.CreateFromOrder(ctx, "edge-1", "owner-e", addr(), items(), "") // empty eventID branch
-	if err != nil {
-		t.Fatalf("create (no eventID): %v", err)
+	created, err := st.CreateFromOrder(ctx, "edge-1", "owner-e", addr(), groups(), "") // empty eventID branch
+	if err != nil || len(created) != 1 {
+		t.Fatalf("create (no eventID): %v %+v", err, created)
 	}
+	sh := created[0]
 	// Transition to the status it is already in -> idempotent no-op.
 	same, err := st.Transition(ctx, sh.ID, domain.StatusPending, "", "", "")
 	if err != nil || same.Status != domain.StatusPending {
@@ -247,7 +347,7 @@ func TestListPagination(t *testing.T) {
 	pool := spinUp(t)
 	st := store.New(pool)
 	for i := 0; i < 3; i++ {
-		if _, err := st.CreateFromOrder(ctx, "pg-"+string(rune('a'+i)), "pager", addr(), items(), ""); err != nil {
+		if _, err := st.CreateFromOrder(ctx, "pg-"+string(rune('a'+i)), "pager", addr(), groups(), ""); err != nil {
 			t.Fatalf("seed %d: %v", i, err)
 		}
 		time.Sleep(2 * time.Millisecond) // distinct created_at for a stable keyset
@@ -268,11 +368,14 @@ func TestListPagination(t *testing.T) {
 	}
 
 	// A shipment for another owner + one advanced to SHIPPED, for the operator view.
-	if _, err := st.CreateFromOrder(ctx, "pg-x", "other", addr(), items(), ""); err != nil {
+	if _, err := st.CreateFromOrder(ctx, "pg-x", "other", addr(), groups(), ""); err != nil {
 		t.Fatalf("seed other: %v", err)
 	}
-	shx, _ := st.CreateFromOrder(ctx, "pg-y", "pager", addr(), items(), "")
-	if _, err := st.Transition(ctx, shx.ID, domain.StatusShipped, "UPS", "1Z", ""); err != nil {
+	shx, err := st.CreateFromOrder(ctx, "pg-y", "pager", addr(), groups(), "")
+	if err != nil || len(shx) != 1 {
+		t.Fatalf("seed pg-y: %v %+v", err, shx)
+	}
+	if _, err := st.Transition(ctx, shx[0].ID, domain.StatusShipped, "UPS", "1Z", ""); err != nil {
 		t.Fatalf("ship: %v", err)
 	}
 

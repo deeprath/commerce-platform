@@ -148,12 +148,15 @@ func (x *QuoteRequest) GetShipTo() *v1.Address {
 }
 
 type QuoteLine struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Quantity      int32                  `protobuf:"varint,3,opt,name=quantity,proto3" json:"quantity,omitempty"`
-	UnitPrice     *v1.Money              `protobuf:"bytes,4,opt,name=unit_price,json=unitPrice,proto3" json:"unit_price,omitempty"`
-	LineTotal     *v1.Money              `protobuf:"bytes,5,opt,name=line_total,json=lineTotal,proto3" json:"line_total,omitempty"` // unit_price * quantity
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProductId string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
+	Title     string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Quantity  int32                  `protobuf:"varint,3,opt,name=quantity,proto3" json:"quantity,omitempty"`
+	UnitPrice *v1.Money              `protobuf:"bytes,4,opt,name=unit_price,json=unitPrice,proto3" json:"unit_price,omitempty"`
+	LineTotal *v1.Money              `protobuf:"bytes,5,opt,name=line_total,json=lineTotal,proto3" json:"line_total,omitempty"` // unit_price * quantity
+	// Owning marketplace shop, copied from the catalog product. Empty => a
+	// first-party line. Passed through to the order service unchanged.
+	ShopId        string `protobuf:"bytes,6,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -221,6 +224,13 @@ func (x *QuoteLine) GetLineTotal() *v1.Money {
 		return x.LineTotal
 	}
 	return nil
+}
+
+func (x *QuoteLine) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
 }
 
 type Quote struct {
@@ -468,7 +478,7 @@ const file_commerce_pricing_v1_pricing_proto_rawDesc = "" +
 	"\rcurrency_code\x18\x02 \x01(\tR\fcurrencyCode\x12\x1f\n" +
 	"\vcoupon_code\x18\x03 \x01(\tR\n" +
 	"couponCode\x124\n" +
-	"\aship_to\x18\x04 \x01(\v2\x1b.commerce.common.v1.AddressR\x06shipTo\"\xd0\x01\n" +
+	"\aship_to\x18\x04 \x01(\v2\x1b.commerce.common.v1.AddressR\x06shipTo\"\xe9\x01\n" +
 	"\tQuoteLine\x12\x1d\n" +
 	"\n" +
 	"product_id\x18\x01 \x01(\tR\tproductId\x12\x14\n" +
@@ -477,7 +487,8 @@ const file_commerce_pricing_v1_pricing_proto_rawDesc = "" +
 	"\n" +
 	"unit_price\x18\x04 \x01(\v2\x19.commerce.common.v1.MoneyR\tunitPrice\x128\n" +
 	"\n" +
-	"line_total\x18\x05 \x01(\v2\x19.commerce.common.v1.MoneyR\tlineTotal\"\xd7\x02\n" +
+	"line_total\x18\x05 \x01(\v2\x19.commerce.common.v1.MoneyR\tlineTotal\x12\x17\n" +
+	"\ashop_id\x18\x06 \x01(\tR\x06shopId\"\xd7\x02\n" +
 	"\x05Quote\x124\n" +
 	"\x05lines\x18\x01 \x03(\v2\x1e.commerce.pricing.v1.QuoteLineR\x05lines\x125\n" +
 	"\bsubtotal\x18\x02 \x01(\v2\x19.commerce.common.v1.MoneyR\bsubtotal\x125\n" +

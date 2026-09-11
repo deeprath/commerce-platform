@@ -11,9 +11,13 @@
 // moves a shipment PENDING -> SHIPPED -> DELIVERED on a short delay. In
 // production the advancer is replaced by a signature-verified carrier webhook —
 // the emitted events are identical either way. The order service consumes
-// commerce.fulfillment.delivered and moves the order to FULFILLED.
+// commerce.fulfillment.delivered and moves the order to FULFILLED once every
+// one of the order's shipments has been delivered.
 //
-// v1 simplification: exactly one shipment per order (no split shipments).
+// An order's lines are grouped by shop_id into one shipment per shop (plus one
+// for any first-party lines, shop_id "") — a marketplace order spanning two
+// shops produces two independent shipments, each carrying only that shop's
+// items and advancing through PENDING/SHIPPED/DELIVERED on its own.
 
 package fulfillmentv1
 

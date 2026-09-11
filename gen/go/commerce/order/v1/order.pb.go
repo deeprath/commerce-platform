@@ -134,12 +134,16 @@ func (ReturnStatus) EnumDescriptor() ([]byte, []int) {
 }
 
 type OrderLine struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProductId     string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
-	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
-	Quantity      int32                  `protobuf:"varint,3,opt,name=quantity,proto3" json:"quantity,omitempty"`
-	UnitPrice     *v1.Money              `protobuf:"bytes,4,opt,name=unit_price,json=unitPrice,proto3" json:"unit_price,omitempty"`
-	LineTotal     *v1.Money              `protobuf:"bytes,5,opt,name=line_total,json=lineTotal,proto3" json:"line_total,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProductId string                 `protobuf:"bytes,1,opt,name=product_id,json=productId,proto3" json:"product_id,omitempty"`
+	Title     string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Quantity  int32                  `protobuf:"varint,3,opt,name=quantity,proto3" json:"quantity,omitempty"`
+	UnitPrice *v1.Money              `protobuf:"bytes,4,opt,name=unit_price,json=unitPrice,proto3" json:"unit_price,omitempty"`
+	LineTotal *v1.Money              `protobuf:"bytes,5,opt,name=line_total,json=lineTotal,proto3" json:"line_total,omitempty"`
+	// Owning marketplace shop (commerce.seller.v1), copied from the catalog
+	// product at quote time. Empty => a first-party line. Fulfillment groups an
+	// order's lines by this field into one shipment per shop.
+	ShopId        string `protobuf:"bytes,6,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -207,6 +211,13 @@ func (x *OrderLine) GetLineTotal() *v1.Money {
 		return x.LineTotal
 	}
 	return nil
+}
+
+func (x *OrderLine) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
 }
 
 type Order struct {
@@ -1987,7 +1998,7 @@ var File_commerce_order_v1_order_proto protoreflect.FileDescriptor
 
 const file_commerce_order_v1_order_proto_rawDesc = "" +
 	"\n" +
-	"\x1dcommerce/order/v1/order.proto\x12\x11commerce.order.v1\x1a\x1ecommerce/common/v1/types.proto\"\xd0\x01\n" +
+	"\x1dcommerce/order/v1/order.proto\x12\x11commerce.order.v1\x1a\x1ecommerce/common/v1/types.proto\"\xe9\x01\n" +
 	"\tOrderLine\x12\x1d\n" +
 	"\n" +
 	"product_id\x18\x01 \x01(\tR\tproductId\x12\x14\n" +
@@ -1996,7 +2007,8 @@ const file_commerce_order_v1_order_proto_rawDesc = "" +
 	"\n" +
 	"unit_price\x18\x04 \x01(\v2\x19.commerce.common.v1.MoneyR\tunitPrice\x128\n" +
 	"\n" +
-	"line_total\x18\x05 \x01(\v2\x19.commerce.common.v1.MoneyR\tlineTotal\"\xc9\x04\n" +
+	"line_total\x18\x05 \x01(\v2\x19.commerce.common.v1.MoneyR\tlineTotal\x12\x17\n" +
+	"\ashop_id\x18\x06 \x01(\tR\x06shopId\"\xc9\x04\n" +
 	"\x05Order\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\bowner_id\x18\x02 \x01(\tR\aownerId\x126\n" +

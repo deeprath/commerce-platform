@@ -216,7 +216,7 @@ func TestSaga_OnShipmentDelivered(t *testing.T) {
 		t.Fatalf("confirm: %v", err)
 	}
 
-	if err := orch.OnShipmentDelivered(ctx, "deliver-1", o.ID); err != nil {
+	if err := orch.OnShipmentDelivered(ctx, "deliver-1", o.ID, ""); err != nil {
 		t.Fatalf("OnShipmentDelivered: %v", err)
 	}
 	got, _ := st.Get(ctx, o.ID, "owner-1")
@@ -224,18 +224,83 @@ func TestSaga_OnShipmentDelivered(t *testing.T) {
 		t.Fatalf("status = %s, want FULFILLED", got.Status)
 	}
 	// Duplicate delivery event -> no-op, no error.
-	if err := orch.OnShipmentDelivered(ctx, "deliver-1", o.ID); err != nil {
+	if err := orch.OnShipmentDelivered(ctx, "deliver-1", o.ID, ""); err != nil {
 		t.Fatalf("duplicate delivery: %v", err)
 	}
 
 	// A delivery for an order that never confirmed is ignored (stays put).
 	pend := seedPending(t, st)
-	if err := orch.OnShipmentDelivered(ctx, "deliver-pend", pend.ID); err != nil {
+	if err := orch.OnShipmentDelivered(ctx, "deliver-pend", pend.ID, ""); err != nil {
 		t.Fatalf("delivery on pending order: %v", err)
 	}
 	got2, _ := st.Get(ctx, pend.ID, "owner-1")
 	if got2.Status != domain.StatusPendingPayment {
 		t.Fatalf("pending order changed on delivery: %s", got2.Status)
+	}
+}
+
+// A marketplace order spanning two shops (plus a first-party line) only moves
+// to FULFILLED once every shop group has delivered — not on the first one.
+func TestSaga_OnShipmentDelivered_WaitsForEveryShopGroup(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	orch := saga.New(st, saga.Clients{})
+	usd := func(c int64) domain.Money { return domain.Money{Currency: "USD", Cents: c} }
+
+	o := &domain.Order{
+		ID: uuid.NewString(), OwnerID: "owner-1", Status: domain.StatusPendingPayment,
+		Lines: []domain.Line{
+			{ProductID: "fp", Title: "First Party", Quantity: 1, UnitPrice: usd(1000), LineTotal: usd(1000)},
+			{ProductID: "s1", Title: "Shop A Item", Quantity: 1, UnitPrice: usd(2000), LineTotal: usd(2000), ShopID: "shop-a"},
+			{ProductID: "s2", Title: "Shop B Item", Quantity: 1, UnitPrice: usd(3000), LineTotal: usd(3000), ShopID: "shop-b"},
+		},
+		Subtotal: usd(6000), Total: usd(6000),
+	}
+	if err := st.Insert(ctx, o); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if _, err := st.Apply(ctx, o.ID, "c", func(o *domain.Order) error { return o.Confirm() }); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	if err := orch.OnShipmentDelivered(ctx, "d-fp", o.ID, ""); err != nil {
+		t.Fatalf("deliver first-party: %v", err)
+	}
+	if got, _ := st.Get(ctx, o.ID, ""); got.Status != domain.StatusConfirmed {
+		t.Fatalf("status = %s after 1/3 groups delivered, want still CONFIRMED", got.Status)
+	}
+
+	if err := orch.OnShipmentDelivered(ctx, "d-a", o.ID, "shop-a"); err != nil {
+		t.Fatalf("deliver shop-a: %v", err)
+	}
+	if got, _ := st.Get(ctx, o.ID, ""); got.Status != domain.StatusConfirmed {
+		t.Fatalf("status = %s after 2/3 groups delivered, want still CONFIRMED", got.Status)
+	}
+
+	// Redelivering an already-recorded group's event must not count twice.
+	if err := orch.OnShipmentDelivered(ctx, "d-a-redelivered", o.ID, "shop-a"); err != nil {
+		t.Fatalf("redeliver shop-a: %v", err)
+	}
+	if got, _ := st.Get(ctx, o.ID, ""); got.Status != domain.StatusConfirmed {
+		t.Fatalf("status = %s after redelivered shop-a, want still CONFIRMED", got.Status)
+	}
+
+	if err := orch.OnShipmentDelivered(ctx, "d-b", o.ID, "shop-b"); err != nil {
+		t.Fatalf("deliver shop-b: %v", err)
+	}
+	got, _ := st.Get(ctx, o.ID, "")
+	if got.Status != domain.StatusFulfilled {
+		t.Fatalf("status = %s after 3/3 groups delivered, want FULFILLED", got.Status)
+	}
+
+	// order.fulfilled emitted exactly once, despite the redelivered shop-a event.
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox WHERE topic='commerce.order.fulfilled' AND key=$1`, []byte(o.ID)).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("order.fulfilled count = %d, want 1", n)
 	}
 }
 

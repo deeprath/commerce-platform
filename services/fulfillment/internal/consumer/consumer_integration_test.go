@@ -112,6 +112,54 @@ func TestHandler_CreatesShipmentFromEventAndDedupes(t *testing.T) {
 	}
 }
 
+// An order.confirmed event whose lines span two shops (plus a first-party
+// line) produces one shipment per shop group, each with only that group's
+// items.
+func TestHandler_GroupsLinesByShopIntoSeparateShipments(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	h := consumer.Handler(st)
+
+	evt := &orderv1.OrderConfirmed{
+		OrderId: "order-multi", OwnerId: "owner-1",
+		ShipTo: &commonv1.Address{FullName: "Buyer"},
+		Lines: []*orderv1.OrderLine{
+			{ProductId: "fp", Title: "First Party", Quantity: 1},
+			{ProductId: "a1", Title: "Shop A Item", Quantity: 1, ShopId: "shop-a"},
+			{ProductId: "a2", Title: "Shop A Item 2", Quantity: 3, ShopId: "shop-a"},
+			{ProductId: "b1", Title: "Shop B Item", Quantity: 2, ShopId: "shop-b"},
+		},
+	}
+	if err := h(ctx, record(t, 1, evt)); err != nil {
+		t.Fatalf("handle: %v", err)
+	}
+
+	rows, err := pool.Query(ctx, `SELECT shop_id, jsonb_array_length(items) FROM shipments WHERE order_id = 'order-multi' ORDER BY shop_id`)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	got := map[string]int{}
+	for rows.Next() {
+		var shop string
+		var n int
+		if err := rows.Scan(&shop, &n); err != nil {
+			t.Fatal(err)
+		}
+		got[shop] = n
+	}
+	want := map[string]int{"": 1, "shop-a": 2, "shop-b": 1}
+	if len(got) != len(want) {
+		t.Fatalf("shipments by shop = %v, want %v", got, want)
+	}
+	for shop, n := range want {
+		if got[shop] != n {
+			t.Fatalf("shipments by shop = %v, want %v", got, want)
+		}
+	}
+}
+
 func TestTopics(t *testing.T) {
 	got := consumer.Topics()
 	if len(got) != 1 || got[0] != kafka.Topic("order", "confirmed") {
