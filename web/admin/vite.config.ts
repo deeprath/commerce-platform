@@ -18,5 +18,11 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    coverage: {
+      // lcov feeds SonarCloud (sonar-project.properties); text is for local runs.
+      provider: "v8",
+      reporter: ["lcov", "text"],
+      include: ["src/**"],
+    },
   },
 });

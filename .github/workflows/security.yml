@@ -176,6 +176,22 @@ jobs:
         env:
           TESTCONTAINERS_RYUK_DISABLED: "true" # see ci.yml test job
         run: go test -coverprofile=coverage.out -p 4 $(go list -m -f '{{.Dir}}/...') || true
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            web/storefront/package-lock.json
+            web/admin/package-lock.json
+      - name: frontend coverage (storefront)
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: web/storefront
+        run: npm ci && npm run test:coverage
+      - name: frontend coverage (admin)
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: web/admin
+        run: npm ci && npm run test:coverage
       - name: SonarCloud scan
         if: steps.gate.outputs.enabled == 'true'
         uses: SonarSource/sonarqube-scan-action@v4
