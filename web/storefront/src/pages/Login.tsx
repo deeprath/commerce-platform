@@ -4,7 +4,7 @@ import { api } from "../api";
 
 // A React-native login form that posts to the BFF, which brokers to Keycloak
 // and sets an httpOnly cookie (docs/ARCHITECTURE.md §7.2, approach A).
-export function Login({ onAuthed }: { onAuthed: () => void }) {
+export function Login({ onAuthed }: Readonly<{ onAuthed: () => void }>) {
   const nav = useNavigate();
   const [username, setUsername] = useState("testuser");
   const [password, setPassword] = useState("");
@@ -32,11 +32,11 @@ export function Login({ onAuthed }: { onAuthed: () => void }) {
       <h1>Sign in</h1>
       <form onSubmit={submit}>
         <label>
-          Username
+          Username{" "}
           <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
         </label>
         <label>
-          Password
+          Password{" "}
           <input
             type="password"
             value={password}

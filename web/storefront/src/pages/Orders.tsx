@@ -11,7 +11,7 @@ const LABEL: Record<string, string> = {
   ORDER_STATUS_FULFILLED: "Fulfilled",
 };
 
-export function Orders({ authed }: { authed: boolean }) {
+export function Orders({ authed }: Readonly<{ authed: boolean }>) {
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -52,7 +52,7 @@ export function Orders({ authed }: { authed: boolean }) {
   );
 }
 
-export function OrderDetail({ authed }: { authed: boolean }) {
+export function OrderDetail({ authed }: Readonly<{ authed: boolean }>) {
   const { id = "" } = useParams();
   const [order, setOrder] = useState<Order | null>(null);
   const [err, setErr] = useState<string | null>(null);

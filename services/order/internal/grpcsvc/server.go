@@ -56,9 +56,9 @@ func (s *Server) CreateOrder(ctx context.Context, req *orderv1.CreateOrderReques
 }
 
 func (s *Server) GetOrder(ctx context.Context, req *orderv1.GetOrderRequest) (*orderv1.Order, error) {
-	p := auth.FromContext(ctx)
-	if p == nil {
-		return nil, errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
 	}
 	owner := p.Subject
 	if p.HasRole(roleOrderManager) {
@@ -84,9 +84,9 @@ func (s *Server) GetOrder(ctx context.Context, req *orderv1.GetOrderRequest) (*o
 }
 
 func (s *Server) ListOrders(ctx context.Context, req *orderv1.ListOrdersRequest) (*orderv1.ListOrdersResponse, error) {
-	p := auth.FromContext(ctx)
-	if p == nil {
-		return nil, errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
 	}
 	// An operator may list any customer's orders and filter; everyone else is
 	// scoped to their own.
@@ -107,9 +107,9 @@ func (s *Server) ListOrders(ctx context.Context, req *orderv1.ListOrdersRequest)
 }
 
 func (s *Server) CancelOrder(ctx context.Context, req *orderv1.CancelOrderRequest) (*orderv1.Order, error) {
-	p := auth.FromContext(ctx)
-	if p == nil {
-		return nil, errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required")
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
 	}
 	o, err := s.store.Get(ctx, req.GetId(), p.Subject)
 	if err != nil {

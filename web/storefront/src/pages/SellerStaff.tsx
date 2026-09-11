@@ -4,7 +4,7 @@ import { api } from "../api";
 import type { ShopStaff } from "../types";
 import { SellerNav } from "../components/SellerNav";
 
-export function SellerStaff({ authed }: { authed: boolean }) {
+export function SellerStaff({ authed }: Readonly<{ authed: boolean }>) {
   const [staff, setStaff] = useState<ShopStaff | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [subject, setSubject] = useState("");
@@ -83,7 +83,7 @@ export function SellerStaff({ authed }: { authed: boolean }) {
 
       <form onSubmit={add} className="seller-form staff-form">
         <label>
-          Add staff (subject id)
+          Add staff (subject id){" "}
           <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Keycloak subject" />
         </label>
         <button type="submit" disabled={busy || !subject.trim()}>

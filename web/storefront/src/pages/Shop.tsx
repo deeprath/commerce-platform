@@ -57,7 +57,7 @@ export function Shop() {
         {shop.description && <p className="desc">{shop.description}</p>}
       </header>
 
-      {products && products.length === 0 && (
+      {products?.length === 0 && (
         <p className="muted">This shop has no products listed yet.</p>
       )}
       {products && products.length > 0 && (

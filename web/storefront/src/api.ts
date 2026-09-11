@@ -61,7 +61,7 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
   if (!res.ok) {
@@ -119,7 +119,8 @@ export const api = {
     const qs = new URLSearchParams();
     if (pageToken) qs.set("page_token", pageToken);
     const q = qs.toString();
-    return req(`/shops/${encodeURIComponent(slug)}/products${q ? `?${q}` : ""}`);
+    const suffix = q ? "?" + q : "";
+    return req(`/shops/${encodeURIComponent(slug)}/products${suffix}`);
   },
 
   login(username: string, password: string): Promise<{ authenticated: boolean; expires_in: number }> {
@@ -132,9 +133,8 @@ export const api = {
 
   // --- cart ---
   getCart(coupon?: string): Promise<CartView> {
-    return req<CartView>(`/cart${coupon ? `?coupon=${encodeURIComponent(coupon)}` : ""}`).then(
-      normCart,
-    );
+    const suffix = coupon ? "?coupon=" + encodeURIComponent(coupon) : "";
+    return req<CartView>(`/cart${suffix}`).then(normCart);
   },
   addToCart(productId: string, quantity = 1): Promise<CartView> {
     return req<CartView>(`/cart/items`, {
@@ -204,7 +204,8 @@ export const api = {
     const qs = new URLSearchParams();
     if (pageToken) qs.set("page_token", pageToken);
     const q = qs.toString();
-    return req(`/seller/products${q ? `?${q}` : ""}`);
+    const suffix = q ? "?" + q : "";
+    return req(`/seller/products${suffix}`);
   },
   createShopProduct(body: ProductInput): Promise<{ product: Product }> {
     return req(`/seller/products`, { method: "POST", body: JSON.stringify(body) });
@@ -222,7 +223,8 @@ export const api = {
     if (status) qs.set("status", status);
     if (pageToken) qs.set("page_token", pageToken);
     const q = qs.toString();
-    return req(`/seller/payouts${q ? `?${q}` : ""}`);
+    const suffix = q ? "?" + q : "";
+    return req(`/seller/payouts${suffix}`);
   },
 };
 

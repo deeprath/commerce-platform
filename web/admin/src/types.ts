@@ -26,7 +26,7 @@ export function money(m?: Money | null): string {
 export function when(s?: string): string {
   if (!s) return "—";
   const d = new Date(s);
-  return isNaN(d.getTime()) ? s : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleString();
 }
 
 // --- catalog ---
@@ -110,6 +110,6 @@ export interface Shipment {
 
 // Strip the proto enum prefix for display: ORDER_STATUS_FULFILLED -> Fulfilled.
 export function label(enumValue: string): string {
-  const bare = enumValue.replace(/^[A-Z]+_STATUS_/, "").replace(/_/g, " ");
+  const bare = enumValue.replace(/^[A-Z]+_STATUS_/, "").replaceAll("_", " ");
   return bare.charAt(0) + bare.slice(1).toLowerCase();
 }

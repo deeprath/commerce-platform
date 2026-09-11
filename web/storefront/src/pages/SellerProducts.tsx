@@ -33,7 +33,7 @@ function unitsToDollars(units: string, nanos: number): string {
   return cents ? `${units}.${String(cents).padStart(2, "0")}` : units;
 }
 
-export function SellerProducts({ authed }: { authed: boolean }) {
+export function SellerProducts({ authed }: Readonly<{ authed: boolean }>) {
   const [products, setProducts] = useState<Product[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -90,7 +90,7 @@ export function SellerProducts({ authed }: { authed: boolean }) {
 
       {err && <p className="error">{err}</p>}
       {!products && !err && <p className="muted">Loading…</p>}
-      {products && products.length === 0 && <p className="muted">No products yet.</p>}
+      {products?.length === 0 && <p className="muted">No products yet.</p>}
 
       {products && products.length > 0 && (
         <table className="seller-table">
@@ -160,11 +160,11 @@ function ProductForm({
   initial,
   submitLabel,
   onSubmit,
-}: {
+}: Readonly<{
   initial: ProductInput;
   submitLabel: string;
   onSubmit: (input: ProductInput) => Promise<void>;
-}) {
+}>) {
   const [form, setForm] = useState<ProductInput>(initial);
   const [price, setPrice] = useState(unitsToDollars(initial.list_price.units, initial.list_price.nanos ?? 0));
   const [busy, setBusy] = useState(false);
@@ -188,21 +188,21 @@ function ProductForm({
     <form onSubmit={submit} className="seller-form product-form">
       {isCreate && (
         <label>
-          Slug (URL-safe, permanent)
+          Slug (URL-safe, permanent){" "}
           <input required value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} />
         </label>
       )}
       <label>
-        Title
+        Title{" "}
         <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       </label>
       <label>
-        Description
+        Description{" "}
         <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
       </label>
       <div className="row3">
         <label>
-          Category
+          Category{" "}
           <input
             required
             value={form.category_id}
@@ -210,12 +210,12 @@ function ProductForm({
           />
         </label>
         <label>
-          Price (USD)
+          Price (USD){" "}
           <input required type="number" step="0.01" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
         </label>
         {!isCreate && (
           <label>
-            Status
+            Status{" "}
             <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
               <option value="PRODUCT_STATUS_DRAFT">Draft</option>
               <option value="PRODUCT_STATUS_ACTIVE">Active</option>

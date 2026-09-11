@@ -13,7 +13,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 const BLANK: ShopInput = { name: "", description: "", contact_email: "" };
 
-export function SellerDashboard({ authed }: { authed: boolean }) {
+export function SellerDashboard({ authed }: Readonly<{ authed: boolean }>) {
   // shop stays null both while genuinely not-yet-fetched and once a fetch
   // confirms the caller has no shop (SHOP_NOT_FOUND) — either way the
   // Onboarding form is the right thing to show, and it hands a freshly
@@ -59,7 +59,7 @@ export function SellerDashboard({ authed }: { authed: boolean }) {
   );
 }
 
-function Onboarding({ onCreated }: { onCreated: (s: Shop) => void }) {
+function Onboarding({ onCreated }: Readonly<{ onCreated: (s: Shop) => void }>) {
   const [form, setForm] = useState<ShopInput>(BLANK);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -84,7 +84,7 @@ function Onboarding({ onCreated }: { onCreated: (s: Shop) => void }) {
       <p className="muted">Open a shop to list your own products on the marketplace.</p>
       <form onSubmit={submit} className="seller-form">
         <label>
-          Shop name
+          Shop name{" "}
           <input
             required
             value={form.name}
@@ -92,14 +92,14 @@ function Onboarding({ onCreated }: { onCreated: (s: Shop) => void }) {
           />
         </label>
         <label>
-          Description
+          Description{" "}
           <textarea
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
         </label>
         <label>
-          Contact email
+          Contact email{" "}
           <input
             type="email"
             value={form.contact_email}
@@ -115,7 +115,7 @@ function Onboarding({ onCreated }: { onCreated: (s: Shop) => void }) {
   );
 }
 
-function ShopCard({ shop, onUpdated }: { shop: Shop; onUpdated: (s: Shop) => void }) {
+function ShopCard({ shop, onUpdated }: Readonly<{ shop: Shop; onUpdated: (s: Shop) => void }>) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<ShopInput>({
     name: shop.name,
@@ -169,7 +169,7 @@ function ShopCard({ shop, onUpdated }: { shop: Shop; onUpdated: (s: Shop) => voi
       ) : (
         <form onSubmit={submit} className="seller-form">
           <label>
-            Shop name
+            Shop name{" "}
             <input
               required
               value={form.name}
@@ -177,14 +177,14 @@ function ShopCard({ shop, onUpdated }: { shop: Shop; onUpdated: (s: Shop) => voi
             />
           </label>
           <label>
-            Description
+            Description{" "}
             <textarea
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
           </label>
           <label>
-            Contact email
+            Contact email{" "}
             <input
               type="email"
               value={form.contact_email}

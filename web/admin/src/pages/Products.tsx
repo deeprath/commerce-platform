@@ -17,7 +17,9 @@ export function Products() {
     setMsg(null);
     try {
       const dollars = Number(form.price);
-      if (!(dollars > 0)) throw new Error("Enter a price in dollars.");
+      // Number.isFinite first: NaN <= 0 is false, so a bare "dollars <= 0"
+      // would silently accept a non-numeric price (e.g. Number("abc")).
+      if (!Number.isFinite(dollars) || dollars <= 0) throw new Error("Enter a price in dollars.");
       const p = await api.createProduct({
         slug: form.slug,
         title: form.title,
@@ -67,15 +69,15 @@ export function Products() {
         <h3>New product</h3>
         <div className="row3">
           <label>
-            Slug
+            Slug{" "}
             <input value={form.slug} required onChange={(e) => setForm({ ...form, slug: e.target.value })} />
           </label>
           <label>
-            Title
+            Title{" "}
             <input value={form.title} required onChange={(e) => setForm({ ...form, title: e.target.value })} />
           </label>
           <label>
-            Price (USD)
+            Price (USD){" "}
             <input
               value={form.price}
               required
@@ -85,7 +87,7 @@ export function Products() {
           </label>
         </div>
         <label>
-          Description
+          Description{" "}
           <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         </label>
         <button type="submit" disabled={busy}>

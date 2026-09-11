@@ -10,7 +10,7 @@ const STATUS_LABEL: Record<string, string> = {
   PAYOUT_STATUS_PAID: "Paid",
 };
 
-export function SellerPayouts({ authed }: { authed: boolean }) {
+export function SellerPayouts({ authed }: Readonly<{ authed: boolean }>) {
   const [payouts, setPayouts] = useState<Payout[] | null>(null);
   const [status, setStatus] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -47,7 +47,7 @@ export function SellerPayouts({ authed }: { authed: boolean }) {
 
       {err && <p className="error">{err}</p>}
       {!payouts && !err && <p className="muted">Loading…</p>}
-      {payouts && payouts.length === 0 && <p className="muted">No payouts yet.</p>}
+      {payouts?.length === 0 && <p className="muted">No payouts yet.</p>}
 
       {payouts && payouts.length > 0 && (
         <table className="seller-table">
