@@ -1896,3 +1896,90 @@ cancelled shipment already left a single-shipment order stuck short of
 FULFILLED (not introduced by this slice). Deferred to follow-on slices: split
 payments/payouts (charging/remitting per shop), and a seller dashboard
 surfacing a shop's shipments.
+
+---
+
+## ADR-043 — Marketplace, slice 6: per-shop payouts (`payout` service)
+
+**Status:** accepted · Phase 5 · builds on ADR-040, ADR-042
+
+**Context:** a marketplace order can already be split for fulfillment (ADR-042),
+but nothing tracks what the platform owes each shop for their share of an
+order. Checkout itself stays one cart, one quote, one payment intent, one
+buyer-facing charge (an explicit scoping decision, confirmed via
+AskUserQuestion: extend `payment`, put payouts in a new service, or pause the
+arc here — a new service was chosen, matching this platform's one-aggregate-
+per-service pattern rather than mixing "the buyer's single charge" and "a
+shop's share of it" into one aggregate/database).
+
+**Decision:**
+- **New `services/payout`**, its own DB (`payout`), consuming
+  `commerce.order.confirmed` exactly like `fulfillment` does. An order's lines
+  are grouped and summed by `shop_id`; one `Payout` row is created per distinct
+  marketplace shop (`shop_id != ""`) for the sum of that shop's line totals.
+  First-party lines create no payout — that revenue never left the platform.
+  `shipments`' and `payouts`' shop-grouping code independently mirror each
+  other (both consume the same event) rather than share a library: they group
+  for different reasons (what ships together vs. who gets paid) and are
+  expected to diverge once fulfillment splits shipments further (e.g.
+  per-warehouse) while payouts stay one-per-shop-per-order.
+- **No platform commission in v1** — a payout is 100% of the shop's line
+  total. A fee/commission schedule is real product logic (flat vs.
+  percentage, category-specific rates, promotional periods) that deserves its
+  own deliberate slice rather than an arbitrary constant baked in now; every
+  payout amount is a straight sum of `order_lines.line_total` for that shop,
+  auditable against the order.
+- **SANDBOX settlement**, mirroring the fulfillment carrier exactly: a
+  background sweep marks a `PENDING` payout `PAID` after a short configurable
+  delay, standing in for a real payout-provider integration (e.g. Stripe
+  Connect transfers). `MarkPaid` is also exposed as an RPC (finance role) so
+  an operator can force settlement without waiting — same shape as
+  fulfillment's `MarkShipped`/`MarkDelivered`.
+- **Authorization mirrors `catalog.mayWriteProduct`**: reads
+  (`GetPayout`/`ListPayouts`) require either the `finance` role (platform
+  staff may read any shop's payouts — an existing Keycloak role, already
+  composited into `admin`) or OpenFGA `shop#staff` of the payout's shop, via
+  the same centralized `pkg/fga` model and store as catalog/seller/order.
+  `MarkPaid` is finance-only; there is no seller-initiated write RPC at all —
+  a seller only ever reads.
+- **BFF surface is read-only for sellers**: `GET /api/v1/seller/payouts`
+  resolves the caller's shop via `seller.GetMyShop` (same pattern as
+  `listShopProducts`) and forwards to `payout.ListPayouts` — no seller-facing
+  write route. Admin/finance gets `GET /api/v1/admin/payouts` and
+  `POST /api/v1/admin/payouts/:id/mark-paid`, mirroring the existing
+  `/admin/shipments` routes exactly. No dashboard UI in this slice — a JSON
+  list is enough data-wise; the actual seller dashboard page is the next
+  roadmap item.
+
+**Alternatives:**
+- *Extend the payment service* — rejected per the scoping decision: `payment`
+  models one PSP intent for the buyer's single charge; a payout is a
+  fundamentally different aggregate (per-shop, created post-hoc from order
+  lines, its own lifecycle) and every other marketplace concept in this
+  platform already gets its own service once it needs its own lifecycle
+  (seller, and now payout, alongside catalog/order/fulfillment).
+  Piggybacking payouts onto `payment`'s DB would also mean payment's schema
+  carries `shop_id`/marketplace concerns a plain single-seller deployment of
+  this platform would never need.
+  Denormalize into `payment`'s DB instead of a new database — rejected for the
+  same database-per-service reasoning as every other slice (ADR-003).
+- *A synchronous RPC from the order or fulfillment service to compute
+  payouts* — rejected in favor of `payout` independently consuming
+  `order.confirmed` itself, matching the fulfillment consumer exactly and
+  keeping payout entirely decoupled from the fulfillment split's internals.
+- *A percentage platform commission from day one* — rejected as premature:
+  no product requirement yet specifies the rate, and a wrong number baked into
+  the ledger is worse than an honest "not modeled yet." 100% passthrough is
+  the simplest correct baseline and is called out explicitly here so it reads
+  as a deliberate placeholder, not an oversight.
+
+**Consequences:** one more independent Kafka consumer group on
+`commerce.order.confirmed` — `fulfillment`, `analytics`, `notification`, and
+`review` already each run their own group against it, so `payout` joining
+them is purely additive load with no coupling between the groups. `payout`
+depends on OpenFGA optionally (same
+degrade-gracefully pattern as catalog/seller/order): without an endpoint, only
+the `finance` role can read any payout. Deferred to the next roadmap item: a
+seller dashboard surfacing shipments, payouts, and shop management in one UI
+instead of raw JSON endpoints; and, longer-term, a real commission model and a
+real payout-provider integration replacing the sandbox sweep.

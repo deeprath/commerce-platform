@@ -54,6 +54,7 @@ func run() error {
 		Fulfillment: config.String("FULFILLMENT_ADDR", "fulfillment:50051"),
 		Review:      config.String("REVIEW_ADDR", "review:50051"),
 		Seller:      config.String("SELLER_ADDR", "seller:50051"),
+		Payout:      config.String("PAYOUT_ADDR", "payout:50051"),
 	})
 	if err != nil {
 		return err

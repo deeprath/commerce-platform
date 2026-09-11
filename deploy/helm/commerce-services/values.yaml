@@ -310,6 +310,24 @@ services:
       OPENFGA_API_URL: http://openfga.commerce.svc.cluster.local:8080
       OPENFGA_STORE_NAME: commerce
 
+  payout:
+    db: payout
+    kafka: true # order.confirmed in, commerce.payout.* out via the transactional outbox
+    auth: true
+    callers: [bff]
+    egressExtra:
+      - { selector: { app: openfga }, port: 8080 } # a seller reading their own shop's payouts (ADR-043)
+    autoscaling:
+      enabled: true
+      maxReplicas: 8
+      triggers: [{ type: kafkaLag, group: payout, threshold: 100 }] # order.confirmed backlog
+    env:
+      GRPC_ADDR: ":50051"
+      OPENFGA_API_URL: http://openfga.commerce.svc.cluster.local:8080
+      OPENFGA_STORE_NAME: commerce
+      SETTLEMENT_SWEEP_INTERVAL: 30s
+      SETTLEMENT_PENDING_AFTER: 1m
+
   analytics:
     kafka: true
     callers: [] # consumer-only sink (order.* / payment.* -> ClickHouse)
@@ -363,6 +381,8 @@ services:
       PAYMENT_ADDR: payment.commerce.svc.cluster.local:50051
       FULFILLMENT_ADDR: fulfillment.commerce.svc.cluster.local:50051
       REVIEW_ADDR: review.commerce.svc.cluster.local:50051
+      SELLER_ADDR: seller.commerce.svc.cluster.local:50051
+      PAYOUT_ADDR: payout.commerce.svc.cluster.local:50051
       KEYCLOAK_CLIENT_ID: bff
       COOKIE_SECURE: "true"
       CORS_ORIGINS: https://store.commerce.example.com,https://admin.commerce.example.com

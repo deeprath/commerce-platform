@@ -350,6 +350,25 @@ func TestListShopProducts_ResolvesShopAndForwards(t *testing.T) {
 	}
 }
 
+func TestListShopPayouts_ResolvesShopAndForwards(t *testing.T) {
+	fp := &fakePayout{}
+	s := &Server{cl: &clients.Set{Seller: &fakeSeller{}, Payout: fp}}
+
+	if rec := sellerReq(t, s, http.MethodGet, "/api/v1/seller/payouts", "", false); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anon = %d, want 401", rec.Code)
+	}
+	rec := sellerReq(t, s, http.MethodGet, "/api/v1/seller/payouts?status=PENDING", "", true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if fp.lastList.GetShopId() != "shop-1" || fp.lastList.GetStatus() != "PENDING" {
+		t.Fatalf("not forwarded: %+v", fp.lastList)
+	}
+	if !strings.Contains(rec.Body.String(), `"id":"p1"`) {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
 func TestUpdateAndArchiveShopProduct_ForwardToCatalog(t *testing.T) {
 	fc := &fakeCatalog{}
 	s := &Server{cl: &clients.Set{Seller: &fakeSeller{}, Catalog: fc}}

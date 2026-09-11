@@ -13,6 +13,7 @@ import (
 
 	fulfillmentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/fulfillment/v1"
 	orderv1 "github.com/deeprath/commerce-platform/gen/go/commerce/order/v1"
+	payoutv1 "github.com/deeprath/commerce-platform/gen/go/commerce/payout/v1"
 	"github.com/deeprath/commerce-platform/services/bff/internal/clients"
 )
 
@@ -106,6 +107,21 @@ func (f *fakeFulfillment) CancelShipment(_ context.Context, in *fulfillmentv1.Ca
 	return &fulfillmentv1.Shipment{Id: in.GetId(), Status: fulfillmentv1.ShipmentStatus_SHIPMENT_STATUS_CANCELLED}, nil
 }
 
+type fakePayout struct {
+	payoutv1.PayoutServiceClient
+	lastList     *payoutv1.ListPayoutsRequest
+	lastMarkPaid *payoutv1.MarkPaidRequest
+}
+
+func (f *fakePayout) ListPayouts(_ context.Context, in *payoutv1.ListPayoutsRequest, _ ...grpc.CallOption) (*payoutv1.ListPayoutsResponse, error) {
+	f.lastList = in
+	return &payoutv1.ListPayoutsResponse{Payouts: []*payoutv1.Payout{{Id: "p1"}}}, nil
+}
+func (f *fakePayout) MarkPaid(_ context.Context, in *payoutv1.MarkPaidRequest, _ ...grpc.CallOption) (*payoutv1.Payout, error) {
+	f.lastMarkPaid = in
+	return &payoutv1.Payout{Id: in.GetId(), Status: payoutv1.PayoutStatus_PAYOUT_STATUS_PAID}, nil
+}
+
 // --- helpers -----------------------------------------------------------------
 
 func adminReq(method, path, body string) *http.Request {
@@ -120,18 +136,18 @@ func adminReq(method, path, body string) *http.Request {
 	return r
 }
 
-func adminServer() (*Server, *fakeOrder, *fakeFulfillment) {
-	fo, ff := &fakeOrder{}, &fakeFulfillment{}
-	return &Server{cl: &clients.Set{Order: fo, Fulfillment: ff}}, fo, ff
+func adminServer() (*Server, *fakeOrder, *fakeFulfillment, *fakePayout) {
+	fo, ff, fp := &fakeOrder{}, &fakeFulfillment{}, &fakePayout{}
+	return &Server{cl: &clients.Set{Order: fo, Fulfillment: ff, Payout: fp}}, fo, ff, fp
 }
 
 // --- tests ---------------------------------------------------------------
 
 func TestAdmin_RequiresToken(t *testing.T) {
-	s, _, _ := adminServer()
+	s, _, _, _ := adminServer()
 	for _, p := range []string{
 		"/api/v1/admin/orders", "/api/v1/admin/orders/o1", "/api/v1/admin/returns",
-		"/api/v1/admin/shipments",
+		"/api/v1/admin/shipments", "/api/v1/admin/payouts",
 	} {
 		rec := serve(s, httptest.NewRequest(http.MethodGet, p, nil)) // no Authorization header
 		if rec.Code != http.StatusUnauthorized {
@@ -141,7 +157,7 @@ func TestAdmin_RequiresToken(t *testing.T) {
 }
 
 func TestAdmin_Orders(t *testing.T) {
-	s, fo, _ := adminServer()
+	s, fo, _, _ := adminServer()
 
 	rec := serve(s, adminReq(http.MethodGet, "/api/v1/admin/orders?owner_id=cust-a&status=FULFILLED&page_size=5", ""))
 	if rec.Code != 200 {
@@ -163,7 +179,7 @@ func TestAdmin_Orders(t *testing.T) {
 
 // A downstream gRPC error is mapped to its HTTP status by every admin handler.
 func TestAdmin_DownstreamErrorsAreMapped(t *testing.T) {
-	s, fo, _ := adminServer()
+	s, fo, _, _ := adminServer()
 	fo.err = status.Error(codes.NotFound, "ORDER_NOT_FOUND")
 
 	for _, tc := range []struct{ method, path, body string }{
@@ -180,7 +196,7 @@ func TestAdmin_DownstreamErrorsAreMapped(t *testing.T) {
 }
 
 func TestAdmin_ReturnsQueueAndDecision(t *testing.T) {
-	s, fo, _ := adminServer()
+	s, fo, _, _ := adminServer()
 
 	rec := serve(s, adminReq(http.MethodGet, "/api/v1/admin/returns?status=REQUESTED", ""))
 	if rec.Code != 200 || fo.lastReturn.GetStatus() != "REQUESTED" {
@@ -204,7 +220,7 @@ func TestAdmin_ReturnsQueueAndDecision(t *testing.T) {
 }
 
 func TestAdmin_Shipments(t *testing.T) {
-	s, _, ff := adminServer()
+	s, _, ff, _ := adminServer()
 
 	rec := serve(s, adminReq(http.MethodGet, "/api/v1/admin/shipments?status=PENDING&order_id=o1", ""))
 	if rec.Code != 200 || ff.lastList.GetStatus() != "PENDING" || ff.lastList.GetOrderId() != "o1" {
@@ -224,5 +240,22 @@ func TestAdmin_Shipments(t *testing.T) {
 	rec = serve(s, adminReq(http.MethodPost, "/api/v1/admin/shipments/s-1/cancel", `{"reason":"lost"}`))
 	if rec.Code != 200 || ff.lastCancel.GetId() != "s-1" || ff.lastCancel.GetReason() != "lost" {
 		t.Fatalf("cancel: %d %+v", rec.Code, ff.lastCancel)
+	}
+}
+
+func TestAdmin_Payouts(t *testing.T) {
+	s, _, _, fp := adminServer()
+
+	rec := serve(s, adminReq(http.MethodGet, "/api/v1/admin/payouts?shop_id=shop-a&status=PENDING", ""))
+	if rec.Code != 200 || fp.lastList.GetShopId() != "shop-a" || fp.lastList.GetStatus() != "PENDING" {
+		t.Fatalf("list: %d %+v", rec.Code, fp.lastList)
+	}
+	if !strings.Contains(rec.Body.String(), `"id":"p1"`) {
+		t.Fatalf("response body missing the payout: %s", rec.Body.String())
+	}
+
+	rec = serve(s, adminReq(http.MethodPost, "/api/v1/admin/payouts/p-1/mark-paid", ""))
+	if rec.Code != 200 || fp.lastMarkPaid.GetId() != "p-1" {
+		t.Fatalf("mark-paid: %d id=%q", rec.Code, fp.lastMarkPaid.GetId())
 	}
 }

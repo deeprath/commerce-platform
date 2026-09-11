@@ -10,6 +10,7 @@ import (
 	mediav1 "github.com/deeprath/commerce-platform/gen/go/commerce/media/v1"
 	orderv1 "github.com/deeprath/commerce-platform/gen/go/commerce/order/v1"
 	paymentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/payment/v1"
+	payoutv1 "github.com/deeprath/commerce-platform/gen/go/commerce/payout/v1"
 	pricingv1 "github.com/deeprath/commerce-platform/gen/go/commerce/pricing/v1"
 	reviewv1 "github.com/deeprath/commerce-platform/gen/go/commerce/review/v1"
 	searchv1 "github.com/deeprath/commerce-platform/gen/go/commerce/search/v1"
@@ -19,7 +20,7 @@ import (
 
 // Targets is the set of downstream addresses.
 type Targets struct {
-	Catalog, Media, Search, Cart, Pricing, Order, Payment, Fulfillment, Review, Seller string
+	Catalog, Media, Search, Cart, Pricing, Order, Payment, Fulfillment, Review, Seller, Payout string
 }
 
 type Set struct {
@@ -33,6 +34,7 @@ type Set struct {
 	Fulfillment fulfillmentv1.FulfillmentServiceClient
 	Review      reviewv1.ReviewServiceClient
 	Seller      sellerv1.SellerServiceClient
+	Payout      payoutv1.PayoutServiceClient
 
 	conns []*grpc.ClientConn
 }
@@ -66,6 +68,7 @@ func Dial(t Targets) (*Set, error) {
 		{t.Fulfillment, func(c *grpc.ClientConn) { s.Fulfillment = fulfillmentv1.NewFulfillmentServiceClient(c) }},
 		{t.Review, func(c *grpc.ClientConn) { s.Review = reviewv1.NewReviewServiceClient(c) }},
 		{t.Seller, func(c *grpc.ClientConn) { s.Seller = sellerv1.NewSellerServiceClient(c) }},
+		{t.Payout, func(c *grpc.ClientConn) { s.Payout = payoutv1.NewPayoutServiceClient(c) }},
 	} {
 		cc, err := conn(w.addr)
 		if err != nil {
