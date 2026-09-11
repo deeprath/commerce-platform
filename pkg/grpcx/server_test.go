@@ -90,7 +90,7 @@ func (s *stubHealthServer) Check(ctx context.Context, _ *grpc_health_v1.HealthCh
 		panic("boom")
 	}
 	st := grpc_health_v1.HealthCheckResponse_NOT_SERVING
-	if p := auth.FromContext(ctx); p != nil {
+	if auth.FromContext(ctx) != nil {
 		st = grpc_health_v1.HealthCheckResponse_SERVING // proves the Principal was injected
 	}
 	return &grpc_health_v1.HealthCheckResponse{Status: st}, nil
