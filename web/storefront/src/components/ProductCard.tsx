@@ -1,8 +1,16 @@
 import { mediaUrl } from "../api";
 import { formatMoney } from "../types";
-import type { Hit } from "../types";
+import type { Money } from "../types";
 
-export function ProductCard({ hit }: { hit: Hit }) {
+// Structural rather than `Hit`-specific so callers with a plain `Product`
+// (e.g. a shop's storefront listing) can pass one in without remapping.
+export interface CardItem {
+  title: string;
+  list_price: Money;
+  primary_media_key: string;
+}
+
+export function ProductCard({ hit }: { hit: CardItem }) {
   return (
     <article className="card">
       <div className="card-img">

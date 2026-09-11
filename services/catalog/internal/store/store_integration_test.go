@@ -108,7 +108,7 @@ func TestCreateReadArchiveAndOutbox(t *testing.T) {
 	if _, err := st.Update(ctx, got); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	list, _, err := st.List(ctx, "", 10, nil)
+	list, _, err := st.List(ctx, "", "", 10, nil)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("list active: %d %v", len(list), err)
 	}
@@ -117,7 +117,7 @@ func TestCreateReadArchiveAndOutbox(t *testing.T) {
 	if _, err := st.Archive(ctx, created.ID); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
-	list, _, _ = st.List(ctx, "", 10, nil)
+	list, _, _ = st.List(ctx, "", "", 10, nil)
 	if len(list) != 0 {
 		t.Fatalf("archived product still listed: %d", len(list))
 	}
@@ -161,18 +161,18 @@ func TestListKeysetPagination(t *testing.T) {
 		time.Sleep(2 * time.Millisecond) // distinct created_at ordering
 	}
 
-	page1, next, err := st.List(ctx, "", 2, nil)
+	page1, next, err := st.List(ctx, "", "", 2, nil)
 	if err != nil || len(page1) != 2 || next == nil {
 		t.Fatalf("page1: len=%d next=%v err=%v", len(page1), next, err)
 	}
-	page2, next2, err := st.List(ctx, "", 2, next)
+	page2, next2, err := st.List(ctx, "", "", 2, next)
 	if err != nil || len(page2) != 2 || next2 == nil {
 		t.Fatalf("page2: len=%d err=%v", len(page2), err)
 	}
 	if page1[0].ID == page2[0].ID {
 		t.Fatal("pages overlap")
 	}
-	page3, next3, _ := st.List(ctx, "", 2, next2)
+	page3, next3, _ := st.List(ctx, "", "", 2, next2)
 	if len(page3) != 1 || next3 != nil {
 		t.Fatalf("page3 should be the last one: len=%d next=%v", len(page3), next3)
 	}
@@ -250,5 +250,48 @@ func TestListByShop_AllStatusesFilteredAndPaginated(t *testing.T) {
 	empty, _, err := st.ListByShop(ctx, "cccccccc-0000-0000-0000-000000000003", 10, nil)
 	if err != nil || len(empty) != 0 {
 		t.Fatalf("unknown shop: len=%d err=%v", len(empty), err)
+	}
+}
+
+func TestList_FiltersByShop(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+	const shop = "dddddddd-0000-0000-0000-000000000004"
+
+	// A first-party product, plus one ACTIVE and one DRAFT under the shop.
+	fp, err := st.Create(ctx, newDraft(t, "fp-list"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fp.Status = domain.StatusActive
+	if _, err := st.Update(ctx, fp); err != nil {
+		t.Fatal(err)
+	}
+	active, err := st.Create(ctx, newShopDraft(t, "shop-active", shop))
+	if err != nil {
+		t.Fatal(err)
+	}
+	active.Status = domain.StatusActive
+	if _, err := st.Update(ctx, active); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Create(ctx, newShopDraft(t, "shop-draft", shop)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Public list scoped to the shop: only its ACTIVE product, not the draft
+	// and not the first-party one.
+	got, _, err := st.List(ctx, "", shop, 10, nil)
+	if err != nil {
+		t.Fatalf("List(shop): %v", err)
+	}
+	if len(got) != 1 || got[0].Slug != "shop-active" {
+		t.Fatalf("List(shop) = %+v, want just shop-active", got)
+	}
+
+	// Unfiltered list includes both ACTIVE products (first-party + shop's).
+	all, _, err := st.List(ctx, "", "", 10, nil)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("List(unfiltered) len=%d err=%v", len(all), err)
 	}
 }

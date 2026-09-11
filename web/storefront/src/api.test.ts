@@ -75,6 +75,27 @@ describe("api", () => {
     await expect(api.getOrder("nope")).rejects.toBeInstanceOf(ApiRequestError);
     expect(onUnauth).not.toHaveBeenCalled();
   });
+
+  it("fetches a shop by slug", async () => {
+    const f = mockFetch(200, { id: "shop-1", slug: "the-shop", name: "The Shop" });
+    const shop = await api.shop("the-shop");
+    expect(f.mock.calls[0][0]).toBe("/api/v1/shops/the-shop");
+    expect(shop.name).toBe("The Shop");
+  });
+
+  it("lists a shop's products, forwarding a page token when given", async () => {
+    const f = mockFetch(200, { products: [], page: {} });
+    await api.shopProducts("the-shop", "cursor-1");
+    const url = f.mock.calls[0][0] as string;
+    expect(url).toContain("/api/v1/shops/the-shop/products?");
+    expect(url).toContain("page_token=cursor-1");
+  });
+
+  it("omits the query string when no page token is given", async () => {
+    const f = mockFetch(200, { products: [], page: {} });
+    await api.shopProducts("the-shop");
+    expect(f.mock.calls[0][0]).toBe("/api/v1/shops/the-shop/products");
+  });
 });
 
 describe("formatMoney", () => {

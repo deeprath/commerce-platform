@@ -92,7 +92,7 @@ func (s *Server) ListProducts(ctx context.Context, req *catalogv1.ListProductsRe
 	if err != nil {
 		return nil, err
 	}
-	items, next, err := s.store.List(ctx, req.GetCategoryId(), limit, cur)
+	items, next, err := s.store.List(ctx, req.GetCategoryId(), req.GetShopId(), limit, cur)
 	if err != nil {
 		return nil, err
 	}

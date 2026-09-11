@@ -16,6 +16,34 @@ export interface Product {
   media_keys: string[];
   status: string;
   attributes: Record<string, string>;
+  // Empty => first-party (platform-owned) product.
+  shop_id?: string;
+}
+
+// Attached by the BFF alongside a marketplace product's GetProduct response;
+// absent for first-party products.
+export interface SoldBy {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface Shop {
+  id: string;
+  owner_id: string;
+  name: string;
+  slug: string;
+  description: string;
+  contact_email: string;
+  status: string;
+  suspension_reason: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductListResponse {
+  products: Product[];
+  page: PageResponse;
 }
 
 export interface Hit {

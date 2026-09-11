@@ -1753,3 +1753,71 @@ products of *all* statuses, authorized exactly like a write — `shop#staff` or
 `catalog_manager`) backs `GET /api/v1/seller/products`. Deferred to follow-on
 slices: threading the shop into the `search` index so the storefront can show a
 "sold by \<shop\>" line and a shop page product grid.
+
+---
+
+## ADR-041 — Marketplace, slice 4: storefront "sold by"
+
+**Status:** accepted · Phase 5 · builds on ADR-038, ADR-040
+
+**Context:** a product can now belong to a shop (ADR-040), but nothing public
+surfaces that yet — the PDP shows no seller attribution, and a shop has no
+storefront page of its own for a buyer to browse its catalog.
+
+**Decision:**
+- **`ListProductsRequest` gains an optional `shop_id` filter** on the existing
+  public, ACTIVE-only browse RPC — *not* a new RPC, and deliberately not routed
+  through `search`/OpenSearch. A shop's public listing page is a plain
+  catalog-scoped list, same trust level as the unfiltered browse; indexing shops
+  into search is a separate, later concern (faceting/ranking by shop, not just
+  filtering).
+  - `store.List` gained a `shopID` parameter, reusing the `listPage` keyset
+    helper from ADR-040 so `List`/`ListByShop` stay thin wrappers over one
+    query builder.
+- **The BFF composes the "sold by" view, not the catalog.** `catalog.Product`
+  only carries `shop_id`; a human-readable seller name/slug requires calling
+  `seller.GetShop`. Rather than push a `seller` dependency (and a join) down
+  into the catalog service, the BFF's `GetProduct` handler:
+  - returns the plain `{"product": ...}` shape unchanged when `shop_id` is
+    empty (first-party — the common case, zero extra calls);
+  - otherwise calls `seller.GetShop` by id and wraps the response as
+    `{"product": ..., "sold_by": {"id","name","slug"}}`;
+  - **degrades to the plain shape on any shop-lookup failure** (not-found,
+    timeout, `seller` down) — a broken seller lookup must never break the PDP,
+    it should just omit the attribution line.
+- **New public route `GET /api/v1/shops/:slug/products`** — resolves the shop
+  by slug via `seller.GetShop` (404s the same way `GET /api/v1/shops/:slug`
+  already does for a missing/non-ACTIVE shop), then calls
+  `catalog.ListProducts(shop_id=...)`. Together with the existing `GetShop`
+  route this is enough for a shop storefront page without any new backend
+  service.
+- **Storefront frontend:** the PDP shows a "Sold by \<name\>" line linking to
+  `/shops/:slug` when `sold_by` is present; a new `/shops/:slug` route renders
+  the shop's name/description and its ACTIVE product grid (reusing
+  `ProductCard` against a structural `CardItem` type instead of the
+  search-specific `Hit`, so a shop's plain `Product` rows don't need remapping
+  through a search hit shape).
+
+**Alternatives:**
+- *Denormalize shop name/slug onto `products`* — would need a sync path on
+  every shop rename and reintroduces the exact cross-service duplication the
+  DB-per-service split is meant to avoid; a per-request `GetShop` call is one
+  extra RPC on the (cacheable, low-QPS relative to browse) product-detail path.
+- *Have `catalog` call `seller` itself and embed `sold_by` in `Product`* — makes
+  a storage-tier service depend on another service's client and couples the
+  wire contract of every catalog consumer (including internal ones that don't
+  want the extra hop) to seller's availability; keeping the join in the BFF
+  matches the existing pattern (`writeProductWithSoldBy` is BFF-only, same
+  layer as `cartView`/`soldByView`-style hand-shaped responses).
+- *Route the shop's public listing through `search`* — would require indexing
+  `shop_id` into the OpenSearch documents now, for a page that doesn't need
+  ranking, faceting, or relevance scoring — just "this shop's ACTIVE products,
+  paginated." Deferred until the shop page needs search-like features.
+
+**Consequences:** `GetProduct` now costs one extra gRPC call for marketplace
+products (none for first-party, still the majority of the catalog). The shop
+page and PDP attribution both fail open toward "no shop info shown" rather
+than an error, consistent with the platform's general fail-closed-on-authz /
+fail-open-on-enrichment posture. Deferred to follow-on slices: split orders
+(an order spanning shops becomes N sub-orders for fulfillment/payout), split
+payments/payouts, and a seller dashboard.

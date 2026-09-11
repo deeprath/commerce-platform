@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	catalogv1 "github.com/deeprath/commerce-platform/gen/go/commerce/catalog/v1"
 	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
 	"github.com/deeprath/commerce-platform/services/bff/internal/clients"
 )
@@ -56,7 +58,9 @@ func (f *fakeSeller) GetShop(_ context.Context, in *sellerv1.GetShopRequest, _ .
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &sellerv1.Shop{Id: "shop-1", Slug: in.GetSlug(), Status: sellerv1.ShopStatus_SHOP_STATUS_ACTIVE}, nil
+	// Slug/Name are fixed regardless of selector (by slug or by id) so callers
+	// resolving a product's shop by id still get a usable slug/name back.
+	return &sellerv1.Shop{Id: "shop-1", Name: "The Shop", Slug: "the-shop", Status: sellerv1.ShopStatus_SHOP_STATUS_ACTIVE}, nil
 }
 func (f *fakeSeller) ListShops(_ context.Context, in *sellerv1.ListShopsRequest, _ ...grpc.CallOption) (*sellerv1.ListShopsResponse, error) {
 	f.lastList = in
@@ -130,6 +134,86 @@ func TestGetShop_PublicNoAuthNeeded(t *testing.T) {
 	}
 	if fs.lastGetShop.GetSlug() != "the-shop" {
 		t.Fatalf("slug not forwarded: %+v", fs.lastGetShop)
+	}
+}
+
+func TestListShopPublicProducts_ResolvesSlugAndForwardsShopID(t *testing.T) {
+	fs := &fakeSeller{}
+	fc := &fakeCatalog{}
+	s := &Server{cl: &clients.Set{Seller: fs, Catalog: fc}}
+	rec := sellerReq(t, s, http.MethodGet, "/api/v1/shops/the-shop/products", "", false)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	if fs.lastGetShop.GetSlug() != "the-shop" {
+		t.Fatalf("shop slug not resolved: %+v", fs.lastGetShop)
+	}
+	if fc.lastList.GetShopId() != "shop-1" {
+		t.Fatalf("shop_id not forwarded to catalog: %q", fc.lastList.GetShopId())
+	}
+	if !strings.Contains(rec.Body.String(), "p-active") {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
+func TestListShopPublicProducts_UnknownShop(t *testing.T) {
+	fs := &fakeSeller{err: status.Error(codes.NotFound, "SHOP_NOT_FOUND")}
+	s := &Server{cl: &clients.Set{Seller: fs, Catalog: &fakeCatalog{}}}
+	rec := sellerReq(t, s, http.MethodGet, "/api/v1/shops/nope/products", "", false)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestGetProduct_AttachesSoldByForShopProducts(t *testing.T) {
+	fc := &fakeCatalog{getProductResp: &catalogv1.GetProductResponse{
+		Product: &catalogv1.Product{Id: "p1", Slug: "widget", ShopId: "shop-1"},
+	}}
+	fs := &fakeSeller{}
+	s := &Server{cl: &clients.Set{Catalog: fc, Seller: fs}}
+
+	rec := sellerReq(t, s, http.MethodGet, "/api/v1/catalog/products/widget", "", false)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Product struct{ Slug string }       `json:"product"`
+		SoldBy  struct{ Slug, Name string } `json:"sold_by"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, rec.Body.String())
+	}
+	if out.Product.Slug != "widget" || out.SoldBy.Slug != "the-shop" {
+		t.Fatalf("body = %s", rec.Body.String())
+	}
+}
+
+func TestGetProduct_NoShopIDOmitsSoldBy(t *testing.T) {
+	fc := &fakeCatalog{getProductResp: &catalogv1.GetProductResponse{
+		Product: &catalogv1.Product{Id: "p1", Slug: "widget"},
+	}}
+	s := &Server{cl: &clients.Set{Catalog: fc}}
+	rec := sellerReq(t, s, http.MethodGet, "/api/v1/catalog/products/widget", "", false)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "sold_by") {
+		t.Fatalf("first-party product should not carry sold_by: %s", rec.Body.String())
+	}
+}
+
+func TestGetProduct_ShopLookupFailureDegradesGracefully(t *testing.T) {
+	fc := &fakeCatalog{getProductResp: &catalogv1.GetProductResponse{
+		Product: &catalogv1.Product{Id: "p1", Slug: "widget", ShopId: "shop-1"},
+	}}
+	fs := &fakeSeller{err: status.Error(codes.Unavailable, "down")}
+	s := &Server{cl: &clients.Set{Catalog: fc, Seller: fs}}
+	rec := sellerReq(t, s, http.MethodGet, "/api/v1/catalog/products/widget", "", false)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want the PDP to still render", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "sold_by") {
+		t.Fatalf("a failed shop lookup should omit sold_by, not error: %s", rec.Body.String())
 	}
 }
 

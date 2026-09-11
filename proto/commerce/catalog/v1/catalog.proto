@@ -78,6 +78,10 @@ message ListProductsRequest {
   // Optional category filter. Empty => all categories.
   string category_id = 1;
   commerce.common.v1.PageRequest page = 2;
+  // Optional marketplace shop filter, for a shop's public storefront page.
+  // Empty => any shop (and first-party). Always ACTIVE-only, like the
+  // unfiltered list — this is the public browse RPC, not ListShopProducts.
+  string shop_id = 3;
 }
 
 message ListProductsResponse {
