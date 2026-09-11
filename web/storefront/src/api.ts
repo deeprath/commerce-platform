@@ -8,6 +8,8 @@ import type {
   SoldBy,
   Shop,
   ProductListResponse,
+  ShopStaff,
+  PayoutListResponse,
 } from "./types";
 
 export interface Address {
@@ -19,6 +21,21 @@ export interface Address {
   postal_code: string;
   country_code: string;
   phone?: string;
+}
+
+export interface ShopInput {
+  name: string;
+  description?: string;
+  contact_email?: string;
+}
+
+export interface ProductInput {
+  slug?: string; // only on create; immutable after
+  title: string;
+  description?: string;
+  category_id: string;
+  list_price: { currency_code: string; units: string; nanos?: number };
+  status?: string; // update only, e.g. "PRODUCT_STATUS_ACTIVE"
 }
 
 // Same-origin: dev proxies /api to the BFF, prod serves the SPA and proxies
@@ -160,6 +177,52 @@ export const api = {
   },
   getOrder(id: string): Promise<Order> {
     return req(`/orders/${encodeURIComponent(id)}`);
+  },
+
+  // --- seller: the caller's own shop ---
+  createShop(body: ShopInput): Promise<Shop> {
+    return req(`/seller/shops`, { method: "POST", body: JSON.stringify(body) });
+  },
+  getMyShop(): Promise<Shop> {
+    return req(`/seller/shops/me`);
+  },
+  updateShop(body: ShopInput): Promise<Shop> {
+    return req(`/seller/shops/me`, { method: "PUT", body: JSON.stringify(body) });
+  },
+  listShopStaff(): Promise<ShopStaff> {
+    return req(`/seller/shops/me/staff`);
+  },
+  addShopStaff(subject: string): Promise<void> {
+    return req(`/seller/shops/me/staff`, { method: "POST", body: JSON.stringify({ subject }) });
+  },
+  removeShopStaff(subject: string): Promise<void> {
+    return req(`/seller/shops/me/staff/${encodeURIComponent(subject)}`, { method: "DELETE" });
+  },
+
+  // --- seller: the caller's own shop's products (all statuses) ---
+  listMyShopProducts(pageToken?: string): Promise<ProductListResponse> {
+    const qs = new URLSearchParams();
+    if (pageToken) qs.set("page_token", pageToken);
+    const q = qs.toString();
+    return req(`/seller/products${q ? `?${q}` : ""}`);
+  },
+  createShopProduct(body: ProductInput): Promise<{ product: Product }> {
+    return req(`/seller/products`, { method: "POST", body: JSON.stringify(body) });
+  },
+  updateShopProduct(id: string, body: ProductInput): Promise<{ product: Product }> {
+    return req(`/seller/products/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) });
+  },
+  archiveShopProduct(id: string): Promise<void> {
+    return req(`/seller/products/${encodeURIComponent(id)}/archive`, { method: "POST" });
+  },
+
+  // --- seller: the caller's own shop's payouts ---
+  listShopPayouts(status?: string, pageToken?: string): Promise<PayoutListResponse> {
+    const qs = new URLSearchParams();
+    if (status) qs.set("status", status);
+    if (pageToken) qs.set("page_token", pageToken);
+    const q = qs.toString();
+    return req(`/seller/payouts${q ? `?${q}` : ""}`);
   },
 };
 

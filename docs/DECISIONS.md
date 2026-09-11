@@ -1983,3 +1983,72 @@ the `finance` role can read any payout. Deferred to the next roadmap item: a
 seller dashboard surfacing shipments, payouts, and shop management in one UI
 instead of raw JSON endpoints; and, longer-term, a real commission model and a
 real payout-provider integration replacing the sandbox sweep.
+
+---
+
+## ADR-044 — Marketplace, slice 7: seller dashboard
+
+**Status:** accepted · Phase 5 · builds on ADR-038, ADR-040, ADR-043
+
+**Context:** every marketplace BFF route from ADR-038 onward (`/seller/shops`,
+`/seller/products`, `/seller/staff`, `/seller/payouts`) has been a JSON
+endpoint with no UI — a seller could only manage their shop via raw HTTP
+calls. This slice closes that gap: a signed-in shopper who owns a shop gets an
+actual dashboard, completing the marketplace/multi-seller roadmap item.
+
+**Decision:**
+- **Lives in the storefront SPA, not a new app.** A seller is first and
+  foremost a signed-in customer (the same login, the same session cookie) who
+  additionally owns a shop — there is no separate seller identity or portal
+  concept anywhere in the backend, so a separate frontend app would need to
+  duplicate auth/session handling for no separation of concerns it actually
+  reflects. `web/admin` stays reserved for platform operators (a materially
+  different persona: `order_manager`/`catalog_manager`/`finance` roles, no
+  concept of "their own shop"); a seller is exactly a storefront user, so the
+  dashboard is a `/seller/*` route tree inside `web/storefront`, gated the
+  same way `/orders` already is (`authed` prop, sign-in prompt otherwise).
+- **Four routes, four concerns**: `/seller` (shop settings + onboarding),
+  `/seller/products`, `/seller/staff`, `/seller/payouts` — one page per
+  existing BFF surface, a shared tab nav (`SellerNav`) between them. No new
+  backend work; every action calls a route that already existed from ADR-038/
+  ADR-040/ADR-043.
+- **Onboarding is just the empty state of `/seller`**: `GetMyShop` 404
+  (`SHOP_NOT_FOUND`) renders a "become a seller" `CreateShop` form in place of
+  the dashboard, rather than a separate route — a shop is a precondition for
+  every other seller page, so there's exactly one place a user without a shop
+  can land regardless of which `/seller/*` link they followed.
+- **Product price editing works in whole-plus-fractional dollars**, not raw
+  `{units, nanos}` — the form shows one decimal input ("19.99") and splits it
+  into the wire shape on submit, converting back the same way when
+  prefilling an edit form from a fetched product. This is presentation-layer
+  only; the wire contract and every backend money computation are untouched.
+- **Staff are added by raw Keycloak subject id**, matching the BFF's
+  `AddShopStaffRequest.staff_subject` exactly — there is no user-search/lookup
+  endpoint anywhere in the platform (by design: `pkg/fga`'s tuples are
+  subject-keyed, and no service exposes a "look up a user by name/email" RPC),
+  so the dashboard can't offer anything friendlier than an id field without
+  first building that lookup capability, which is out of scope here.
+
+**Alternatives:**
+- *A dedicated `web/seller` app* — rejected: it would need its own Keycloak
+  client, its own login flow, and its own cookie/session handling identical to
+  the storefront's, duplicating `web/storefront/src/api.ts`'s auth plumbing
+  for a persona that the backend itself doesn't distinguish from "customer."
+- *Fold seller management into `web/admin`* — rejected: `admin` is
+  role-gated to platform staff (its BFF calls go through `/api/v1/admin/*`,
+  and its `HTTPRoute` is restricted to an internal source-IP range per ADR's
+  admin-SPA decision); a shop owner is an external, arbitrary customer and
+  must never need operator network access to manage their own shop.
+- *A single combined page instead of four routes* — considered for a smaller
+  diff, but shop settings, a product table with inline edit forms, a staff
+  list, and a payout ledger each already stretch a page's worth of state;
+  splitting them (like `/orders` vs. `/orders/:id` already does) keeps each
+  page's state machine simple and matches the tab-per-concern shape the BFF
+  routes already implied.
+
+**Consequences:** zero backend changes — this slice is entirely
+`web/storefront`. The dashboard surfaces exactly what the BFF already
+returns; a future backend change (e.g. a commission model landing per
+ADR-043's deferred item) needs no dashboard change beyond rendering whatever
+new field appears. Completes the marketplace/multi-seller roadmap item
+started at ADR-038.
