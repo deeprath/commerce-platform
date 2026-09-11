@@ -20,12 +20,22 @@ const (
 	maxOffset       = 10_000 // OpenSearch from+size window
 )
 
-type Server struct {
-	searchv1.UnimplementedSearchServiceServer
-	idx *index.Client
+// searcher is the slice of *index.Client that Search/Autocomplete actually
+// call. Narrowing to an interface here (rather than depending on the
+// concrete client) lets tests fake OpenSearch's response without spinning
+// one up or reaching into index's unexported response types — they just
+// json.Unmarshal a fixture into an *index.SearchResult, exactly like the
+// real client's RawSearch does.
+type searcher interface {
+	RawSearch(ctx context.Context, body []byte) (*index.SearchResult, error)
 }
 
-func New(i *index.Client) *Server { return &Server{idx: i} }
+type Server struct {
+	searchv1.UnimplementedSearchServiceServer
+	idx searcher
+}
+
+func New(i searcher) *Server { return &Server{idx: i} }
 
 func (s *Server) Search(ctx context.Context, req *searchv1.SearchRequest) (*searchv1.SearchResponse, error) {
 	size := int(req.GetPage().GetPageSize())
