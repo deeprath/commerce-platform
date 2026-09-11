@@ -204,26 +204,54 @@ func (s *Store) List(ctx context.Context, ownerID, status string, limit int, bef
 	return out, next, nil
 }
 
+// beginDeduped starts a transaction and records eventID in processed_events.
+// ok=false means eventID was already processed (a redelivered Kafka record) —
+// the transaction is already rolled back and the caller should return (nil,
+// err) as-is. ok=true hands back an open tx the caller must still
+// Commit/Rollback (defer Rollback is a safe no-op after a Commit).
+func beginDeduped(ctx context.Context, pool *pgxpool.Pool, eventID string) (tx pgx.Tx, ok bool, err error) {
+	tx, err = pool.Begin(ctx)
+	if err != nil {
+		return nil, false, wrap(err)
+	}
+	if eventID == "" {
+		return tx, true, nil
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO processed_events (event_id) VALUES ($1)`, eventID)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		_ = tx.Rollback(ctx)
+		return nil, false, nil // already processed
+	}
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, false, wrap(err)
+	}
+	return tx, true, nil
+}
+
+// persistTransition writes o's current status (plus the fields the saga's
+// compensations mutate) and the matching order.* outbox row. Called only when
+// the caller has already changed o.Status.
+func persistTransition(ctx context.Context, tx pgx.Tx, o *domain.Order) error {
+	if _, err := tx.Exec(ctx, `
+		UPDATE orders SET status = $2, cancel_reason = $3, payment_id = $4, reservation_id = $5, updated_at = now()
+		WHERE id = $1`,
+		o.ID, string(o.Status), o.CancelReason, o.PaymentID, o.ReservationID); err != nil {
+		return wrap(err)
+	}
+	return outboxTransition(ctx, tx, o)
+}
+
 // Apply runs fn against the order inside a row-locked transaction and, if fn
 // changed the status, writes the matching order.* outbox row. It also records
 // eventID in processed_events; a duplicate delivery short-circuits with (nil,nil).
 func (s *Store) Apply(ctx context.Context, orderID, eventID string, fn func(*domain.Order) error) (*domain.Order, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return nil, wrap(err)
+	tx, ok, err := beginDeduped(ctx, s.pool, eventID)
+	if err != nil || !ok {
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-
-	if eventID != "" {
-		_, err := tx.Exec(ctx, `INSERT INTO processed_events (event_id) VALUES ($1)`, eventID)
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return nil, nil // already processed
-		}
-		if err != nil {
-			return nil, wrap(err)
-		}
-	}
 
 	o, err := s.get(ctx, tx, orderID, "")
 	if err != nil {
@@ -234,13 +262,7 @@ func (s *Store) Apply(ctx context.Context, orderID, eventID string, fn func(*dom
 		return nil, err
 	}
 	if o.Status != before {
-		if _, err := tx.Exec(ctx, `
-			UPDATE orders SET status = $2, cancel_reason = $3, payment_id = $4, reservation_id = $5, updated_at = now()
-			WHERE id = $1`,
-			o.ID, string(o.Status), o.CancelReason, o.PaymentID, o.ReservationID); err != nil {
-			return nil, wrap(err)
-		}
-		if err := outboxTransition(ctx, tx, o); err != nil {
+		if err := persistTransition(ctx, tx, o); err != nil {
 			return nil, err
 		}
 	}
@@ -259,22 +281,11 @@ func (s *Store) Apply(ctx context.Context, orderID, eventID string, fn func(*dom
 // already recorded its delivery. An order not in CONFIRMED (already
 // cancelled or fulfilled) is left untouched.
 func (s *Store) ApplyShipmentDelivered(ctx context.Context, orderID, shopID, eventID string) (*domain.Order, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return nil, wrap(err)
+	tx, ok, err := beginDeduped(ctx, s.pool, eventID)
+	if err != nil || !ok {
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-
-	if eventID != "" {
-		_, err := tx.Exec(ctx, `INSERT INTO processed_events (event_id) VALUES ($1)`, eventID)
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return nil, nil // already processed
-		}
-		if err != nil {
-			return nil, wrap(err)
-		}
-	}
 
 	o, err := s.get(ctx, tx, orderID, "")
 	if err != nil {
@@ -305,13 +316,7 @@ func (s *Store) ApplyShipmentDelivered(ctx context.Context, orderID, shopID, eve
 	if err := o.Fulfill(); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE orders SET status = $2, cancel_reason = $3, payment_id = $4, reservation_id = $5, updated_at = now()
-		WHERE id = $1`,
-		o.ID, string(o.Status), o.CancelReason, o.PaymentID, o.ReservationID); err != nil {
-		return nil, wrap(err)
-	}
-	if err := outboxTransition(ctx, tx, o); err != nil {
+	if err := persistTransition(ctx, tx, o); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
