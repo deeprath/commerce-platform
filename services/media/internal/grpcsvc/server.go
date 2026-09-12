@@ -11,20 +11,30 @@ import (
 	"github.com/deeprath/commerce-platform/pkg/errs"
 	"github.com/deeprath/commerce-platform/pkg/grpcx"
 	"github.com/deeprath/commerce-platform/services/media/internal/domain"
-	"github.com/deeprath/commerce-platform/services/media/internal/objstore"
 	"github.com/deeprath/commerce-platform/services/media/internal/store"
 )
 
 const roleCatalogManager = "catalog_manager"
 const uploadTTL = 15 * time.Minute
 
+// objectStore is the slice of *objstore.Store the handlers below actually
+// call. Narrowing to an interface here (rather than depending on the
+// concrete MinIO-backed client) lets tests fake the object store without
+// standing up a real MinIO for what are otherwise pure request-mapping unit
+// tests — the same reasoning as services/search's "searcher" interface.
+type objectStore interface {
+	PresignPut(ctx context.Context, bucket, key string, ttl time.Duration) (string, time.Time, error)
+	Head(ctx context.Context, bucket, key string) (int64, string, bool, error)
+	PublicURL(fullKey string) string
+}
+
 type Server struct {
 	mediav1.UnimplementedMediaServiceServer
 	store *store.Store
-	obj   *objstore.Store
+	obj   objectStore
 }
 
-func New(s *store.Store, o *objstore.Store) *Server { return &Server{store: s, obj: o} }
+func New(s *store.Store, o objectStore) *Server { return &Server{store: s, obj: o} }
 
 func (s *Server) CreateUploadURL(ctx context.Context, req *mediav1.CreateUploadURLRequest) (*mediav1.CreateUploadURLResponse, error) {
 	if err := grpcx.RequireRole(ctx, roleCatalogManager); err != nil {

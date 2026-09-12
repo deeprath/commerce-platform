@@ -194,6 +194,36 @@ func TestRelease_ReturnsHeldStockWithoutTouchingOnHand(t *testing.T) {
 	}
 }
 
+func TestCommitAndRelease_UnknownOrMalformedIDIsANoOp(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := seed(t, pool, "p1", 10)
+
+	// A well-formed but nonexistent UUID: falls through to the "no rows"
+	// branch of reservationIsHeld.
+	if err := st.Commit(ctx, "00000000-0000-0000-0000-000000000000"); err != nil {
+		t.Fatalf("commit on an unknown (but valid-shaped) id: %v", err)
+	}
+	if err := st.Release(ctx, "00000000-0000-0000-0000-000000000000"); err != nil {
+		t.Fatalf("release on an unknown (but valid-shaped) id: %v", err)
+	}
+
+	// A syntactically invalid id: reservations.id is a uuid column, so this
+	// must be rejected before the query (as the same "not held" no-op), not
+	// leak a raw Postgres type-mismatch error.
+	if err := st.Commit(ctx, "not-a-uuid-at-all"); err != nil {
+		t.Fatalf("commit on a malformed id should be a no-op, not an error: %v", err)
+	}
+	if err := st.Release(ctx, "not-a-uuid-at-all"); err != nil {
+		t.Fatalf("release on a malformed id should be a no-op, not an error: %v", err)
+	}
+
+	// Neither call touched p1's stock.
+	if l := level(t, st, "p1"); l.OnHand != 10 || l.Reserved != 0 {
+		t.Fatalf("stock changed by a no-op call: %+v", l)
+	}
+}
+
 func TestExpireDue_SweepsExpiredHoldsEmitsEventLeavesLiveHolds(t *testing.T) {
 	ctx := context.Background()
 	pool := spinUp(t)

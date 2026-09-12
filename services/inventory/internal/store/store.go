@@ -9,6 +9,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/proto"
@@ -172,7 +173,14 @@ func (s *Store) finish(ctx context.Context, resID, target string, apply func(onH
 // reservationIsHeld reports whether resID exists and is still HELD, row-locking
 // it for the rest of the caller's transaction. A missing id is not an error —
 // callers treat "not held" (missing or already resolved) as an idempotent no-op.
+// A syntactically invalid id (reservations.id is a uuid column) gets the same
+// treatment: it definitionally matches no row, so short-circuit to "not held"
+// before the query rather than let Postgres reject the type mismatch as a
+// 500-class error — the same class of bug already fixed for order/seller ids.
 func reservationIsHeld(ctx context.Context, tx pgx.Tx, resID string) (bool, error) {
+	if _, err := uuid.Parse(resID); err != nil {
+		return false, nil
+	}
 	var status string
 	err := tx.QueryRow(ctx, `SELECT status FROM reservations WHERE id = $1 FOR UPDATE`, resID).Scan(&status)
 	if errors.Is(err, pgx.ErrNoRows) {
