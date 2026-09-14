@@ -233,7 +233,17 @@ func (s *Sink) RunFlusher(ctx context.Context, every time.Duration) error {
 		case <-ctx.Done():
 			return s.Flush(context.WithoutCancel(ctx))
 		case <-t.C:
-			if err := s.Flush(ctx); err != nil {
+			// Detached from ctx's cancellation deliberately, not just for
+			// symmetry with the shutdown flush above: ctx here only signals
+			// "stop looping," it's not a deadline for any one flush. Passing
+			// it straight through would race the caller's cancel against
+			// whichever periodic flush happens to be in flight at the time —
+			// select can land on this case in the same instant ctx.Done()
+			// becomes ready, or cancellation can simply arrive mid-Send, and
+			// either way the batch fails with "context canceled" instead of
+			// completing. Using ctx only to decide whether to keep looping,
+			// never to bound the flush itself, closes that race entirely.
+			if err := s.Flush(context.WithoutCancel(ctx)); err != nil {
 				return err
 			}
 		}
