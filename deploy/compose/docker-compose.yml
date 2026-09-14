@@ -170,7 +170,10 @@ services:
     logging: *default-logging
 
   minio:
-    image: minio/minio:${MINIO_TAG}
+    # MinIO stopped publishing to Docker Hub — minio/minio and minio/mc were
+    # both pulled from there entirely (not just the pinned tags; the repos
+    # themselves 404 now). Images now live on quay.io instead.
+    image: quay.io/minio/minio:${MINIO_TAG}
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -186,7 +189,7 @@ services:
     logging: *default-logging
 
   minio-init:
-    image: minio/mc:${MC_TAG}
+    image: quay.io/minio/mc:${MC_TAG} # see the minio service's comment above
     depends_on:
       minio: { condition: service_healthy }
     volumes: ["./seed/media:/seed-media:ro"]

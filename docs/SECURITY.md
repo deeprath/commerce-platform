@@ -263,6 +263,20 @@ The tool most prone to "configured but never actually scanned anything." Guardra
 - **Not covered / follow-ups:** the admin surface (`/api/v1/admin/**`) needs an operator
   role + is source-IP gated — a second operator-context scan is a follow-up. Staging runs
   the same plan against the real ingress gateway.
+- **First real CI execution (2026-09-14):** the weekly schedule had never actually fired in
+  CI before this — GitHub Actions delayed it ~5h16m past the 03:00 UTC trigger time (a
+  documented platform limitation: scheduled workflows aren't guaranteed to run on time and
+  can be silently skipped under load; there's no backfill). It then failed outright: `docker
+  compose up` couldn't pull `minio/mc` — `pull access denied ... repository does not exist`.
+  Root cause: MinIO removed **both** `minio/minio` and `minio/mc` from Docker Hub entirely
+  (confirmed via Docker Hub's own API — the repositories 404, not just the pinned tags),
+  having moved distribution to `quay.io/minio/*`. This broke local dev too, not just CI —
+  anyone running `task up` would have hit the same pull failure. Fixed by repointing both
+  images at `quay.io/minio/minio`/`quay.io/minio/mc` with current tags
+  (`deploy/compose/docker-compose.yml`, `deploy/compose/.env.example`); verified locally
+  that `minio` + `minio-init` still come up healthy and the bucket-bootstrap script still
+  runs end-to-end against the new image. Triggered manually via `workflow_dispatch` to get
+  a genuine, current-config CI run once the fix landed.
 
 ### 5.5 Coraza WAF (OWASP CRS v4) — edge request filtering
 
