@@ -1,11 +1,48 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  # go.work has 18 separate Go modules (pkg, gen/go, one per service) — none
+  # share a go.sum, so each needs its own entry. The `directories` glob
+  # covers all 16 services in one block; pkg and gen/go aren't under
+  # services/ so they're listed separately.
+  - package-ecosystem: "gomod"
+    directories:
+      - "/pkg"
+      - "/gen/go"
+      - "/services/*"
+    schedule:
+      interval: "weekly"
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: "npm"
+    directories:
+      - "/web/storefront"
+      - "/web/admin"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Dockerfile base images (golang:*, node:*, nginx:*, etc.) — deploy/docker/
+  # holds one <service>.Dockerfile per service, all in one directory.
+  - package-ecosystem: "docker"
+    directory: "/deploy/docker"
+    schedule:
+      interval: "weekly"
+
+  # Pinned image tags in the compose stack itself (postgres, redis, kafka,
+  # opensearch, minio, keycloak, ...). This is the ecosystem that would have
+  # caught the minio/minio + minio/mc removal from Docker Hub before it broke
+  # `task up` and the zap CI job — see docs/SECURITY.md §5.4.
+  - package-ecosystem: "docker-compose"
+    directory: "/deploy/compose"
     schedule:
       interval: "weekly"

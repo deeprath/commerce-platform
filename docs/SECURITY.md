@@ -284,6 +284,30 @@ The tool most prone to "configured but never actually scanned anything." Guardra
     3, PASS: 58` — no `40018` SQLi, no `90022` error disclosure, no `10021` missing header;
     the Sept 10 local-run fixes hold up under a real CI-driven full-stack scan. Gate
     script's tally across every report: `{'info': 5}` — zero HIGH/MEDIUM/LOW. **PASS.**
+  - **Triage of the 5 INFO alerts** (all `riskcode 0`, none block the gate — reviewed on
+    their merits anyway rather than dismissed as "just informational"):
+    - `10049` **Storable and Cacheable Content** on `robots.txt`/`sitemap.xml` — **fixed**.
+      Both fell through to Envoy's default 404 (no anti-caching header), which reads as
+      cacheable to a scanner. `deploy/compose/envoy/envoy.yaml` now serves real content for
+      both with an explicit `Cache-Control: no-store` — correct behavior for an API-only
+      edge anyway (nothing here should be crawled), and it removes the warning entirely
+      rather than just tolerating it. ext_authz is disabled per-route for these two, since
+      they're static and unauthenticated by design and ext_authz otherwise runs ahead of
+      route matching. Verified locally: both return `200` with `cache-control: no-store`;
+      `/api/v1/*` is unaffected (still 401 without a token).
+    - `10024` **Information Disclosure - Sensitive Information in URL** on
+      `GET /catalog/products?...page_token=...` and `GET /orders?...page_token=...` —
+      **accepted false positive**. The rule keys off the substring `token` in a query
+      param name; `page_token` is an opaque pagination cursor (see the `catalog`/`order`
+      list handlers), not a credential, session token, or API key. No bearer token or
+      secret is ever passed via query string anywhere in this codebase.
+    - `10111` **Authentication Request Identified**, `10112` **Session Management Response
+      Identified** — not findings about this app at all; these are ZAP's own notes to
+      itself about which requests it detected as login/session-establishing, used by its
+      authenticated-scan session management. Expected on every authenticated scan.
+    - `10104` **User Agent Fuzzer** — a completion marker for the fuzzer plugin having run
+      against `/auth/login` and `/cart/clear`, not a leak. No response varied in a way that
+      indicated a real issue.
 
 ### 5.5 Coraza WAF (OWASP CRS v4) — edge request filtering
 
