@@ -33,6 +33,39 @@ static_resources:
                     - name: all
                       domains: ["*"]
                       routes:
+                        # This is an API-only edge — nothing here is meant to be crawled
+                        # or indexed. Without an explicit route, /robots.txt and
+                        # /sitemap.xml fall through to Envoy's default 404, which has no
+                        # anti-caching header and reads as storable/cacheable to a scanner
+                        # (ZAP 10049 — see docs/SECURITY.md §5.4). Serving real content
+                        # with an explicit no-store both fixes that and is the correct
+                        # behavior for an API service anyway. ext_authz is disabled per-route
+                        # here — these are static, unauthenticated-by-design responses, and
+                        # ext_authz runs at the filter-chain level (before route match), so
+                        # without this it 401s a request that never reaches the BFF anyway.
+                        - match: { path: "/robots.txt" }
+                          direct_response:
+                            status: 200
+                            body: { inline_string: "User-agent: *\nDisallow: /\n" }
+                          response_headers_to_add:
+                            - header: { key: "Content-Type", value: "text/plain" }
+                            - header: { key: "Cache-Control", value: "no-store" }
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
+                        - match: { path: "/sitemap.xml" }
+                          direct_response:
+                            status: 200
+                            body:
+                              inline_string: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"/>\n"
+                          response_headers_to_add:
+                            - header: { key: "Content-Type", value: "application/xml" }
+                            - header: { key: "Cache-Control", value: "no-store" }
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
                         - match: { prefix: "/api/v1/" }
                           route:
                             cluster: bff
