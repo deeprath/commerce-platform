@@ -60,7 +60,7 @@ jobs:
           go-version-file: pkg/go.mod
           cache-dependency-path: "**/go.sum"
       - name: golangci-lint (${{ matrix.module }})
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest # must be a build whose Go >= our go directive (1.26)
           working-directory: ${{ matrix.module }}
