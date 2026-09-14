@@ -19,7 +19,7 @@ jobs:
   proto:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - uses: actions/setup-go@v5
         with:
@@ -54,7 +54,7 @@ jobs:
       matrix:
         module: [pkg, gen/go, services/ext-authz, services/catalog, services/media, services/search, services/bff, services/cart, services/pricing, services/inventory, services/payment, services/order, services/fulfillment, services/notification, services/review, services/seller, services/payout, services/analytics]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: pkg/go.mod
@@ -75,7 +75,7 @@ jobs:
       # Postgres at once. Containers die with the runner VM instead.
       TESTCONTAINERS_RYUK_DISABLED: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version-file: pkg/go.mod
@@ -97,7 +97,7 @@ jobs:
       run:
         working-directory: web/${{ matrix.app }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -116,7 +116,7 @@ jobs:
       matrix:
         service: [ext-authz, catalog, media, search, bff, storefront, admin, cart, pricing, inventory, payment, order, fulfillment, notification, review, seller, payout, analytics, envoy]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
         with:
           # Pull Docker Hub base images (golang:*, etc.) through Google's
@@ -138,7 +138,7 @@ jobs:
   helm-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: azure/setup-helm@v4
       - name: install kubeconform
         run: |
