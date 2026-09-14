@@ -277,6 +277,13 @@ The tool most prone to "configured but never actually scanned anything." Guardra
   that `minio` + `minio-init` still come up healthy and the bucket-bootstrap script still
   runs end-to-end against the new image. Triggered manually via `workflow_dispatch` to get
   a genuine, current-config CI run once the fix landed.
+  - **Result** ([run 34825311352](https://github.com/deeprath/commerce-platform/actions/runs/34825311352)):
+    the first time this job's current config has ever completed in CI. Passive baseline:
+    `FAIL-NEW: 0, WARN-NEW: 1, PASS: 66` (only the known `10049` Storable/Cacheable warning
+    on `robots.txt`/`sitemap.xml` 404s). Authenticated active scan: `FAIL-NEW: 0, WARN-NEW:
+    3, PASS: 58` — no `40018` SQLi, no `90022` error disclosure, no `10021` missing header;
+    the Sept 10 local-run fixes hold up under a real CI-driven full-stack scan. Gate
+    script's tally across every report: `{'info': 5}` — zero HIGH/MEDIUM/LOW. **PASS.**
 
 ### 5.5 Coraza WAF (OWASP CRS v4) — edge request filtering
 
