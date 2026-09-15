@@ -6,22 +6,35 @@ import (
 	"testing"
 	"time"
 
-	"go.opentelemetry.io/otel"
+	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-// collectOnce installs a real meter provider with a manual reader, so the
-// observable callbacks registered by NewOutboxRelay actually run, and returns
-// what they reported.
-func collectOnce(t *testing.T, build func()) metricdata.ResourceMetrics {
+// isolatedReader binds relays built inside build() to a provider of this test's
+// own, and returns a reader over it.
+//
+// Deliberately not the global provider: instruments created through it are
+// replayed onto whatever provider is installed next, so relays from other tests
+// would report into this collection. Both backlog gauges are unlabelled, so
+// those strays are indistinguishable from the relay under test.
+func isolatedReader(t *testing.T, build func()) *metric.ManualReader {
 	t.Helper()
 	reader := metric.NewManualReader()
-	prev := otel.GetMeterProvider()
-	otel.SetMeterProvider(metric.NewMeterProvider(metric.WithReader(reader)))
-	t.Cleanup(func() { otel.SetMeterProvider(prev) })
+	mp := metric.NewMeterProvider(metric.WithReader(reader))
 
-	build() // must construct the relay *after* the provider is installed
+	prev := meterFor
+	meterFor = func(name string) otelmetric.Meter { return mp.Meter(name) }
+	t.Cleanup(func() { meterFor = prev })
+
+	build() // the relay must be constructed while meterFor is swapped
+	return reader
+}
+
+// collectOnce is isolatedReader plus a collection that must succeed.
+func collectOnce(t *testing.T, build func()) metricdata.ResourceMetrics {
+	t.Helper()
+	reader := isolatedReader(t, build)
 
 	var rm metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &rm); err != nil {
@@ -30,20 +43,34 @@ func collectOnce(t *testing.T, build func()) metricdata.ResourceMetrics {
 	return rm
 }
 
-func gaugeValues(rm metricdata.ResourceMetrics) (depth int64, age float64, found int) {
+// gaugeValues reads the two backlog gauges. With the meter isolated there is
+// exactly one relay reporting, so more than one data point would mean the
+// isolation leaked and the numbers below cannot be trusted.
+func gaugeValues(t *testing.T, rm metricdata.ResourceMetrics) (depth int64, age float64, found int) {
+	t.Helper()
 	for _, sm := range rm.ScopeMetrics {
 		for _, m := range sm.Metrics {
 			switch m.Name {
 			case "commerce.outbox.pending":
-				if g, ok := m.Data.(metricdata.Gauge[int64]); ok && len(g.DataPoints) > 0 {
-					depth = g.DataPoints[0].Value
-					found++
+				g, ok := m.Data.(metricdata.Gauge[int64])
+				if !ok || len(g.DataPoints) == 0 {
+					continue
 				}
+				if len(g.DataPoints) != 1 {
+					t.Fatalf("%s has %d data points — another relay leaked into this collection", m.Name, len(g.DataPoints))
+				}
+				depth = g.DataPoints[0].Value
+				found++
 			case "commerce.outbox.oldest.age":
-				if g, ok := m.Data.(metricdata.Gauge[float64]); ok && len(g.DataPoints) > 0 {
-					age = g.DataPoints[0].Value
-					found++
+				g, ok := m.Data.(metricdata.Gauge[float64])
+				if !ok || len(g.DataPoints) == 0 {
+					continue
 				}
+				if len(g.DataPoints) != 1 {
+					t.Fatalf("%s has %d data points — another relay leaked into this collection", m.Name, len(g.DataPoints))
+				}
+				age = g.DataPoints[0].Value
+				found++
 			}
 		}
 	}
@@ -58,7 +85,7 @@ func TestObserveBacklog_ReportsDepthAndAgeOnCollection(t *testing.T) {
 		NewOutboxRelay(d, &recordingPublisher{}, time.Hour, 100)
 	})
 
-	depth, age, found := gaugeValues(rm)
+	depth, age, found := gaugeValues(t, rm)
 	if found != 2 {
 		t.Fatalf("found %d of the 2 backlog gauges — the callback did not run", found)
 	}
@@ -77,7 +104,7 @@ func TestObserveBacklog_ReportsZeroWhenDrained(t *testing.T) {
 		NewOutboxRelay(&fakeDB{}, &recordingPublisher{}, time.Hour, 100)
 	})
 
-	depth, age, found := gaugeValues(rm)
+	depth, age, found := gaugeValues(t, rm)
 	if found != 2 {
 		t.Fatalf("found %d of the 2 backlog gauges on an empty outbox", found)
 	}
@@ -90,21 +117,19 @@ func TestObserveBacklog_ReportsZeroWhenDrained(t *testing.T) {
 // other instrument in the process.
 func TestObserveBacklog_QueryFailureDoesNotBreakCollection(t *testing.T) {
 	d := &fakeDB{rowErr: errors.New("db down")}
-	reader := metric.NewManualReader()
-	prev := otel.GetMeterProvider()
-	otel.SetMeterProvider(metric.NewMeterProvider(metric.WithReader(reader)))
-	t.Cleanup(func() { otel.SetMeterProvider(prev) })
-
-	NewOutboxRelay(d, &recordingPublisher{}, time.Hour, 100)
+	reader := isolatedReader(t, func() {
+		NewOutboxRelay(d, &recordingPublisher{}, time.Hour, 100)
+	})
 
 	var rm metricdata.ResourceMetrics
 	err := reader.Collect(context.Background(), &rm)
 	if err == nil {
 		t.Fatal("want the callback error surfaced to the reader")
 	}
-	// The failure is reported, but collection still completes rather than
-	// hanging or panicking.
-	if _, _, found := gaugeValues(rm); found != 0 {
+	// Surfacing the failure is the contract; collection still completes rather
+	// than hanging or panicking, which would take every other instrument in the
+	// process down with it.
+	if _, _, found := gaugeValues(t, rm); found != 0 {
 		t.Fatalf("reported %d gauge values despite the query failing", found)
 	}
 }
