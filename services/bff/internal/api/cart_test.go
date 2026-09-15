@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"google.golang.org/grpc"
@@ -34,12 +35,20 @@ type fakeCatalog struct {
 	lastList       *catalogv1.ListProductsRequest
 	getProductResp *catalogv1.GetProductResponse
 	err            error
+	batchErr       error  // returned by BatchGetProducts only
+	batchHook      func() // runs inside BatchGetProducts, for concurrency tests
 }
 
 func (f *fakeCatalog) BatchGetProducts(
 	_ context.Context, in *catalogv1.BatchGetProductsRequest, _ ...grpc.CallOption,
 ) (*catalogv1.BatchGetProductsResponse, error) {
 	f.gotIDs = in.GetIds()
+	if f.batchHook != nil {
+		f.batchHook()
+	}
+	if f.batchErr != nil {
+		return nil, f.batchErr
+	}
 	return f.resp, nil
 }
 
@@ -115,12 +124,16 @@ type fakePricing struct {
 	quote       *pricingv1.Quote
 	errOnCoupon bool
 	coupons     []string // coupon codes seen, in call order
+	quoteHook   func()   // runs inside QuotePrice, for concurrency tests
 }
 
 func (f *fakePricing) QuotePrice(
 	_ context.Context, in *pricingv1.QuoteRequest, _ ...grpc.CallOption,
 ) (*pricingv1.Quote, error) {
 	f.coupons = append(f.coupons, in.GetCouponCode())
+	if f.quoteHook != nil {
+		f.quoteHook()
+	}
 	if f.errOnCoupon && in.GetCouponCode() != "" {
 		return nil, status.Error(codes.NotFound, "COUPON_NOT_FOUND")
 	}
@@ -387,5 +400,105 @@ func TestCartMutationHandlers_ReturnEnrichedView(t *testing.T) {
 				t.Fatalf("body not the enriched empty view: %s", rec.Body.String())
 			}
 		})
+	}
+}
+
+// A catalog outage must not blank the cart, and must not pass silently either:
+// quantities and totals still come back, and details_unavailable says why the
+// lines have no titles.
+func TestRespondCart_CatalogFailureDegradesVisibly(t *testing.T) {
+	fc := &fakeCart{cart: &cartv1.Cart{
+		Id: "srv", TotalQuantity: 2,
+		Items: []*cartv1.CartItem{{ProductId: "p1", Quantity: 2}},
+	}}
+	cat := &fakeCatalog{batchErr: status.Error(codes.Unavailable, "CATALOG_DOWN")}
+	pr := &fakePricing{quote: &pricingv1.Quote{
+		Lines:    []*pricingv1.QuoteLine{{ProductId: "p1", UnitPrice: usd(34, 990000000), LineTotal: usd(69, 980000000)}},
+		Subtotal: usd(69, 980000000), Total: usd(75, 580000000),
+	}}
+	s := &Server{cl: &clients.Set{Cart: fc, Catalog: cat, Pricing: pr}}
+
+	rec := serve(s, httptest.NewRequest(http.MethodGet, "/api/v1/cart", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	v := decode(t, rec)
+	if !v.DetailsUnavailable {
+		t.Fatal("details_unavailable not set — a degraded cart is indistinguishable from a healthy one")
+	}
+	if len(v.Items) != 1 || v.Items[0].Quantity != 2 {
+		t.Fatalf("cart lines lost with catalog down: %+v", v.Items)
+	}
+	if v.Items[0].Title != "" {
+		t.Fatalf("title present despite catalog failing: %+v", v.Items[0])
+	}
+	// The half that doesn't depend on catalog must survive intact.
+	if v.Items[0].UnitPrice == nil || v.Total == nil {
+		t.Fatalf("pricing dropped because catalog failed: %+v", v)
+	}
+}
+
+// A healthy cart must not claim degradation.
+func TestRespondCart_HealthyCartIsNotMarkedDegraded(t *testing.T) {
+	fc := &fakeCart{cart: &cartv1.Cart{
+		Id: "srv", TotalQuantity: 1,
+		Items: []*cartv1.CartItem{{ProductId: "p1", Quantity: 1}},
+	}}
+	cat := &fakeCatalog{resp: &catalogv1.BatchGetProductsResponse{
+		Products: []*catalogv1.Product{{Id: "p1", Slug: "desk-lamp", Title: "Desk Lamp"}},
+	}}
+	pr := &fakePricing{quote: &pricingv1.Quote{Subtotal: usd(34, 990000000), Total: usd(37, 790000000)}}
+	s := &Server{cl: &clients.Set{Cart: fc, Catalog: cat, Pricing: pr}}
+
+	v := decode(t, serve(s, httptest.NewRequest(http.MethodGet, "/api/v1/cart", nil)))
+	if v.DetailsUnavailable {
+		t.Fatal("healthy cart marked details_unavailable")
+	}
+	if v.Items[0].Title != "Desk Lamp" {
+		t.Fatalf("enrichment lost: %+v", v.Items[0])
+	}
+}
+
+// The catalog and pricing lookups must actually overlap. Each fake blocks until
+// the other has been entered, so this can only complete if both are in flight at
+// once — run sequentially it deadlocks and fails on the barrier timeout rather
+// than passing quietly.
+func TestRespondCart_CatalogAndPricingRunConcurrently(t *testing.T) {
+	catIn, quoteIn := make(chan struct{}), make(chan struct{})
+	const barrier = 5 * time.Second
+
+	cat := &fakeCatalog{
+		resp: &catalogv1.BatchGetProductsResponse{
+			Products: []*catalogv1.Product{{Id: "p1", Slug: "desk-lamp", Title: "Desk Lamp"}},
+		},
+		batchHook: func() {
+			close(catIn)
+			select {
+			case <-quoteIn:
+			case <-time.After(barrier):
+				t.Error("catalog waited for pricing to start and it never did — calls are still sequential")
+			}
+		},
+	}
+	pr := &fakePricing{
+		quote: &pricingv1.Quote{Subtotal: usd(34, 990000000), Total: usd(37, 790000000)},
+		quoteHook: func() {
+			close(quoteIn)
+			select {
+			case <-catIn:
+			case <-time.After(barrier):
+				t.Error("pricing waited for catalog to start and it never did — calls are still sequential")
+			}
+		},
+	}
+	fc := &fakeCart{cart: &cartv1.Cart{
+		Id: "srv", TotalQuantity: 1,
+		Items: []*cartv1.CartItem{{ProductId: "p1", Quantity: 1}},
+	}}
+	s := &Server{cl: &clients.Set{Cart: fc, Catalog: cat, Pricing: pr}}
+
+	v := decode(t, serve(s, httptest.NewRequest(http.MethodGet, "/api/v1/cart", nil)))
+	if v.Items[0].Title != "Desk Lamp" || v.Total == nil {
+		t.Fatalf("both results must still be joined: %+v", v)
 	}
 }

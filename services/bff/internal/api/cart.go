@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -57,6 +59,11 @@ type cartView struct {
 	Total         *money         `json:"total,omitempty"`
 	CouponCode    string         `json:"coupon_code,omitempty"`
 	CouponError   string         `json:"coupon_error,omitempty"`
+	// DetailsUnavailable reports that catalog could not be reached, so every
+	// line is missing its title, slug and image. Quantities and totals are
+	// still correct. Without this the client cannot tell a degraded cart from
+	// a healthy one.
+	DetailsUnavailable bool `json:"details_unavailable,omitempty"`
 }
 
 type cartLineView struct {
@@ -85,30 +92,76 @@ func (s *Server) respondCart(c echo.Context, raw *cartv1.Cart, couponCode string
 	ctx, cancel := outCtx(c)
 	defer cancel()
 
-	byID := s.batchProductsByID(ctx, items)
-	quote := s.quoteCartItems(ctx, &view, items, couponCode)
+	// Catalog supplies the display fields (slug/title/image), pricing supplies
+	// the money. Neither reads the other's result, so they run concurrently and
+	// the cart page costs max(catalog, pricing) rather than their sum.
+	//
+	// Deliberately not an errgroup: neither call may cancel the other. Each
+	// degrades on its own terms, and a failure in one must not blank the half
+	// of the cart the other would have filled in.
+	var (
+		wg         sync.WaitGroup
+		byID       map[string]*catalogv1.Product
+		catalogErr error
+		quote      *pricingv1.Quote
+		couponErr  string
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		byID, catalogErr = s.batchProductsByID(ctx, items)
+	}()
+	go func() {
+		defer wg.Done()
+		quote, couponErr = s.quoteCartItems(ctx, items, couponCode)
+	}()
+	wg.Wait()
+
+	if catalogErr != nil {
+		// The cart itself is still correct — quantities and totals come from
+		// elsewhere — but every line is missing its title, slug and image. Say
+		// so instead of returning a cart that merely looks empty-ish, which is
+		// indistinguishable from a real one to both the shopper and to metrics.
+		slog.WarnContext(ctx, "cart rendered without product details",
+			slog.String("cart_id", raw.GetId()), slog.Any("err", catalogErr))
+		view.DetailsUnavailable = true
+	}
+	if couponErr != "" {
+		view.CouponError = couponErr
+		view.CouponCode = ""
+	}
+
 	view.Items = append(view.Items, cartLineViews(items, byID, quote)...)
 	applyQuoteTotals(&view, quote)
 	return c.JSON(200, view)
 }
 
-// batchProductsByID resolves every line's product (slug/title/media) in one call.
-func (s *Server) batchProductsByID(ctx context.Context, items []*cartv1.CartItem) map[string]*catalogv1.Product {
+// batchProductsByID resolves every line's product (slug/title/media) in one
+// call. The error is returned rather than swallowed: the caller still renders
+// the cart, but it has to decide to do that, and it has to say so.
+func (s *Server) batchProductsByID(ctx context.Context, items []*cartv1.CartItem) (map[string]*catalogv1.Product, error) {
 	ids := make([]string, 0, len(items))
 	for _, it := range items {
 		ids = append(ids, it.GetProductId())
 	}
-	batch, _ := s.cl.Catalog.BatchGetProducts(ctx, &catalogv1.BatchGetProductsRequest{Ids: ids})
-	byID := map[string]*catalogv1.Product{}
+	batch, err := s.cl.Catalog.BatchGetProducts(ctx, &catalogv1.BatchGetProductsRequest{Ids: ids})
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]*catalogv1.Product, len(batch.GetProducts()))
 	for _, p := range batch.GetProducts() {
 		byID[p.GetId()] = p
 	}
-	return byID
+	return byID, nil
 }
 
-// quoteCartItems prices the cart. A bad coupon must not break the cart view —
-// it records the error on view and retries without the coupon.
-func (s *Server) quoteCartItems(ctx context.Context, view *cartView, items []*cartv1.CartItem, couponCode string) *pricingv1.Quote {
+// quoteCartItems prices the cart, returning the quote and the reason the coupon
+// was rejected (empty when it wasn't). A bad coupon must not break the cart
+// view, so it retries once without the coupon.
+//
+// Returns the outcome rather than writing to the view, so this stays safe to
+// call concurrently with the catalog lookup above.
+func (s *Server) quoteCartItems(ctx context.Context, items []*cartv1.CartItem, couponCode string) (*pricingv1.Quote, string) {
 	quoteItems := make([]*pricingv1.QuoteLineInput, 0, len(items))
 	for _, it := range items {
 		quoteItems = append(quoteItems, &pricingv1.QuoteLineInput{ProductId: it.GetProductId(), Quantity: it.GetQuantity()})
@@ -116,12 +169,12 @@ func (s *Server) quoteCartItems(ctx context.Context, view *cartView, items []*ca
 	quote, qErr := s.cl.Pricing.QuotePrice(ctx, &pricingv1.QuoteRequest{
 		Items: quoteItems, CurrencyCode: "USD", CouponCode: couponCode,
 	})
-	if qErr != nil {
-		view.CouponError = errs.FromGRPC(qErr).Reason
-		quote, _ = s.cl.Pricing.QuotePrice(ctx, &pricingv1.QuoteRequest{Items: quoteItems, CurrencyCode: "USD"})
-		view.CouponCode = ""
+	if qErr == nil {
+		return quote, ""
 	}
-	return quote
+	reason := errs.FromGRPC(qErr).Reason
+	quote, _ = s.cl.Pricing.QuotePrice(ctx, &pricingv1.QuoteRequest{Items: quoteItems, CurrencyCode: "USD"})
+	return quote, reason
 }
 
 // cartLineViews joins each cart item with its product and priced line.
