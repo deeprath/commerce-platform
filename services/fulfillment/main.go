@@ -77,7 +77,8 @@ func run() error {
 		return err
 	}
 	defer producer.Close()
-	relay := kafka.NewOutboxRelay(pool, producer, 0, 0)
+	relay := kafka.NewOutboxRelay(pool, producer,
+		config.Duration("OUTBOX_INTERVAL", 0), config.Int("OUTBOX_BATCH", 0))
 
 	cons, err := kafka.NewConsumer("fulfillment", consumer.Topics(), consumer.Handler(st), brokers)
 	if err != nil {
