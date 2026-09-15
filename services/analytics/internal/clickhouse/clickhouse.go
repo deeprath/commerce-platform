@@ -6,8 +6,11 @@ package clickhouse
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -61,10 +64,36 @@ type Sink struct {
 	buf       []Event
 	clickBuf  []Click
 	batchSize int
+	maxBuffer int
+
+	// Degradation state, guarded by mu. Counters rather than OTEL metrics
+	// because this repo has no meter helper yet; Stats() exposes them so a
+	// future metrics wiring — and the tests — can read them.
+	refused       uint64
+	flushFailures uint64
+	degraded      bool
 }
 
-// Open connects, pings, and applies the schema.
-func Open(ctx context.Context, dsn string, batchSize int) (*Sink, error) {
+// ErrBufferFull is returned by Add/AddClick once maxBuffer rows are already
+// waiting on a ClickHouse that isn't draining them. It is backpressure, not an
+// error to retry in place: the caller should stop advancing its source offsets
+// and let Kafka — which is already a durable, replayable buffer — hold the
+// backlog, rather than have this process grow a second, non-durable copy of it
+// in memory until the pod is OOM-killed.
+var ErrBufferFull = errors.New("analytics buffer full")
+
+// Stats reports degradation counters: rows refused by backpressure, flush
+// failures so far, and whether the sink is currently refusing writes.
+func (s *Sink) Stats() (refused, flushFailures uint64, degraded bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.refused, s.flushFailures, s.degraded
+}
+
+// Open connects, pings, and applies the schema. batchSize is the row count that
+// triggers an eager flush; maxBuffer caps how many rows may wait in memory when
+// ClickHouse is unreachable, after which Add/AddClick apply backpressure.
+func Open(ctx context.Context, dsn string, batchSize, maxBuffer int) (*Sink, error) {
 	opts, err := clickhouse.ParseDSN(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse clickhouse dsn: %w", err)
@@ -79,7 +108,10 @@ func Open(ctx context.Context, dsn string, batchSize int) (*Sink, error) {
 	if err := applySchema(ctx, conn); err != nil {
 		return nil, err
 	}
-	return &Sink{conn: conn, batchSize: batchSize}, nil
+	if maxBuffer < batchSize {
+		maxBuffer = batchSize
+	}
+	return &Sink{conn: conn, batchSize: batchSize, maxBuffer: maxBuffer}, nil
 }
 
 func applySchema(ctx context.Context, conn driver.Conn) error {
@@ -107,29 +139,70 @@ func applySchema(ctx context.Context, conn driver.Conn) error {
 }
 
 // Add buffers a funnel event; it flushes automatically once batchSize is
-// reached.
+// reached. Returns ErrBufferFull, and buffers nothing, when the sink is already
+// holding maxBuffer rows.
+//
+// A failed flush is deliberately not reported to the caller: the row is safely
+// buffered either way and the next flush retries it, so the caller should
+// commit its source offset rather than reprocess a record this sink already
+// holds. Only backpressure — where nothing was buffered — is an error here.
 func (s *Sink) Add(ctx context.Context, ev Event) error {
 	s.mu.Lock()
+	if len(s.buf) >= s.maxBuffer {
+		s.refuseLocked(ctx, len(s.buf))
+		s.mu.Unlock()
+		return ErrBufferFull
+	}
 	s.buf = append(s.buf, ev)
 	full := len(s.buf) >= s.batchSize
 	s.mu.Unlock()
 	if full {
-		return s.Flush(ctx)
+		s.flushLogging(ctx)
 	}
 	return nil
 }
 
-// AddClick buffers a clickstream row; it flushes automatically once batchSize is
-// reached.
+// AddClick is Add for the clickstream buffer, with the same semantics.
 func (s *Sink) AddClick(ctx context.Context, cl Click) error {
 	s.mu.Lock()
+	if len(s.clickBuf) >= s.maxBuffer {
+		s.refuseLocked(ctx, len(s.clickBuf))
+		s.mu.Unlock()
+		return ErrBufferFull
+	}
 	s.clickBuf = append(s.clickBuf, cl)
 	full := len(s.clickBuf) >= s.batchSize
 	s.mu.Unlock()
 	if full {
-		return s.Flush(ctx)
+		s.flushLogging(ctx)
 	}
 	return nil
+}
+
+// refuseLocked counts a backpressured row and logs the transition into the
+// degraded state once, not once per refused row. Caller holds mu.
+func (s *Sink) refuseLocked(ctx context.Context, held int) {
+	s.refused++
+	if s.degraded {
+		return
+	}
+	s.degraded = true
+	slog.WarnContext(ctx, "analytics sink is full; applying backpressure so Kafka holds the backlog",
+		slog.Int("buffered_rows", held), slog.Int("max_buffer", s.maxBuffer))
+}
+
+// flushLogging runs a flush whose failure is not the caller's problem — the
+// rows stay buffered for the next attempt, so this logs and counts instead of
+// propagating.
+func (s *Sink) flushLogging(ctx context.Context) {
+	if err := s.Flush(ctx); err != nil {
+		s.mu.Lock()
+		s.flushFailures++
+		n := s.flushFailures
+		s.mu.Unlock()
+		slog.WarnContext(ctx, "analytics flush failed; rows stay buffered for the next attempt",
+			slog.Any("err", err), slog.Uint64("flush_failures", n))
+	}
 }
 
 // Flush drains both buffers. Each is independent: a failure on one requeues its
@@ -140,57 +213,70 @@ func (s *Sink) Flush(ctx context.Context) error {
 	if evErr != nil {
 		return evErr
 	}
-	return clErr
+	if clErr != nil {
+		return clErr
+	}
+	s.clearDegraded(ctx)
+	return nil
 }
 
-// flushEvents writes and clears the funnel buffer. A no-op when empty.
+// flushEvents writes the oldest batchSize funnel rows. A no-op when empty.
+//
+// Rows are *reserved*, not removed, until ClickHouse confirms the write — they
+// are only dropped from the buffer on success. The buffer therefore never
+// exceeds maxBuffer, and there is no requeue-on-failure path to grow it.
+// (Clearing the buffer up front and putting rows back on failure is what let it
+// grow without bound: the window between the two accepted new rows freely.)
 func (s *Sink) flushEvents(ctx context.Context) error {
 	s.mu.Lock()
-	if len(s.buf) == 0 {
+	n := min(len(s.buf), s.batchSize)
+	if n == 0 {
 		s.mu.Unlock()
 		return nil
 	}
-	rows := s.buf
-	s.buf = nil
+	rows := make([]Event, n)
+	copy(rows, s.buf[:n])
 	s.mu.Unlock()
 
 	batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO events
 		(event_type, occurred_at, order_id, owner_id, payment_id, amount_minor, currency, reason)`)
 	if err != nil {
-		s.requeue(rows)
 		return fmt.Errorf("prepare batch: %w", err)
 	}
 	for _, r := range rows {
 		if err := batch.Append(
 			r.Type, r.OccurredAt, r.OrderID, r.OwnerID, r.PaymentID, r.AmountMinor, r.Currency, r.Reason,
 		); err != nil {
-			s.requeue(rows)
 			return fmt.Errorf("append row: %w", err)
 		}
 	}
 	if err := batch.Send(); err != nil {
-		s.requeue(rows)
 		return fmt.Errorf("send batch: %w", err)
 	}
+
+	s.mu.Lock()
+	s.buf = slices.Delete(s.buf, 0, n) // keep anything appended mid-send
+	s.mu.Unlock()
 	return nil
 }
 
-// flushClicks writes and clears the clickstream buffer. A no-op when empty.
+// flushClicks is flushEvents for the clickstream buffer, with the same
+// reserve-until-confirmed semantics.
 func (s *Sink) flushClicks(ctx context.Context) error {
 	s.mu.Lock()
-	if len(s.clickBuf) == 0 {
+	n := min(len(s.clickBuf), s.batchSize)
+	if n == 0 {
 		s.mu.Unlock()
 		return nil
 	}
-	rows := s.clickBuf
-	s.clickBuf = nil
+	rows := make([]Click, n)
+	copy(rows, s.clickBuf[:n])
 	s.mu.Unlock()
 
 	batch, err := s.conn.PrepareBatch(ctx, `INSERT INTO clickstream
 		(event_type, occurred_at, client_time, anonymous_id, session_id, owner_id,
 		 path, referrer, product_id, query, value_minor, currency, user_agent)`)
 	if err != nil {
-		s.requeueClicks(rows)
 		return fmt.Errorf("prepare clickstream batch: %w", err)
 	}
 	for _, r := range rows {
@@ -198,30 +284,32 @@ func (s *Sink) flushClicks(ctx context.Context) error {
 			r.Type, r.OccurredAt, r.ClientTime, r.AnonymousID, r.SessionID, r.OwnerID,
 			r.Path, r.Referrer, r.ProductID, r.Query, r.ValueMinor, r.Currency, r.UserAgent,
 		); err != nil {
-			s.requeueClicks(rows)
 			return fmt.Errorf("append clickstream row: %w", err)
 		}
 	}
 	if err := batch.Send(); err != nil {
-		s.requeueClicks(rows)
 		return fmt.Errorf("send clickstream batch: %w", err)
 	}
+
+	s.mu.Lock()
+	s.clickBuf = slices.Delete(s.clickBuf, 0, n)
+	s.mu.Unlock()
 	return nil
 }
 
-// requeue puts funnel rows back at the front so a transient ClickHouse error
-// retries them on the next flush rather than dropping analytics data.
-func (s *Sink) requeue(rows []Event) {
+// clearDegraded lifts the backpressure flag after a clean flush, logging the
+// recovery once with how many rows were refused while it lasted.
+func (s *Sink) clearDegraded(ctx context.Context) {
 	s.mu.Lock()
-	s.buf = append(rows, s.buf...)
+	if !s.degraded {
+		s.mu.Unlock()
+		return
+	}
+	s.degraded = false
+	refused := s.refused
 	s.mu.Unlock()
-}
-
-// requeueClicks is requeue for the clickstream buffer.
-func (s *Sink) requeueClicks(rows []Click) {
-	s.mu.Lock()
-	s.clickBuf = append(rows, s.clickBuf...)
-	s.mu.Unlock()
+	slog.InfoContext(ctx, "analytics sink draining again; backpressure lifted",
+		slog.Uint64("rows_refused_while_full", refused))
 }
 
 // RunFlusher flushes on an interval until ctx is done, then flushes once more.
@@ -243,9 +331,14 @@ func (s *Sink) RunFlusher(ctx context.Context, every time.Duration) error {
 			// either way the batch fails with "context canceled" instead of
 			// completing. Using ctx only to decide whether to keep looping,
 			// never to bound the flush itself, closes that race entirely.
-			if err := s.Flush(context.WithoutCancel(ctx)); err != nil {
-				return err
-			}
+			// A flush failure must not end the loop. This runs in the service's
+			// errgroup, so returning here cancelled every other goroutine and
+			// exited the process — one transient ClickHouse blip took the whole
+			// analytics service down and then crash-looped it, since each
+			// restart re-consumed and hit the same wall. Log, count, keep
+			// ticking: the rows are still buffered and the next tick retries
+			// them, and Add applies backpressure if the buffer fills meanwhile.
+			s.flushLogging(context.WithoutCancel(ctx))
 		}
 	}
 }

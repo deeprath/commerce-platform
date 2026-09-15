@@ -55,9 +55,11 @@ func Handler(sink adder) func(context.Context, *kgo.Record) error {
 			UserAgent:   e.GetUserAgent(),
 		}
 		if err := sink.AddClick(ctx, row); err != nil {
-			slog.ErrorContext(ctx, "clickstream buffer failed",
+			// See the funnel consumer: this is backpressure, not a retry —
+			// holding offsets leaves the backlog in Kafka rather than in heap.
+			slog.ErrorContext(ctx, "clickstream sink refused the row; holding offsets",
 				slog.String("topic", r.Topic), slog.Any("err", err))
-			return err // retry
+			return err
 		}
 		return nil
 	}

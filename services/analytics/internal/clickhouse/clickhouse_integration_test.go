@@ -28,7 +28,7 @@ func openSink(t *testing.T, batch int) *clickhouse.Sink {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sink, err := clickhouse.Open(ctx, dsn, batch)
+	sink, err := clickhouse.Open(ctx, dsn, batch, 10_000)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

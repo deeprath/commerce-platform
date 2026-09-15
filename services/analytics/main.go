@@ -49,6 +49,11 @@ func run() error {
 	sink, err := clickhouse.Open(ctx,
 		config.MustString("CLICKHOUSE_DSN"),
 		config.Int("ANALYTICS_BATCH_SIZE", 500),
+		// Rows allowed to wait in memory while ClickHouse is unreachable,
+		// before the sink pushes back and lets Kafka hold the backlog instead.
+		// 50k x both buffers is a few MB — small next to a pod limit, and far
+		// short of the unbounded growth this replaces.
+		config.Int("ANALYTICS_MAX_BUFFER", 50_000),
 	)
 	if err != nil {
 		return err
