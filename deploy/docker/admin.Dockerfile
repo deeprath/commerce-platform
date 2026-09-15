@@ -6,7 +6,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 COPY web/admin/ ./
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 # Non-root by default in this image (uid 101). Serves on :8080.
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY web/admin/nginx.conf.template /etc/nginx/templates/default.conf.template
