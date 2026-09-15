@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOTOOLCHAIN=auto GOWORK=off
 
