@@ -340,3 +340,46 @@ func TestOrderForKey_UnknownKeyIsNotFound(t *testing.T) {
 		t.Fatal("OrderForKey returned an order for a key that was never used")
 	}
 }
+
+// The no-key paths keep the pre-idempotency behaviour intact, which is what
+// lets the field roll out without breaking existing clients.
+func TestIdempotency_EmptyKeyIsANoop(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+
+	if err := st.ReleaseIdempotencyKey(ctx, ""); err != nil {
+		t.Fatalf("releasing an empty key: %v", err)
+	}
+
+	o := newSeedOrder("owner-1")
+	if err := st.InsertWithKey(ctx, o, ""); err != nil {
+		t.Fatalf("InsertWithKey with no key: %v", err)
+	}
+	stored, err := st.Get(ctx, o.ID, "owner-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if stored.ID != o.ID {
+		t.Fatalf("stored %s, want %s", stored.ID, o.ID)
+	}
+}
+
+// Fingerprint has to separate the fields it hashes, or two different checkouts
+// could collide into the same value and one would be answered with the other's
+// order.
+func TestFingerprint_SeparatesItsFields(t *testing.T) {
+	a := store.Fingerprint("owner", "cart", "USD", "SAVE", 100)
+	b := store.Fingerprint("owner", "cart", "USD", "SAV", 100) // coupon differs
+	if a == b {
+		t.Fatal("different coupons produced the same fingerprint")
+	}
+	if store.Fingerprint("ow", "nercart", "USD", "SAVE", 100) == a {
+		t.Fatal("a field boundary shifted without changing the fingerprint")
+	}
+	if store.Fingerprint("owner", "cart", "USD", "SAVE", 101) == a {
+		t.Fatal("a different total produced the same fingerprint")
+	}
+	if store.Fingerprint("owner", "cart", "USD", "SAVE", 100) != a {
+		t.Fatal("the same request produced a different fingerprint")
+	}
+}
