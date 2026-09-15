@@ -68,8 +68,10 @@ jobs:
             --exit-code 1
 
   trivy-config:
-    # INFORMATIONAL: IaC / Dockerfile / manifest misconfig. Promote to blocking
-    # once the baseline is clean (docs/SECURITY.md §5.2).
+    # BLOCKS: IaC / Dockerfile / manifest misconfig. Was informational until
+    # the baseline was actually clean (docs/SECURITY.md §5.2) — promoted
+    # 2026-09-15 after fixing the 3 Dockerfiles missing an explicit USER
+    # (DS-0002), verified clean with --exit-code 1 locally.
     runs-on: ubuntu-latest
     env: { TRIVY_VERSION: v0.74.0 }
     steps:
@@ -91,12 +93,12 @@ jobs:
           done
           sudo tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
           trivy --version
-      - name: trivy config — informational
+      - name: trivy config — blocking
         run: |
           trivy config . \
             --severity HIGH,CRITICAL \
             --ignorefile infra/security/.trivyignore \
-            --exit-code 0
+            --exit-code 1
 
   trivy-image:
     # BLOCKS on library packages baked into the image; base-OS CVEs are reported
@@ -108,7 +110,7 @@ jobs:
         service: [ext-authz, catalog, media, search, bff, storefront, admin, cart, pricing, inventory, payment, order, fulfillment, notification, review, seller, payout, analytics]
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         with:
           # Pull Docker Hub base images (golang:*, etc.) through Google's
           # public pull-through cache — auth.docker.io 500s / anonymous rate

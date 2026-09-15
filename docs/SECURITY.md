@@ -176,10 +176,22 @@ behaviour doesn't drift. Four invocations,
 | `trivy fs --scanners vuln,secret` | Our deps (`go.mod` ×3) + stray secrets | **Blocks** on `HIGH`/`CRITICAL` in our deps | ✅ 0 vulns, 0 secrets |
 | `trivy image --pkg-types library` per service | App packages baked into the image | **Blocks** on `HIGH`/`CRITICAL` | ✅ `ext-authz` gobinary — 0 |
 | `trivy image` (full, incl. base OS) | Upstream CVEs in the distroless base | **Informational** (`--exit-code 0`) | ✅ 0 at HIGH/CRITICAL |
-| `trivy config .` | IaC misconfig (Dockerfile, Helm, k8s/Istio manifests) | **Informational** first; promote to blocking once baseline clean | ✅ 0 at HIGH/CRITICAL |
+| `trivy config .` | IaC misconfig (Dockerfile, Helm, k8s/Istio manifests) | **Blocks** on `HIGH`/`CRITICAL` (promoted 2026-09-15) | ✅ 0 at HIGH/CRITICAL |
 
 - **`.trivyignore`** at `infra/security/.trivyignore` — empty today; every future entry gets a
   **date**, a **CVE id**, and a **one-line reason**. Reviewed each release.
+- **`trivy config` promoted to blocking (2026-09-15):** clean at the very first run, but drifted
+  as services were added — 3 Dockerfiles (`admin`, `storefront`, `envoy`) ended up with no
+  explicit `USER` instruction (`DS-0002`). `admin`/`storefront` inherit a non-root user from
+  `nginx-unprivileged` already (uid 101) but Trivy's Dockerfile scanner only sees an
+  instruction written in the file it's scanning, not one inherited from a base image, so it's
+  now stated explicitly. `envoy` was a genuine gap — `envoyproxy/envoy` runs as **root** by
+  default (confirmed by inspection: `docker run --entrypoint id envoyproxy/envoy:v1.32-latest`
+  → `uid=0`); switched to the image's built-in `envoy` user (uid 101). All three rebuilt and
+  run-tested, not just built: `id` inside each confirms uid 101, and for `envoy` specifically —
+  the admin `/ready` endpoint returns `LIVE`, the Coraza WAF logs show it actively processing
+  requests, `robots.txt` still returns the §5.4 fix with `no-store`, and `/api/v1/*` is still
+  401-gated without a token. `trivy config . --exit-code 1` is clean after the fix.
 
 ### 5.3 SonarCloud — static analysis & quality
 

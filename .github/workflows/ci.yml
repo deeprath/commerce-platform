@@ -117,7 +117,7 @@ jobs:
         service: [ext-authz, catalog, media, search, bff, storefront, admin, cart, pricing, inventory, payment, order, fulfillment, notification, review, seller, payout, analytics, envoy]
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         with:
           # Pull Docker Hub base images (golang:*, etc.) through Google's
           # public pull-through cache — auth.docker.io 500s / anonymous rate
