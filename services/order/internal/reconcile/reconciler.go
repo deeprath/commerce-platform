@@ -35,16 +35,16 @@ type compensator interface {
 	VoidPayment(ctx context.Context, orderID, paymentID string) error
 }
 
-// pendingSource is the slice of *store.Store the sweep uses, narrowed for the
-// same reason: the sweep's decisions are worth testing on their own, and they
-// do not need a database to be worth testing.
-type pendingSource interface {
+// compensationLister is the slice of *store.Store the sweep uses, narrowed for
+// the same reason: the sweep's decisions are worth testing on their own, and
+// they do not need a database to be worth testing.
+type compensationLister interface {
 	PendingCompensations(ctx context.Context, settledFor time.Duration, limit int) ([]store.PendingCompensation, error)
 }
 
 // Sweeper periodically retries outstanding compensations.
 type Sweeper struct {
-	store      pendingSource
+	store      compensationLister
 	saga       compensator
 	sweepEvery time.Duration
 	// settledFor is how long an order must have been cancelled before it is
@@ -54,7 +54,7 @@ type Sweeper struct {
 	batch      int
 }
 
-func New(st pendingSource, c compensator, sweepEvery, settledFor time.Duration, batch int) *Sweeper {
+func New(st compensationLister, c compensator, sweepEvery, settledFor time.Duration, batch int) *Sweeper {
 	if sweepEvery <= 0 {
 		sweepEvery = time.Minute
 	}
