@@ -16,6 +16,7 @@ import (
 
 	sellerv1 "github.com/deeprath/commerce-platform/gen/go/commerce/seller/v1"
 	pkgerrs "github.com/deeprath/commerce-platform/pkg/errs"
+	"github.com/deeprath/commerce-platform/pkg/sqlfilter"
 	"github.com/deeprath/commerce-platform/services/seller/internal/domain"
 )
 
@@ -120,11 +121,11 @@ func (s *Store) List(ctx context.Context, status domain.Status, limit int, befor
 			cursor = t
 		}
 	}
-	rows, err := s.pool.Query(ctx, `
-		SELECT `+cols+` FROM shops
-		WHERE ($1 = '' OR status = $1) AND created_at < $2
-		ORDER BY created_at DESC LIMIT $3`,
-		string(status), cursor, limit+1)
+	var f sqlfilter.Filters
+	f.Add("created_at < $%d", cursor)
+	f.AddNonEmpty("status = $%d", string(status))
+	rows, err := s.pool.Query(ctx, "SELECT "+cols+" FROM shops"+f.Where()+
+		" ORDER BY created_at DESC LIMIT "+f.Placeholder(limit+1), f.Args()...)
 	if err != nil {
 		return nil, "", wrap(err)
 	}

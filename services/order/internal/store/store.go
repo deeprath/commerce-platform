@@ -19,6 +19,7 @@ import (
 	commonv1 "github.com/deeprath/commerce-platform/gen/go/commerce/common/v1"
 	orderv1 "github.com/deeprath/commerce-platform/gen/go/commerce/order/v1"
 	pkgerrs "github.com/deeprath/commerce-platform/pkg/errs"
+	"github.com/deeprath/commerce-platform/pkg/sqlfilter"
 	"github.com/deeprath/commerce-platform/services/order/internal/domain"
 )
 
@@ -170,10 +171,15 @@ func (s *Store) List(ctx context.Context, ownerID, status string, limit int, bef
 		}
 		cursor = t
 	}
-	q := `SELECT id FROM orders
-		WHERE ($1 = '' OR owner_id = $1) AND ($2 = '' OR status = $2) AND created_at < $3
-		ORDER BY created_at DESC LIMIT $4`
-	rows, err := s.pool.Query(ctx, q, ownerID, status, cursor, limit+1)
+	// Only the filters actually supplied become predicates — see pkg/sqlfilter
+	// for why the empty-string-sentinel idiom is worth avoiding here.
+	var f sqlfilter.Filters
+	f.Add("created_at < $%d", cursor)
+	f.AddNonEmpty("owner_id = $%d", ownerID)
+	f.AddNonEmpty("status = $%d", status)
+	q := "SELECT id FROM orders" + f.Where() +
+		" ORDER BY created_at DESC LIMIT " + f.Placeholder(limit+1)
+	rows, err := s.pool.Query(ctx, q, f.Args()...)
 	if err != nil {
 		return nil, "", wrap(err)
 	}

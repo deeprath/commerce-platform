@@ -17,6 +17,7 @@ import (
 
 	fulfillmentv1 "github.com/deeprath/commerce-platform/gen/go/commerce/fulfillment/v1"
 	pkgerrs "github.com/deeprath/commerce-platform/pkg/errs"
+	"github.com/deeprath/commerce-platform/pkg/sqlfilter"
 	"github.com/deeprath/commerce-platform/services/fulfillment/internal/domain"
 )
 
@@ -133,11 +134,14 @@ func (s *Store) List(
 			cursor = t
 		}
 	}
-	q := `SELECT ` + cols + ` FROM shipments
-		WHERE ($1 = '' OR owner_id = $1) AND created_at < $2
-		  AND ($3 = '' OR order_id = $3) AND ($4 = '' OR status = $4)
-		ORDER BY created_at DESC LIMIT $5`
-	rows, err := s.pool.Query(ctx, q, ownerID, cursor, orderID, status, limit+1)
+	var f sqlfilter.Filters
+	f.Add("created_at < $%d", cursor)
+	f.AddNonEmpty("owner_id = $%d", ownerID)
+	f.AddNonEmpty("order_id = $%d", orderID)
+	f.AddNonEmpty("status = $%d", status)
+	q := "SELECT " + cols + " FROM shipments" + f.Where() +
+		" ORDER BY created_at DESC LIMIT " + f.Placeholder(limit+1)
+	rows, err := s.pool.Query(ctx, q, f.Args()...)
 	if err != nil {
 		return nil, "", wrap(err)
 	}
