@@ -5,7 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // OutboxRelay polls a service's `outbox` table and publishes rows to Kafka,
@@ -24,22 +25,38 @@ import (
 //	  published_at TIMESTAMPTZ
 //	);
 type OutboxRelay struct {
-	pool     *pgxpool.Pool
+	pool     db
 	producer publisher
 	interval time.Duration
 	batch    int
 }
 
-// publisher is the slice of *Producer the relay actually uses. Narrowing it to
-// an interface lets the relay be driven against a real outbox table without a
-// broker — the same reasoning as media's objectStore and search's searcher.
-// *Producer satisfies it structurally, so call sites are unchanged.
+// publisher is the slice of *Producer the relay actually uses, and db the slice
+// of *pgxpool.Pool. Both are narrowed to interfaces so the relay's drain
+// behaviour — how far it gets per tick, what it does with a mid-batch failure —
+// can be exercised in this package without standing up Postgres and a broker.
+//
+// That matters more here than convenience: coverage does not cross module
+// boundaries (see infra/security/go-coverage.sh), so logic in pkg/ has to be
+// testable from pkg/, and pulling testcontainers in to avoid that would put
+// Docker's whole dependency tree into the module graph of every service that
+// imports this one. The SQL these run is covered separately by an integration
+// test against a real outbox table in services/order.
+//
+// *Producer and *pgxpool.Pool satisfy them structurally, so no call site
+// changed.
 type publisher interface {
 	Publish(ctx context.Context, topic string, key, value []byte, headers map[string]string) error
 }
 
+type db interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // NewOutboxRelay wires a relay. interval<=0 defaults to 1s; batch<=0 defaults to 100.
-func NewOutboxRelay(pool *pgxpool.Pool, p publisher, interval time.Duration, batch int) *OutboxRelay {
+func NewOutboxRelay(pool db, p publisher, interval time.Duration, batch int) *OutboxRelay {
 	if interval <= 0 {
 		interval = time.Second
 	}
