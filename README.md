@@ -144,6 +144,7 @@ Local login: `testuser` / `testuser123` (seeded in the Keycloak realm import).
 
 | File | What |
 |---|---|
+| [`OVERVIEW.md`](OVERVIEW.md) | What's **actually built** — derived from the code, not the design. Real dependency edges, event graph, saga walkthrough, and where it breaks first. Start here. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | The blueprint — 14 sections, service topology + checkout-saga diagrams. |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | ADR log — every technology choice, its alternatives, its consequences, and any reversal. |
 | [`docs/SETUP.md`](docs/SETUP.md) | Local dev setup on a new machine, and production deployment — both step by step. |
