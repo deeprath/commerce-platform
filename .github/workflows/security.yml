@@ -166,7 +166,7 @@ jobs:
       - name: check for token
         id: gate
         run: echo "enabled=${{ secrets.SONAR_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         if: steps.gate.outputs.enabled == 'true'
         with:
           go-version-file: pkg/go.mod
