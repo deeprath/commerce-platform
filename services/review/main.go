@@ -80,6 +80,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	cons.WithDeadLetter(kafka.DeadLetter{
+		Producer: producer,
+		Attempts: config.Int("KAFKA_RETRY_ATTEMPTS", 0),
+		Backoff:  config.Duration("KAFKA_RETRY_BACKOFF", 0),
+	})
 
 	srv := grpcx.NewServer(
 		grpcx.WithAuth(verifier, "/grpc.health.v1.Health/Check", "/grpc.health.v1.Health/Watch"),

@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -61,15 +62,37 @@ func run() error {
 	defer func() { _ = sink.Close(context.WithoutCancel(ctx)) }()
 
 	brokers := config.String("KAFKA_BROKERS", "kafka:9092")
+	// analytics publishes no events of its own; this producer exists only as a
+	// DLQ target for records the sink can never accept.
+	dlqProducer, err := kafka.NewProducer(brokers)
+	if err != nil {
+		return err
+	}
+	defer dlqProducer.Close()
+
+	// A full buffer is backpressure, not a bad record: ClickHouse is down or
+	// behind, and the event is only late. Parking those would discard exactly
+	// the data the bounded buffer exists to protect, so they hold offsets and
+	// wait in Kafka instead. Anything else — a payload the sink cannot make
+	// sense of — is parked so the group keeps moving.
+	deadLetter := kafka.DeadLetter{
+		Producer:  dlqProducer,
+		Attempts:  config.Int("KAFKA_RETRY_ATTEMPTS", 0),
+		Backoff:   config.Duration("KAFKA_RETRY_BACKOFF", 0),
+		Retryable: func(err error) bool { return errors.Is(err, clickhouse.ErrBufferFull) },
+	}
+
 	cons, err := kafka.NewConsumer("analytics", consumer.Topics(), consumer.Handler(sink), brokers)
 	if err != nil {
 		return err
 	}
+	cons.WithDeadLetter(deadLetter)
 	clickCons, err := kafka.NewConsumer(
 		"analytics-clickstream", clickstream.Topics(), clickstream.Handler(sink), brokers)
 	if err != nil {
 		return err
 	}
+	clickCons.WithDeadLetter(deadLetter)
 
 	srv := grpcx.NewServer()
 	healthgrpc.RegisterHealthServer(srv, health.NewServer())

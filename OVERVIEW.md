@@ -167,9 +167,17 @@ Note the **cycle**: `order → payment → order`. That is the saga, not a desig
 publishes `order.created`, `payment` reacts and publishes `payment.authorized`, and `order`'s
 `order-saga` consumer advances the state machine on that event.
 
-`commerce.order.confirmed.dlq` is the only dead-letter topic in the system — `order.confirmed` has
-the most consumers (fulfillment, review, payout, notification, analytics), so it is the one path
-where a poison message was considered worth isolating.
+**Correction to an earlier version of this file**, which claimed
+`commerce.order.confirmed.dlq` was "the only dead-letter topic in the system". That string came
+from a *test fixture* for `pkg/kafka`'s `DLQ()` helper, and I mistook it for a topic in use. There
+were in fact **no** dead-letter topics: `DLQ()` was written and tested but never called, while
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §4.3 specified DLQ-after-N-retries plus alerting.
+Another design-doc-vs-reality gap, listed in [§9](#9-where-the-code-and-the-design-docs-disagree).
+
+Every consumer now retries a failing record a bounded number of times and parks it on
+`<topic>.dlq` if it still won't take, so one unprocessable record can no longer wedge a group's
+offsets. A failure the downstream will accept later — backpressure rather than a bad payload — is
+held rather than parked, so the backlog waits in Kafka instead of being discarded.
 
 ---
 
@@ -308,6 +316,7 @@ These are load-bearing. Violating one breaks something non-obvious.
 |---|---|
 | An `identity` service exists (§3 service table) | **Never built.** Login/session brokering lives in [`services/bff/internal/auth/broker.go`](services/bff/internal/auth/broker.go) |
 | A `web/login` SPA exists | **Never built.** Each React app has its own `pages/Login.tsx` |
+| DLQ after N retries, with an alert on any DLQ message (§4.3) | **Was never built** — `pkg/kafka`'s `DLQ()` helper existed and was unit-tested, but no consumer called it. Retry-and-park is wired now; the *alerting* half is still absent |
 
 Both are also flagged in [`CLAUDE.md`](CLAUDE.md). Nothing else in the design docs contradicts the
 code as far as this pass could tell, but the service table is the section to distrust first.
