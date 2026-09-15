@@ -59,7 +59,12 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) (*htt
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := c.os.Perform(req)
+	// Stream, not Perform: Perform is deprecated in favor of Stream (raw byte
+	// forwarding, caller owns the body — what this code already does) or the
+	// typed Do helpers (a decoded Go value, which doesn't fit this package's
+	// deliberate choice to talk raw HTTP rather than depend on a particular
+	// opensearch-go high-level API surface — see the package doc comment).
+	resp, err := c.os.Stream(req)
 	if err != nil {
 		return nil, errs.Wrap(err, errs.KindUnavailable, "OS_UNREACHABLE", "opensearch request failed")
 	}
