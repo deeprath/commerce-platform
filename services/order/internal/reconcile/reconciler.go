@@ -23,8 +23,37 @@ import (
 	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
+	"github.com/deeprath/commerce-platform/pkg/telemetry"
 	"github.com/deeprath/commerce-platform/services/order/internal/store"
 )
+
+// A compensation that is still outstanding after a sweep is money or stock held
+// against an order that no longer exists. These make that visible: `retries`
+// says whether the reconciler is making progress, `outstanding` says whether
+// anything is stuck regardless.
+var (
+	meter = telemetry.Meter("github.com/deeprath/commerce-platform/services/order/internal/reconcile")
+
+	retries, _ = meter.Int64Counter("commerce.saga.compensation.retries",
+		metric.WithDescription("Saga compensations retried by the reconciler, by kind and outcome."))
+
+	outstanding, _ = meter.Int64Gauge("commerce.saga.compensation.outstanding",
+		metric.WithDescription("Cancelled orders whose compensation has still not completed."))
+)
+
+func recordRetry(ctx context.Context, kind string, err error) {
+	outcome := "ok"
+	if err != nil {
+		outcome = "failed"
+	}
+	retries.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("kind", kind),
+		attribute.String("outcome", outcome),
+	))
+}
 
 // compensator is the slice of *saga.Orchestrator this needs. Narrowed to an
 // interface both to keep the dependency one-way — the saga does not import the
@@ -90,6 +119,9 @@ func (sw *Sweeper) Sweep(ctx context.Context) {
 		slog.ErrorContext(ctx, "compensation sweep query failed", slog.Any("err", err))
 		return
 	}
+	// Recorded on every sweep, including the zero, so the gauge falls back to 0
+	// once the backlog clears rather than staying at its last non-zero reading.
+	outstanding.Record(ctx, int64(len(pending)))
 	if len(pending) == 0 {
 		return
 	}
@@ -101,7 +133,9 @@ func (sw *Sweeper) Sweep(ctx context.Context) {
 		// must not stop the payment on the same order being voided, because the
 		// payment is the one holding the shopper's money.
 		if p.ReservationID != "" {
-			if err := sw.saga.ReleaseReservation(ctx, p.OrderID, p.ReservationID); err != nil {
+			err := sw.saga.ReleaseReservation(ctx, p.OrderID, p.ReservationID)
+			recordRetry(ctx, "release", err)
+			if err != nil {
 				slog.ErrorContext(ctx, "compensation retry: Release still failing",
 					slog.String("order_id", p.OrderID),
 					slog.String("reservation_id", p.ReservationID), slog.Any("err", err))
@@ -111,7 +145,9 @@ func (sw *Sweeper) Sweep(ctx context.Context) {
 			}
 		}
 		if p.PaymentID != "" {
-			if err := sw.saga.VoidPayment(ctx, p.OrderID, p.PaymentID); err != nil {
+			err := sw.saga.VoidPayment(ctx, p.OrderID, p.PaymentID)
+			recordRetry(ctx, "void", err)
+			if err != nil {
 				slog.ErrorContext(ctx, "compensation retry: Void still failing — the authorisation is still live",
 					slog.String("order_id", p.OrderID),
 					slog.String("payment_id", p.PaymentID), slog.Any("err", err))

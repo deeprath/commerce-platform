@@ -190,22 +190,30 @@ func (c *Consumer) dispatch(ctx context.Context, r *kgo.Record) bool {
 
 	// No DLQ configured, or we're shutting down and this is unfinished work
 	// rather than a poison record: hold the offset and redo it on restart.
-	if c.dl == nil || ctx.Err() != nil {
+	if c.dl == nil {
+		recordHeld(ctx, r.Topic, "no_dlq")
+		return false
+	}
+	if ctx.Err() != nil {
+		recordHeld(ctx, r.Topic, "shutdown")
 		return false
 	}
 	// A downstream that is full or unreachable will accept this record later.
 	// Hold the offset so the backlog waits in Kafka rather than being parked as
 	// though the payload were at fault.
 	if c.dl.Retryable != nil && c.dl.Retryable(err) {
+		recordHeld(ctx, r.Topic, "retryable")
 		slog.WarnContext(ctx, "kafka handler failure is retryable; holding offsets",
 			slog.String("topic", r.Topic), slog.Int64("offset", r.Offset))
 		return false
 	}
 	if perr := c.park(ctx, r, err); perr != nil {
+		recordHeld(ctx, r.Topic, "park_failed")
 		slog.ErrorContext(ctx, "kafka dlq publish failed",
 			slog.String("topic", r.Topic), slog.Int64("offset", r.Offset), slog.Any("err", perr))
 		return false
 	}
+	recordParked(ctx, r.Topic)
 	slog.WarnContext(ctx, "kafka record parked on dlq",
 		slog.String("topic", r.Topic), slog.String("dlq", DLQ(r.Topic)),
 		slog.Int64("offset", r.Offset), slog.Any("err", err))
