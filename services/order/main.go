@@ -29,6 +29,7 @@ import (
 	"github.com/deeprath/commerce-platform/pkg/telemetry"
 	"github.com/deeprath/commerce-platform/services/order/internal/consumer"
 	"github.com/deeprath/commerce-platform/services/order/internal/grpcsvc"
+	"github.com/deeprath/commerce-platform/services/order/internal/reconcile"
 	"github.com/deeprath/commerce-platform/services/order/internal/saga"
 	"github.com/deeprath/commerce-platform/services/order/internal/store"
 )
@@ -145,7 +146,16 @@ func run() error {
 	}
 
 	g, gctx := errgroup.WithContext(ctx)
+	// Retries the saga compensations that did not complete. A failed Release
+	// self-heals on inventory's TTL sweep; a failed Void leaves the shopper's
+	// authorisation live, which is what this is really for.
+	rec := reconcile.New(st, orch,
+		config.Duration("COMPENSATION_SWEEP_INTERVAL", 0),
+		config.Duration("COMPENSATION_SETTLED_AFTER", 0),
+		config.Int("COMPENSATION_SWEEP_BATCH", 0))
+
 	g.Go(func() error { return relay.Run(gctx) })
+	g.Go(func() error { return rec.Run(gctx) })
 	g.Go(func() error { return cons.Run(gctx) })
 	g.Go(func() error { return grpcx.Serve(gctx, srv, svc.GRPCAddr) })
 	return g.Wait()

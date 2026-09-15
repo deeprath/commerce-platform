@@ -106,7 +106,7 @@ func (o *Orchestrator) CreateOrder(ctx context.Context, in CreateInput) (*Create
 		OrderId: orderID, Amount: quote.GetTotal(), MethodToken: in.MethodToken,
 	})
 	if err != nil {
-		o.compensateRelease(ctx, res.GetReservationId())
+		o.compensateRelease(ctx, "", res.GetReservationId())
 		return nil, errs.Wrap(err, errs.KindUnavailable, "PAYMENT_INIT_FAILED", "could not start payment")
 	}
 
@@ -126,8 +126,8 @@ func (o *Orchestrator) CreateOrder(ctx context.Context, in CreateInput) (*Create
 		PricingSignature: quote.GetPricingSignature(),
 	}
 	if err := o.store.Insert(ctx, ord); err != nil {
-		o.compensateRelease(ctx, res.GetReservationId())
-		o.compensateVoid(ctx, pay.GetPaymentId())
+		o.compensateRelease(ctx, "", res.GetReservationId())
+		o.compensateVoid(ctx, "", pay.GetPaymentId())
 		return nil, err
 	}
 
@@ -162,7 +162,7 @@ func (o *Orchestrator) OnPaymentFailed(ctx context.Context, eventID, orderID, re
 	if err != nil || ord == nil {
 		return err
 	}
-	o.compensateRelease(ctx, ord.ReservationID)
+	o.compensateRelease(ctx, ord.ID, ord.ReservationID)
 	return nil
 }
 
@@ -198,7 +198,15 @@ func (o *Orchestrator) OnReservationExpired(ctx context.Context, eventID, orderR
 		return err
 	}
 	if applied.Status == domain.StatusCancelled {
-		o.compensateVoid(ctx, applied.PaymentID)
+		// The reservation is the thing that expired, so there is nothing left to
+		// release. Record that or the reconciler would keep offering it a
+		// Release it does not owe — harmless, since Release is a no-op on an
+		// expired reservation, but a pointless RPC on every sweep forever.
+		if err := o.store.MarkReservationReleased(ctx, applied.ID); err != nil {
+			slog.WarnContext(ctx, "could not record the expired reservation",
+				slog.String("order_id", applied.ID), slog.Any("err", err))
+		}
+		o.compensateVoid(ctx, applied.ID, applied.PaymentID)
 	}
 	return nil
 }
@@ -210,25 +218,61 @@ func (o *Orchestrator) CompensateCancelled(ctx context.Context, ord *domain.Orde
 	if ord == nil || ord.Status != domain.StatusCancelled {
 		return
 	}
-	o.compensateRelease(ctx, ord.ReservationID)
-	o.compensateVoid(ctx, ord.PaymentID)
+	o.compensateRelease(ctx, ord.ID, ord.ReservationID)
+	o.compensateVoid(ctx, ord.ID, ord.PaymentID)
 }
 
-func (o *Orchestrator) compensateRelease(ctx context.Context, resID string) {
+// Compensation stays best-effort at the call site — a cancellation must not be
+// undone because the cleanup failed — but it is no longer *forgotten* when it
+// fails. Success is recorded against the order, so ReleaseReservation and
+// VoidPayment below leave behind the one thing the old log-and-continue did
+// not: a durable record of what still owes work, which reconcile.Sweeper
+// retries.
+//
+// orderID is empty for the two CreateOrder paths that compensate before the
+// order row exists. Nothing can be recorded against a row that was never
+// written; see the package comment on reconcile for what covers that gap.
+
+// ReleaseReservation releases stock and records it against the order.
+// Exported so the reconciler retries through exactly the same path.
+func (o *Orchestrator) ReleaseReservation(ctx context.Context, orderID, resID string) error {
 	if resID == "" {
-		return
+		return nil
 	}
 	if _, err := o.cl.Inventory.Release(ctx, &inventoryv1.ReleaseRequest{ReservationId: resID}); err != nil {
-		slog.WarnContext(ctx, "compensation Release failed", slog.String("reservation_id", resID), slog.Any("err", err))
+		return err
+	}
+	if orderID == "" {
+		return nil
+	}
+	return o.store.MarkReservationReleased(ctx, orderID)
+}
+
+// VoidPayment voids the authorisation and records it against the order.
+func (o *Orchestrator) VoidPayment(ctx context.Context, orderID, paymentID string) error {
+	if paymentID == "" {
+		return nil
+	}
+	if _, err := o.cl.Payment.Void(ctx, &paymentv1.VoidRequest{PaymentId: paymentID}); err != nil {
+		return err
+	}
+	if orderID == "" {
+		return nil
+	}
+	return o.store.MarkPaymentVoided(ctx, orderID)
+}
+
+func (o *Orchestrator) compensateRelease(ctx context.Context, orderID, resID string) {
+	if err := o.ReleaseReservation(ctx, orderID, resID); err != nil {
+		slog.WarnContext(ctx, "compensation Release failed; left for the reconciler",
+			slog.String("order_id", orderID), slog.String("reservation_id", resID), slog.Any("err", err))
 	}
 }
 
-func (o *Orchestrator) compensateVoid(ctx context.Context, paymentID string) {
-	if paymentID == "" {
-		return
-	}
-	if _, err := o.cl.Payment.Void(ctx, &paymentv1.VoidRequest{PaymentId: paymentID}); err != nil {
-		slog.WarnContext(ctx, "compensation Void failed", slog.String("payment_id", paymentID), slog.Any("err", err))
+func (o *Orchestrator) compensateVoid(ctx context.Context, orderID, paymentID string) {
+	if err := o.VoidPayment(ctx, orderID, paymentID); err != nil {
+		slog.WarnContext(ctx, "compensation Void failed; left for the reconciler",
+			slog.String("order_id", orderID), slog.String("payment_id", paymentID), slog.Any("err", err))
 	}
 }
 
