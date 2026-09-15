@@ -72,7 +72,8 @@ func run() error {
 		return err
 	}
 	defer producer.Close()
-	relay := kafka.NewOutboxRelay(pool, producer, 0, 0)
+	relay := kafka.NewOutboxRelay(pool, producer,
+		config.Duration("OUTBOX_INTERVAL", 0), config.Int("OUTBOX_BATCH", 0))
 
 	// Shop staff relationships (OpenFGA). Optional: without an endpoint the
 	// AddShopStaff / RemoveShopStaff / ListShopStaff RPCs report Unavailable.
