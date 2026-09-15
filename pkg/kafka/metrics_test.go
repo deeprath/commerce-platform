@@ -43,34 +43,39 @@ func collectOnce(t *testing.T, build func()) metricdata.ResourceMetrics {
 	return rm
 }
 
-// gaugeValues reads the two backlog gauges. With the meter isolated there is
-// exactly one relay reporting, so more than one data point would mean the
-// isolation leaked and the numbers below cannot be trusted.
+// singleGauge reads a gauge's sole data point.
+//
+// Exactly one is the point: with the meter isolated there is one relay
+// reporting, so a second data point means the isolation leaked and the value
+// cannot be trusted. Both backlog gauges are unlabelled by design, so a stray
+// one is indistinguishable from the relay under test — worth failing on rather
+// than silently reading whichever arrived first.
+func singleGauge[N int64 | float64](t *testing.T, m metricdata.Metrics) (N, bool) {
+	t.Helper()
+	g, ok := m.Data.(metricdata.Gauge[N])
+	if !ok || len(g.DataPoints) == 0 {
+		return 0, false
+	}
+	if len(g.DataPoints) != 1 {
+		t.Fatalf("%s has %d data points — another relay leaked into this collection", m.Name, len(g.DataPoints))
+	}
+	return g.DataPoints[0].Value, true
+}
+
+// gaugeValues reads the two backlog gauges from a collection.
 func gaugeValues(t *testing.T, rm metricdata.ResourceMetrics) (depth int64, age float64, found int) {
 	t.Helper()
 	for _, sm := range rm.ScopeMetrics {
 		for _, m := range sm.Metrics {
 			switch m.Name {
 			case "commerce.outbox.pending":
-				g, ok := m.Data.(metricdata.Gauge[int64])
-				if !ok || len(g.DataPoints) == 0 {
-					continue
+				if v, ok := singleGauge[int64](t, m); ok {
+					depth, found = v, found+1
 				}
-				if len(g.DataPoints) != 1 {
-					t.Fatalf("%s has %d data points — another relay leaked into this collection", m.Name, len(g.DataPoints))
-				}
-				depth = g.DataPoints[0].Value
-				found++
 			case "commerce.outbox.oldest.age":
-				g, ok := m.Data.(metricdata.Gauge[float64])
-				if !ok || len(g.DataPoints) == 0 {
-					continue
+				if v, ok := singleGauge[float64](t, m); ok {
+					age, found = v, found+1
 				}
-				if len(g.DataPoints) != 1 {
-					t.Fatalf("%s has %d data points — another relay leaked into this collection", m.Name, len(g.DataPoints))
-				}
-				age = g.DataPoints[0].Value
-				found++
 			}
 		}
 	}
