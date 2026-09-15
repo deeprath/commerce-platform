@@ -20,7 +20,7 @@ jobs:
   gitleaks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # gitleaks-action needs full history to diff a PR
       - uses: gitleaks/gitleaks-action@v2
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     env: { TRIVY_VERSION: v0.74.0 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: install trivy
         # Pull the pinned release tarball directly. The upstream install.sh
         # makes an unauthenticated GitHub API call ("checking for tag ...")
@@ -73,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     env: { TRIVY_VERSION: v0.74.0 }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: install trivy
         run: |
           ver="${TRIVY_VERSION#v}"
@@ -107,8 +107,8 @@ jobs:
       matrix:
         service: [ext-authz, catalog, media, search, bff, storefront, admin, cart, pricing, inventory, payment, order, fulfillment, notification, review, seller, payout, analytics]
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v4
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
         with:
           # Pull Docker Hub base images (golang:*, etc.) through Google's
           # public pull-through cache — auth.docker.io 500s / anonymous rate
@@ -161,7 +161,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - name: check for token
         id: gate
@@ -209,7 +209,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: bring up the stack
         run: |
           cp deploy/compose/.env.example deploy/compose/.env
