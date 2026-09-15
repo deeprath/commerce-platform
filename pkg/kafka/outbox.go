@@ -63,7 +63,9 @@ func NewOutboxRelay(pool db, p publisher, interval time.Duration, batch int) *Ou
 	if batch <= 0 {
 		batch = 100
 	}
-	return &OutboxRelay{pool: pool, producer: p, interval: interval, batch: batch}
+	r := &OutboxRelay{pool: pool, producer: p, interval: interval, batch: batch}
+	r.observeBacklog()
+	return r
 }
 
 // Run relays until ctx is cancelled.

@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -137,6 +138,14 @@ func (h *traceHandler) WithGroup(name string) slog.Handler {
 
 // Tracer returns a named tracer from the global provider.
 func Tracer(name string) trace.Tracer { return otel.Tracer(name) }
+
+// Meter returns a named meter from the global provider.
+//
+// Safe before Setup runs: the global provider defaults to a no-op, so
+// instruments created from it record nothing rather than failing. That means a
+// package can instrument itself unconditionally without knowing whether the
+// process it ends up in configured telemetry — which is what tests rely on.
+func Meter(name string) metric.Meter { return otel.Meter(name) }
 
 // Attr is a convenience re-export so callers don't import the attribute pkg.
 func Attr(key, value string) attribute.KeyValue { return attribute.String(key, value) }

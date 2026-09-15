@@ -76,3 +76,84 @@ spec:
           annotations:
             summary: "{{ $labels.job }} is serving no gRPC traffic"
             description: "{{ $labels.job }} has had no gRPC calls for 10m while the rest of the platform is active."
+
+    - name: event_pipeline_alerts
+      rules:
+        # docs/ARCHITECTURE.md §4.3 asks for an alert on any DLQ message. A parked
+        # record is one the handler could never accept, set aside so the consumer
+        # group keeps moving — nothing else will look at it unless someone is told.
+        - alert: RecordsParkedOnDLQ
+          expr: sum by (topic) (increase(commerce_kafka_dlq_parked_total[15m])) > 0
+          for: 0m
+          labels: { severity: ticket }
+          annotations:
+            summary: "{{ $labels.topic }}: records parked on the dead-letter topic"
+            description: >
+              {{ $value }} record(s) from {{ $labels.topic }} exhausted their retries in the
+              last 15m and were parked on {{ $labels.topic }}.dlq. They are not lost, and the
+              group is still moving, but nothing will process them until someone does.
+
+        # Offsets that stop advancing are the failure the DLQ exists to prevent.
+        # Sustained holds mean either no DLQ is configured for that consumer, or
+        # the DLQ publish itself is failing, or a downstream is applying
+        # backpressure it never recovers from.
+        - alert: ConsumerOffsetsHeld
+          expr: sum by (topic, reason) (rate(commerce_kafka_offsets_held_total[10m])) > 0
+          for: 15m
+          labels: { severity: ticket }
+          annotations:
+            summary: "{{ $labels.topic }}: offsets held for 15m ({{ $labels.reason }})"
+            description: >
+              A consumer of {{ $labels.topic }} has been unable to complete or park records for
+              15m (reason: {{ $labels.reason }}). Its group offsets are frozen, so lag is growing
+              and a restart will reprocess everything since the stuck point.
+
+        # The relay drains until empty each tick, so a backlog that persists means
+        # it is failing to publish, not merely behind.
+        - alert: OutboxBacklogNotDraining
+          expr: commerce_outbox_pending > 0
+          for: 10m
+          labels: { severity: ticket }
+          annotations:
+            summary: "{{ $labels.job }}: outbox not draining"
+            description: >
+              {{ $labels.job }} has had {{ $value }} unpublished outbox rows for 10m. Domain
+              writes are committing but their events are not reaching Kafka, so every consumer
+              downstream is working from stale state.
+
+        - alert: OutboxRowStuck
+          expr: commerce_outbox_oldest_age > 300
+          for: 5m
+          labels: { severity: page }
+          annotations:
+            summary: "{{ $labels.job }}: an outbox row is {{ $value | humanizeDuration }} old"
+            description: >
+              The oldest unpublished row in {{ $labels.job }}'s outbox predates the last
+              5 minutes. Publishing stops at the first failure to preserve per-key ordering, so
+              one stuck row blocks every event behind it.
+
+    - name: saga_alerts
+      rules:
+        # A compensation that never completes is stock or money held against an
+        # order that no longer exists. The reconciler retries, so anything still
+        # outstanding after several sweeps is not retrying its way out.
+        - alert: SagaCompensationOutstanding
+          expr: commerce_saga_compensation_outstanding > 0
+          for: 30m
+          labels: { severity: page }
+          annotations:
+            summary: "{{ $value }} cancelled order(s) still awaiting compensation"
+            description: >
+              Cancelled orders have had an outstanding Release or Void for 30m despite the
+              reconciler retrying. A stuck Void means a customer's card authorisation is still
+              live against an order that was cancelled.
+
+        - alert: SagaCompensationRetriesFailing
+          expr: sum by (kind) (rate(commerce_saga_compensation_retries_total{outcome="failed"}[15m])) > 0
+          for: 15m
+          labels: { severity: ticket }
+          annotations:
+            summary: "saga compensation retries failing ({{ $labels.kind }})"
+            description: >
+              The reconciler has been retrying {{ $labels.kind }} compensations unsuccessfully for
+              15m — the downstream it calls is still refusing them.
