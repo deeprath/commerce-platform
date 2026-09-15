@@ -7,7 +7,7 @@
 # can be iterated without a rebuild.
 ARG ENVOY_TAG=v1.32-latest
 
-FROM alpine:3.21 AS fetch
+FROM alpine:3.24 AS fetch
 ARG CORAZA_WASM_VERSION=0.6.0
 ARG CORAZA_WASM_SHA256=cca4e3c75cf6b2e615907f936a1b6dcd0955250e0fb7d3b1c2ecef807d84603c
 RUN apk add --no-cache curl unzip

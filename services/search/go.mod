@@ -10,9 +10,9 @@ replace (
 require (
 	github.com/deeprath/commerce-platform/gen/go v0.0.0-00010101000000-000000000000
 	github.com/deeprath/commerce-platform/pkg v0.0.0-00010101000000-000000000000
-	github.com/opensearch-project/opensearch-go/v4 v4.3.0
+	github.com/opensearch-project/opensearch-go/v4 v4.7.3
 	github.com/twmb/franz-go v1.21.6
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
