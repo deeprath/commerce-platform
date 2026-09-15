@@ -2,6 +2,7 @@ package saga_test
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -66,12 +67,19 @@ type fakeInventoryFull struct {
 	reservedID string
 	commits    []string
 	releases   []string
+	// reserves records every Reserve call, so a test can assert stock was taken
+	// exactly once across retries or concurrent submits.
+	reserves []string
+	mu       sync.Mutex
 }
 
 func (f *fakeInventoryFull) Reserve(_ context.Context, in *inventoryv1.ReserveRequest, _ ...grpc.CallOption) (*inventoryv1.Reservation, error) {
 	if f.reserveErr != nil {
 		return nil, f.reserveErr
 	}
+	f.mu.Lock()
+	f.reserves = append(f.reserves, in.GetOrderRef())
+	f.mu.Unlock()
 	id := f.reservedID
 	if id == "" {
 		id = "res-" + in.GetOrderRef()
@@ -98,12 +106,19 @@ type fakePaymentFull struct {
 	paymentID  string
 	clientSecr string
 	voids      []string
+	// payments records every CreatePayment call — the one that costs real money
+	// if a retry runs it twice.
+	payments []string
+	mu       sync.Mutex
 }
 
 func (f *fakePaymentFull) CreatePayment(_ context.Context, in *paymentv1.CreatePaymentRequest, _ ...grpc.CallOption) (*paymentv1.Payment, error) {
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
+	f.mu.Lock()
+	f.payments = append(f.payments, in.GetOrderId())
+	f.mu.Unlock()
 	id := f.paymentID
 	if id == "" {
 		id = "pay-" + in.GetOrderId()

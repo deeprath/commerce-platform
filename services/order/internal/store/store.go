@@ -39,6 +39,16 @@ func (s *Store) Insert(ctx context.Context, o *domain.Order) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	if err := insertOrderTx(ctx, tx, o); err != nil {
+		return err
+	}
+	return wrap(tx.Commit(ctx))
+}
+
+// insertOrderTx writes the order, its lines and the order.created outbox row
+// inside an existing transaction. Shared with InsertWithKey so the two entry
+// points cannot drift apart on what an order insert consists of.
+func insertOrderTx(ctx context.Context, tx pgx.Tx, o *domain.Order) error {
 	shipTo, _ := json.Marshal(o.ShipTo)
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO orders (id, owner_id, status, currency, subtotal_cents, discount_cents,
@@ -57,10 +67,7 @@ func (s *Store) Insert(ctx context.Context, o *domain.Order) error {
 			return wrap(err)
 		}
 	}
-	if err := outboxCreated(ctx, tx, o); err != nil {
-		return err
-	}
-	return wrap(tx.Commit(ctx))
+	return outboxCreated(ctx, tx, o)
 }
 
 // Get loads one order (with lines). ownerID != "" restricts to that owner.

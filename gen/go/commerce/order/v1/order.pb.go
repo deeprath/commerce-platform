@@ -375,8 +375,16 @@ type CreateOrderRequest struct {
 	CurrencyCode       string                 `protobuf:"bytes,3,opt,name=currency_code,json=currencyCode,proto3" json:"currency_code,omitempty"`
 	CouponCode         string                 `protobuf:"bytes,4,opt,name=coupon_code,json=couponCode,proto3" json:"coupon_code,omitempty"`
 	PaymentMethodToken string                 `protobuf:"bytes,5,opt,name=payment_method_token,json=paymentMethodToken,proto3" json:"payment_method_token,omitempty"` // sandbox: "pm_card_ok" | "pm_card_declined"
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Caller-generated key that makes checkout safe to retry. The same key with
+	// the same cart returns the original order instead of placing a second one;
+	// omit it and a retried request charges the customer twice.
+	//
+	// Optional so existing clients keep working, but every client should send
+	// one: generate it per checkout attempt and reuse it across retries of that
+	// attempt.
+	IdempotencyKey string `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *CreateOrderRequest) Reset() {
@@ -440,6 +448,13 @@ func (x *CreateOrderRequest) GetCouponCode() string {
 func (x *CreateOrderRequest) GetPaymentMethodToken() string {
 	if x != nil {
 		return x.PaymentMethodToken
+	}
+	return ""
+}
+
+func (x *CreateOrderRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
 	}
 	return ""
 }
@@ -2027,14 +2042,15 @@ const file_commerce_order_v1_order_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\r \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x0e \x01(\tR\tupdatedAt\"\xdb\x01\n" +
+	"updated_at\x18\x0e \x01(\tR\tupdatedAt\"\x84\x02\n" +
 	"\x12CreateOrderRequest\x12\x17\n" +
 	"\acart_id\x18\x01 \x01(\tR\x06cartId\x124\n" +
 	"\aship_to\x18\x02 \x01(\v2\x1b.commerce.common.v1.AddressR\x06shipTo\x12#\n" +
 	"\rcurrency_code\x18\x03 \x01(\tR\fcurrencyCode\x12\x1f\n" +
 	"\vcoupon_code\x18\x04 \x01(\tR\n" +
 	"couponCode\x120\n" +
-	"\x14payment_method_token\x18\x05 \x01(\tR\x12paymentMethodToken\"\xec\x01\n" +
+	"\x14payment_method_token\x18\x05 \x01(\tR\x12paymentMethodToken\x12'\n" +
+	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\"\xec\x01\n" +
 	"\x13CreateOrderResponse\x12\x19\n" +
 	"\border_id\x18\x01 \x01(\tR\aorderId\x126\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1e.commerce.order.v1.OrderStatusR\x06status\x12\x1d\n" +

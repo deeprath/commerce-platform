@@ -147,3 +147,61 @@ func TestSweep_QueryFailureIsNotFatal(t *testing.T) {
 		t.Fatal("compensated despite not knowing what was pending")
 	}
 }
+
+type fakeReaper struct {
+	retain  time.Duration
+	deleted int64
+	err     error
+	calls   int
+}
+
+func (f *fakeReaper) ReapIdempotencyKeys(_ context.Context, retain time.Duration) (int64, error) {
+	f.calls++
+	f.retain = retain
+	return f.deleted, f.err
+}
+
+func TestWithKeyReaper_DefaultsRetention(t *testing.T) {
+	sw := New(&fakePending{}, &fakeSaga{}, time.Minute, time.Minute, 10).
+		WithKeyReaper(&fakeReaper{}, 0)
+	if sw.keyRetain != 24*time.Hour {
+		t.Fatalf("retain = %v, want 24h", sw.keyRetain)
+	}
+}
+
+func TestReapKeys_PassesTheConfiguredRetention(t *testing.T) {
+	r := &fakeReaper{deleted: 3}
+	sw := New(&fakePending{}, &fakeSaga{}, time.Minute, time.Minute, 10).
+		WithKeyReaper(r, 6*time.Hour)
+
+	sw.ReapKeys(context.Background(), sw.keyRetain)
+	if r.calls != 1 || r.retain != 6*time.Hour {
+		t.Fatalf("reaper called %d times with retain %v", r.calls, r.retain)
+	}
+}
+
+// A reap failure must not stop the sweep it shares a ticker with.
+func TestReapKeys_FailureIsNotFatal(t *testing.T) {
+	r := &fakeReaper{err: errors.New("db down")}
+	sw := New(&fakePending{}, &fakeSaga{}, time.Minute, time.Minute, 10).WithKeyReaper(r, time.Hour)
+	sw.ReapKeys(context.Background(), time.Hour) // must not panic
+	if r.calls != 1 {
+		t.Fatalf("reaper calls = %d", r.calls)
+	}
+}
+
+// Without a reaper configured the sweep still runs — key housekeeping is
+// optional, compensation is not.
+func TestRun_SweepsWithoutAReaper(t *testing.T) {
+	src := &fakePending{rows: []store.PendingCompensation{{OrderID: "o1", PaymentID: "p1"}}}
+	saga := &fakeSaga{}
+	sw := New(src, saga, 10*time.Millisecond, time.Minute, 10)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+	defer cancel()
+	_ = sw.Run(ctx)
+
+	if len(saga.voids) == 0 {
+		t.Fatal("the compensation sweep did not run without a key reaper")
+	}
+}

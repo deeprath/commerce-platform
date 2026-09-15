@@ -26,6 +26,8 @@ export function Checkout({ authed }: Readonly<{ authed: boolean }>) {
   const [coupon, setCoupon] = useState("");
   const [method, setMethod] = useState("pm_card_ok");
   const [phase, setPhase] = useState<Phase>("form");
+  // Survives re-renders, so a retry of the same attempt reuses its key.
+  const idempotencyKey = useRef<string | null>(null);
   const [paymentId, setPaymentId] = useState("");
   const [orderId, setOrderId] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -81,18 +83,31 @@ export function Checkout({ authed }: Readonly<{ authed: boolean }>) {
     e.preventDefault();
     setMsg(null);
     setPhase("paying");
+    // One key per attempt, held in a ref so a re-render cannot rotate it: a
+    // retry of this attempt must present the same key, or it places a second
+    // order. Cleared once the attempt resolves, so a genuinely new checkout
+    // gets a new key.
+    if (!idempotencyKey.current) idempotencyKey.current = crypto.randomUUID();
     try {
-      const res = await api.checkout({
-        ship_to: addr,
-        coupon_code: coupon.trim() || undefined,
-        currency_code: "USD",
-        payment_method_token: method,
-      });
+      const res = await api.checkout(
+        {
+          ship_to: addr,
+          coupon_code: coupon.trim() || undefined,
+          currency_code: "USD",
+          payment_method_token: method,
+        },
+        idempotencyKey.current,
+      );
+      idempotencyKey.current = null;
       setPaymentId(res.payment_id);
       setOrderId(res.order_id);
     } catch (err) {
+      const info = (err as { info?: { status?: number; reason?: string } }).info;
+      // 409 means an attempt with this key is still running. Keep the key so
+      // the retry joins that attempt rather than starting a second one.
+      if (info?.status !== 409) idempotencyKey.current = null;
       setPhase("error");
-      setMsg((err as { info?: { reason?: string } }).info?.reason ?? "Checkout failed.");
+      setMsg(info?.reason ?? "Checkout failed.");
     }
   }
 

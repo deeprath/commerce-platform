@@ -71,9 +71,16 @@ type compensationLister interface {
 	PendingCompensations(ctx context.Context, settledFor time.Duration, limit int) ([]store.PendingCompensation, error)
 }
 
+// keyReaper is the idempotency-key housekeeping the sweeper also drives.
+type keyReaper interface {
+	ReapIdempotencyKeys(ctx context.Context, retain time.Duration) (int64, error)
+}
+
 // Sweeper periodically retries outstanding compensations.
 type Sweeper struct {
 	store      compensationLister
+	keys       keyReaper
+	keyRetain  time.Duration
 	saga       compensator
 	sweepEvery time.Duration
 	// settledFor is how long an order must have been cancelled before it is
@@ -96,6 +103,17 @@ func New(st compensationLister, c compensator, sweepEvery, settledFor time.Durat
 	return &Sweeper{store: st, saga: c, sweepEvery: sweepEvery, settledFor: settledFor, batch: batch}
 }
 
+// WithKeyReaper adds idempotency-key housekeeping to the sweep. retain<=0 means
+// 24h, long enough that a client retrying a checkout hours later still gets its
+// original order rather than a second one.
+func (sw *Sweeper) WithKeyReaper(k keyReaper, retain time.Duration) *Sweeper {
+	if retain <= 0 {
+		retain = 24 * time.Hour
+	}
+	sw.keys, sw.keyRetain = k, retain
+	return sw
+}
+
 // Run blocks until ctx is cancelled.
 func (sw *Sweeper) Run(ctx context.Context) error {
 	t := time.NewTicker(sw.sweepEvery)
@@ -106,7 +124,24 @@ func (sw *Sweeper) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-t.C:
 			sw.Sweep(ctx)
+			if sw.keys != nil {
+				sw.ReapKeys(ctx, sw.keyRetain)
+			}
 		}
+	}
+}
+
+// ReapKeys deletes idempotency keys past their useful life. Runs on the same
+// ticker as the compensation sweep rather than needing its own goroutine —
+// both are periodic housekeeping over the same database.
+func (sw *Sweeper) ReapKeys(ctx context.Context, retain time.Duration) {
+	n, err := sw.keys.ReapIdempotencyKeys(ctx, retain)
+	if err != nil {
+		slog.ErrorContext(ctx, "idempotency key reap failed", slog.Any("err", err))
+		return
+	}
+	if n > 0 {
+		slog.InfoContext(ctx, "reaped expired idempotency keys", slog.Int64("count", n))
 	}
 }
 

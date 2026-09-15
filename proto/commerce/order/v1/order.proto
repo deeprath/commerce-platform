@@ -95,6 +95,15 @@ message CreateOrderRequest {
   string currency_code = 3;
   string coupon_code = 4;
   string payment_method_token = 5; // sandbox: "pm_card_ok" | "pm_card_declined"
+
+  // Caller-generated key that makes checkout safe to retry. The same key with
+  // the same cart returns the original order instead of placing a second one;
+  // omit it and a retried request charges the customer twice.
+  //
+  // Optional so existing clients keep working, but every client should send
+  // one: generate it per checkout attempt and reuse it across retries of that
+  // attempt.
+  string idempotency_key = 6;
 }
 
 message CreateOrderResponse {

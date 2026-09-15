@@ -1,6 +1,8 @@
 package api
 
 import (
+	"strings"
+
 	"github.com/labstack/echo/v4"
 
 	commonv1 "github.com/deeprath/commerce-platform/gen/go/commerce/common/v1"
@@ -25,6 +27,17 @@ type checkoutBody struct {
 	CouponCode         string      `json:"coupon_code"`
 	CurrencyCode       string      `json:"currency_code"`
 	PaymentMethodToken string      `json:"payment_method_token"`
+	IdempotencyKey     string      `json:"idempotency_key"`
+}
+
+// idempotencyKey prefers the header, which is where clients and proxies
+// conventionally put it, and falls back to the body for callers that cannot set
+// one. Empty is allowed and keeps the old, non-idempotent behaviour.
+func idempotencyKey(c echo.Context, fromBody string) string {
+	if h := strings.TrimSpace(c.Request().Header.Get("Idempotency-Key")); h != "" {
+		return h
+	}
+	return strings.TrimSpace(fromBody)
 }
 
 func (s *Server) checkout(c echo.Context) error {
@@ -45,6 +58,10 @@ func (s *Server) checkout(c echo.Context) error {
 		CurrencyCode:       in.CurrencyCode,
 		CouponCode:         in.CouponCode,
 		PaymentMethodToken: in.PaymentMethodToken,
+		// Standard header name, so the usual client libraries and proxies
+		// already know to preserve it across a retry. Body field accepted too,
+		// for callers that cannot set headers.
+		IdempotencyKey: idempotencyKey(c, in.IdempotencyKey),
 		ShipTo: &commonv1.Address{
 			FullName: in.ShipTo.FullName, Line1: in.ShipTo.Line1, Line2: in.ShipTo.Line2,
 			City: in.ShipTo.City, Region: in.ShipTo.Region, PostalCode: in.ShipTo.PostalCode,

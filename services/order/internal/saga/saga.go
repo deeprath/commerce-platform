@@ -6,6 +6,7 @@ package saga
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -46,17 +47,24 @@ type CreateInput struct {
 	CouponCode  string
 	MethodToken string
 	ShipTo      domain.Address
+	// IdempotencyKey makes the checkout safe to retry. Empty keeps the previous
+	// behaviour, where a retry places a second order.
+	IdempotencyKey string
 }
 
 // CreateResult is what CreateOrder returns.
 type CreateResult struct {
 	Order         *domain.Order
 	PaymentSecret string
+	// Replayed reports that this result came from an earlier attempt with the
+	// same idempotency key rather than a checkout run just now. The payment
+	// secret is not re-issued in that case.
+	Replayed bool
 }
 
 // CreateOrder runs the forward path. `ctx` carries the shopper's bearer token,
 // forwarded to pricing/inventory/payment.
-func (o *Orchestrator) CreateOrder(ctx context.Context, in CreateInput) (*CreateResult, error) {
+func (o *Orchestrator) CreateOrder(ctx context.Context, in CreateInput) (_ *CreateResult, retErr error) {
 	if in.OwnerID == "" {
 		return nil, errs.New(errs.KindUnauthenticated, "NOT_AUTHENTICATED", "sign-in required to check out")
 	}
@@ -65,6 +73,43 @@ func (o *Orchestrator) CreateOrder(ctx context.Context, in CreateInput) (*Create
 	}
 	if len(in.Currency) != 3 {
 		in.Currency = "USD"
+	}
+
+	// 0. claim the idempotency key, before anything downstream is touched.
+	//
+	// Order matters: claiming after the reserve or the payment would let two
+	// concurrent submits both reserve stock and both authorise the card before
+	// either discovered the other. The claim is a single conditional INSERT, so
+	// the database picks the winner and the loser never gets that far.
+	if in.IdempotencyKey != "" {
+		claim, cerr := o.store.ClaimIdempotencyKey(ctx, in.IdempotencyKey, in.OwnerID,
+			store.Fingerprint(in.OwnerID, in.CartID, in.Currency, in.CouponCode, 0))
+		switch {
+		case cerr != nil && errors.Is(cerr, store.ErrIdempotencyKeyReused):
+			return nil, errs.New(errs.KindInvalidArgument, "IDEMPOTENCY_KEY_REUSED",
+				"that idempotency key was already used for a different checkout")
+		case cerr != nil:
+			return nil, cerr
+		case claim.OrderID != "":
+			ord, gerr := o.store.Get(ctx, claim.OrderID, in.OwnerID)
+			if gerr != nil {
+				return nil, gerr
+			}
+			return &CreateResult{Order: ord, Replayed: true}, nil
+		case claim.InFlight:
+			return nil, errs.New(errs.KindConflict, "CHECKOUT_IN_PROGRESS",
+				"this checkout is already being processed")
+		}
+		// Claimed. Anything that fails from here releases it, so the shopper can
+		// retry rather than being told their order is still in flight.
+		defer func() {
+			if retErr != nil {
+				if rerr := o.store.ReleaseIdempotencyKey(context.WithoutCancel(ctx), in.IdempotencyKey); rerr != nil {
+					slog.WarnContext(ctx, "could not release the idempotency claim",
+						slog.String("key", in.IdempotencyKey), slog.Any("err", rerr))
+				}
+			}
+		}()
 	}
 
 	// 1. cart
@@ -125,7 +170,7 @@ func (o *Orchestrator) CreateOrder(ctx context.Context, in CreateInput) (*Create
 		ReservationID:    res.GetReservationId(),
 		PricingSignature: quote.GetPricingSignature(),
 	}
-	if err := o.store.Insert(ctx, ord); err != nil {
+	if err := o.store.InsertWithKey(ctx, ord, in.IdempotencyKey); err != nil {
 		o.compensateRelease(ctx, "", res.GetReservationId())
 		o.compensateVoid(ctx, "", pay.GetPaymentId())
 		return nil, err
