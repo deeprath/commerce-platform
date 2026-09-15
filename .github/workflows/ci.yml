@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: pkg/go.mod
           cache-dependency-path: "**/go.sum"
@@ -55,7 +55,7 @@ jobs:
         module: [pkg, gen/go, services/ext-authz, services/catalog, services/media, services/search, services/bff, services/cart, services/pricing, services/inventory, services/payment, services/order, services/fulfillment, services/notification, services/review, services/seller, services/payout, services/analytics]
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: pkg/go.mod
           cache-dependency-path: "**/go.sum"
@@ -76,7 +76,7 @@ jobs:
       TESTCONTAINERS_RYUK_DISABLED: "true"
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: pkg/go.mod
           cache-dependency-path: "**/go.sum"
