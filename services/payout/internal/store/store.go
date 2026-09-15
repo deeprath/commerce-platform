@@ -17,6 +17,7 @@ import (
 	commonv1 "github.com/deeprath/commerce-platform/gen/go/commerce/common/v1"
 	payoutv1 "github.com/deeprath/commerce-platform/gen/go/commerce/payout/v1"
 	pkgerrs "github.com/deeprath/commerce-platform/pkg/errs"
+	"github.com/deeprath/commerce-platform/pkg/sqlfilter"
 	"github.com/deeprath/commerce-platform/services/payout/internal/domain"
 )
 
@@ -127,11 +128,12 @@ func (s *Store) List(ctx context.Context, shopID, status string, limit int, befo
 			cursor = t
 		}
 	}
-	rows, err := s.pool.Query(ctx, `
-		SELECT `+cols+` FROM payouts
-		WHERE ($1 = '' OR shop_id = $1) AND created_at < $2 AND ($3 = '' OR status = $3)
-		ORDER BY created_at DESC LIMIT $4`,
-		shopID, cursor, status, limit+1)
+	var f sqlfilter.Filters
+	f.Add("created_at < $%d", cursor)
+	f.AddNonEmpty("shop_id = $%d", shopID)
+	f.AddNonEmpty("status = $%d", status)
+	rows, err := s.pool.Query(ctx, "SELECT "+cols+" FROM payouts"+f.Where()+
+		" ORDER BY created_at DESC LIMIT "+f.Placeholder(limit+1), f.Args()...)
 	if err != nil {
 		return nil, "", wrap(err)
 	}
