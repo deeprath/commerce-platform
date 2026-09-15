@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -52,14 +54,56 @@ func (p *Producer) Publish(ctx context.Context, topic string, key, value []byte,
 // Close flushes and disconnects.
 func (p *Producer) Close() { p.cl.Close() }
 
-// Handler processes one record. Returning an error causes the record to be
-// retried; after the caller's retry budget it should be routed to the DLQ.
+// Publisher is the publishing surface *Producer provides. Taking the interface
+// rather than the concrete type lets a dead-letter path be exercised without a
+// broker, and keeps testcontainers — and Docker's whole dependency tree — out
+// of the module every service imports.
+type Publisher interface {
+	Publish(ctx context.Context, topic string, key, value []byte, headers map[string]string) error
+}
+
+// Handler processes one record. Returning an error retries the record up to the
+// configured attempts; after that it is parked on the DLQ (see WithDeadLetter),
+// or, with no DLQ configured, offsets stop advancing for the group.
 type Handler func(ctx context.Context, r *kgo.Record) error
+
+// DeadLetter configures bounded retry and where a record goes when the handler
+// keeps rejecting it.
+//
+// Without this, a record the handler can never accept — a malformed payload, a
+// referenced row that will never exist — wedges the group's offsets forever:
+// franz-go advances its own cursor, so the record is not retried in-process and
+// later records still run, but the commit never moves past it. Lag grows
+// without bound and every restart reprocesses the whole backlog from the stuck
+// point. Parking the record trades one lost-to-the-stream event, kept for
+// inspection, for a group that keeps up.
+type DeadLetter struct {
+	// Producer publishes the parked record to DLQ(topic). Required.
+	// *Producer satisfies Publisher, so callers pass one directly.
+	Producer Publisher
+	// Attempts is the total number of handler calls before parking. <=0 means 3.
+	Attempts int
+	// Backoff is the delay before the second attempt, doubling thereafter.
+	// <=0 means 200ms.
+	Backoff time.Duration
+	// Retryable reports whether an error means "try again later" rather than
+	// "this record is bad". A retryable failure is never parked: the offset is
+	// held instead, so the backlog waits in Kafka for the condition to clear.
+	//
+	// This is the difference between a malformed payload, which no amount of
+	// waiting will fix and which should be set aside so the group can move on,
+	// and a downstream that is merely full or down, where parking the record
+	// would be throwing away data that was only ever going to be late.
+	//
+	// Nil treats every error as the record's own fault.
+	Retryable func(error) bool
+}
 
 // Consumer runs a consumer-group loop invoking Handler per record.
 type Consumer struct {
 	cl      *kgo.Client
 	handler Handler
+	dl      *DeadLetter
 }
 
 // NewConsumer joins group for the given topics.
@@ -74,6 +118,112 @@ func NewConsumer(group string, topics []string, h Handler, brokers ...string) (*
 		return nil, err
 	}
 	return &Consumer{cl: cl, handler: h}, nil
+}
+
+// WithDeadLetter enables bounded retry and DLQ parking. Returns the consumer so
+// it can be chained onto NewConsumer.
+func (c *Consumer) WithDeadLetter(dl DeadLetter) *Consumer {
+	if dl.Attempts <= 0 {
+		dl.Attempts = 3
+	}
+	if dl.Backoff <= 0 {
+		dl.Backoff = 200 * time.Millisecond
+	}
+	c.dl = &dl
+	return c
+}
+
+// handleRecord runs the handler, retrying up to the configured attempts. With
+// no DeadLetter configured it is a single attempt, matching the previous
+// behaviour.
+func (c *Consumer) handleRecord(ctx context.Context, r *kgo.Record) error {
+	attempts, backoff := 1, time.Duration(0)
+	if c.dl != nil {
+		attempts, backoff = c.dl.Attempts, c.dl.Backoff
+	}
+	var err error
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+		}
+		if err = c.handler(ctx, r); err == nil {
+			return nil
+		}
+		// A cancelled context is shutdown, not a poison record: stop retrying
+		// and let the caller hold the offset so the work is redone on restart.
+		if ctx.Err() != nil {
+			return err
+		}
+	}
+	return err
+}
+
+// park publishes an exhausted record to its DLQ, preserving key and value so it
+// can be replayed, with headers recording why it ended up there.
+func (c *Consumer) park(ctx context.Context, r *kgo.Record, cause error) error {
+	return c.dl.Producer.Publish(ctx, DLQ(r.Topic), r.Key, r.Value, map[string]string{
+		"dlq-origin-topic":     r.Topic,
+		"dlq-origin-partition": strconv.FormatInt(int64(r.Partition), 10),
+		"dlq-origin-offset":    strconv.FormatInt(r.Offset, 10),
+		"dlq-error":            cause.Error(),
+		"dlq-parked-at":        time.Now().UTC().Format(time.RFC3339Nano),
+	})
+}
+
+// dispatch handles one record and reports whether its offset may advance.
+//
+// False means the offset must be held, which is the only way not to lose the
+// record — at the cost of the group never moving past it. True means the record
+// is either done or safely parked on the DLQ for someone to look at.
+func (c *Consumer) dispatch(ctx context.Context, r *kgo.Record) bool {
+	err := c.handleRecord(ctx, r)
+	if err == nil {
+		return true
+	}
+	slog.ErrorContext(ctx, "kafka handler error",
+		slog.String("topic", r.Topic), slog.Int64("offset", r.Offset), slog.Any("err", err))
+
+	// No DLQ configured, or we're shutting down and this is unfinished work
+	// rather than a poison record: hold the offset and redo it on restart.
+	if c.dl == nil || ctx.Err() != nil {
+		return false
+	}
+	// A downstream that is full or unreachable will accept this record later.
+	// Hold the offset so the backlog waits in Kafka rather than being parked as
+	// though the payload were at fault.
+	if c.dl.Retryable != nil && c.dl.Retryable(err) {
+		slog.WarnContext(ctx, "kafka handler failure is retryable; holding offsets",
+			slog.String("topic", r.Topic), slog.Int64("offset", r.Offset))
+		return false
+	}
+	if perr := c.park(ctx, r, err); perr != nil {
+		slog.ErrorContext(ctx, "kafka dlq publish failed",
+			slog.String("topic", r.Topic), slog.Int64("offset", r.Offset), slog.Any("err", perr))
+		return false
+	}
+	slog.WarnContext(ctx, "kafka record parked on dlq",
+		slog.String("topic", r.Topic), slog.String("dlq", DLQ(r.Topic)),
+		slog.Int64("offset", r.Offset), slog.Any("err", err))
+	return true
+}
+
+// handleFetches dispatches every record in a fetch and reports whether the
+// group's offsets may be committed. One record that could not be handled or
+// parked holds the whole commit, since the offset is per-partition and there is
+// no way to skip past just that one.
+func (c *Consumer) handleFetches(ctx context.Context, fetches kgo.Fetches) bool {
+	committable := true
+	fetches.EachRecord(func(r *kgo.Record) {
+		if !c.dispatch(ctx, r) {
+			committable = false
+		}
+	})
+	return committable
 }
 
 // Run polls until ctx is cancelled. Offsets are committed only after every
@@ -92,15 +242,7 @@ func (c *Consumer) Run(ctx context.Context) error {
 			}
 			continue
 		}
-		var failed bool
-		fetches.EachRecord(func(r *kgo.Record) {
-			if err := c.handler(ctx, r); err != nil {
-				failed = true
-				slog.ErrorContext(ctx, "kafka handler error",
-					slog.String("topic", r.Topic), slog.Int64("offset", r.Offset), slog.Any("err", err))
-			}
-		})
-		if !failed {
+		if c.handleFetches(ctx, fetches) {
 			if err := c.cl.CommitUncommittedOffsets(ctx); err != nil {
 				slog.ErrorContext(ctx, "kafka commit error", slog.Any("err", err))
 			}

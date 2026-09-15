@@ -112,6 +112,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	cons.WithDeadLetter(kafka.DeadLetter{
+		Producer: producer,
+		Attempts: config.Int("KAFKA_RETRY_ATTEMPTS", 0),
+		Backoff:  config.Duration("KAFKA_RETRY_BACKOFF", 0),
+	})
 
 	// Delegated order sharing (OpenFGA). Optional: without an endpoint the
 	// sharing RPCs report Unavailable and GetOrder is owner/operator-only.

@@ -84,6 +84,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	cons.WithDeadLetter(kafka.DeadLetter{
+		Producer: producer,
+		Attempts: config.Int("KAFKA_RETRY_ATTEMPTS", 0),
+		Backoff:  config.Duration("KAFKA_RETRY_BACKOFF", 0),
+	})
 
 	adv := carrier.New(st,
 		config.Duration("CARRIER_SWEEP_INTERVAL", 10*time.Second),
