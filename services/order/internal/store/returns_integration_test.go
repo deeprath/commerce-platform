@@ -2,9 +2,11 @@ package store_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 
 	orderv1 "github.com/deeprath/commerce-platform/gen/go/commerce/order/v1"
@@ -239,5 +241,41 @@ func TestDecideReturn_IdempotentEventsAndRestockFlags(t *testing.T) {
 	}
 	if again, _ := st.UnrestockedLines(ctx, r.ID); len(again) != 0 {
 		t.Fatalf("still pending after mark: %d", len(again))
+	}
+}
+
+// ListReturns had the same 1 + 2N shape as List: ids, then getReturn per row,
+// each loading its own lines. It must be a fixed 2 queries per page.
+func TestListReturns_DoesNotScaleQueriesWithPageSize(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	seed := store.New(pool)
+	o := seedPending(t, seed)
+	for i := 0; i < 6; i++ {
+		r := newReturn(o.ID)
+		r.ID = uuid.NewString()
+		if err := seed.InsertReturn(ctx, r); err != nil {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+
+	st, counter := tracedStore(t, pool)
+	counter.reset()
+	got, _, err := st.ListReturns(ctx, "owner-1", "", 6, "")
+	if err != nil {
+		t.Fatalf("ListReturns: %v", err)
+	}
+	if len(got) != 6 {
+		t.Fatalf("got %d returns, want 6", len(got))
+	}
+	if n := counter.count(); n != 2 {
+		t.Fatalf("ListReturns issued %d queries for a 6-row page, want 2:\n%s",
+			n, strings.Join(counter.sqls, "\n---\n"))
+	}
+	for _, r := range got {
+		if len(r.Lines) != 1 || r.Lines[0].RefundAmount.Cents != 6998 ||
+			r.Lines[0].RefundAmount.Currency != "USD" {
+			t.Fatalf("return %s lines not hydrated: %+v", r.ID, r.Lines)
+		}
 	}
 }

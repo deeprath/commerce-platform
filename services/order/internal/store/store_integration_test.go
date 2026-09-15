@@ -2,10 +2,13 @@ package store_test
 
 import (
 	"context"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	pgxv5 "github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -333,5 +336,108 @@ func TestConsumer_DispatchesShipmentDelivered(t *testing.T) {
 	bad := &kgo.Record{Topic: kafka.Topic("fulfillment", "delivered"), Partition: 0, Offset: 4, Value: []byte("not-proto")}
 	if err := h(ctx, bad); err != nil {
 		t.Fatalf("undecodable record should be skipped, got %v", err)
+	}
+}
+
+// queryCounter records every statement pgx sends, so a test can assert on the
+// number of round trips rather than just the result.
+type queryCounter struct {
+	mu   sync.Mutex
+	sqls []string
+}
+
+func (c *queryCounter) TraceQueryStart(ctx context.Context, _ *pgxv5.Conn, d pgxv5.TraceQueryStartData) context.Context {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sqls = append(c.sqls, d.SQL)
+	return ctx
+}
+
+func (c *queryCounter) TraceQueryEnd(context.Context, *pgxv5.Conn, pgxv5.TraceQueryEndData) {}
+
+func (c *queryCounter) reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sqls = nil
+}
+
+func (c *queryCounter) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.sqls)
+}
+
+// tracedStore reuses the container behind pool but talks to it through a pool
+// that counts statements.
+func tracedStore(t *testing.T, pool *pgxpool.Pool) (*store.Store, *queryCounter) {
+	t.Helper()
+	ctx := context.Background()
+	cfg, err := pgxpool.ParseConfig(pool.Config().ConnString())
+	if err != nil {
+		t.Fatalf("parse dsn: %v", err)
+	}
+	c := &queryCounter{}
+	cfg.ConnConfig.Tracer = c
+	traced, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatalf("traced pool: %v", err)
+	}
+	t.Cleanup(traced.Close)
+	return store.New(traced), c
+}
+
+// List used to run 1 + 2N queries for a page: one to collect ids, then Get per
+// order, each of which loaded its own lines — 41 round trips for a 20-row page,
+// growing with the page size. It must now be a fixed 2 regardless.
+func TestList_DoesNotScaleQueriesWithPageSize(t *testing.T) {
+	pool := spinUp(t)
+	seed := store.New(pool)
+	for i := 0; i < 10; i++ {
+		seedPendingFor(t, seed, "owner-1")
+	}
+
+	st, counter := tracedStore(t, pool)
+	ctx := context.Background()
+
+	counter.reset()
+	got, _, err := st.List(ctx, "owner-1", "", 10, "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 10 {
+		t.Fatalf("got %d orders, want 10", len(got))
+	}
+	if n := counter.count(); n != 2 {
+		t.Fatalf("List issued %d queries for a 10-row page, want 2:\n%s",
+			n, strings.Join(counter.sqls, "\n---\n"))
+	}
+
+	// The lines still have to arrive, or "2 queries" would be meaningless.
+	for _, o := range got {
+		if len(o.Lines) != 1 || o.Lines[0].ProductID != "p1" {
+			t.Fatalf("order %s lines = %+v, want the seeded line", o.ID, o.Lines)
+		}
+		if o.Lines[0].UnitPrice.Currency != "USD" || o.Lines[0].UnitPrice.Cents != 3499 {
+			t.Fatalf("line money not hydrated: %+v", o.Lines[0])
+		}
+	}
+}
+
+// An empty page must not issue a pointless second query for lines it knows it
+// has none of.
+func TestList_EmptyPageSkipsTheLineQuery(t *testing.T) {
+	pool := spinUp(t)
+	st, counter := tracedStore(t, pool)
+
+	counter.reset()
+	got, _, err := st.List(context.Background(), "nobody", "", 10, "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %d orders, want none", len(got))
+	}
+	if n := counter.count(); n != 1 {
+		t.Fatalf("empty List issued %d queries, want 1:\n%s", n, strings.Join(counter.sqls, "\n---\n"))
 	}
 }

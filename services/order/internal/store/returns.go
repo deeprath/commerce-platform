@@ -51,22 +51,71 @@ func (s *Store) GetReturn(ctx context.Context, id, ownerID string) (*domain.Retu
 	return s.getReturn(ctx, s.pool, id, ownerID)
 }
 
+// returnCols is the returns projection scanReturn expects, shared by the
+// single-row and list paths so they cannot drift apart.
+const returnCols = `id, order_id, owner_id, status, reason, currency, refund_total_cents,
+	decided_by, decision_note, created_at, updated_at`
+
+// scanReturn reads one returns row. pgx.Rows satisfies pgx.Row, so this serves
+// both QueryRow and a row-at-a-time loop over a result set.
+func scanReturn(row pgx.Row) (*domain.Return, error) {
+	var (
+		r       domain.Return
+		st, cur string
+		tot     int64
+	)
+	if err := row.Scan(&r.ID, &r.OrderID, &r.OwnerID, &st, &r.Reason, &cur, &tot,
+		&r.DecidedBy, &r.DecisionNote, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		return nil, err
+	}
+	r.Status = domain.ReturnStatus(st)
+	r.RefundTotal = domain.Money{Currency: cur, Cents: tot}
+	return &r, nil
+}
+
+// attachReturnLines loads the lines for every given return in one query, rather
+// than a round trip each. Line currency comes from the return's own total.
+func attachReturnLines(ctx context.Context, q querier, returns []*domain.Return) error {
+	if len(returns) == 0 {
+		return nil
+	}
+	ids := make([]string, len(returns))
+	byID := make(map[string]*domain.Return, len(returns))
+	for i, r := range returns {
+		ids[i] = r.ID
+		byID[r.ID] = r
+	}
+	rows, err := q.Query(ctx, `
+		SELECT return_id, product_id, quantity, refund_amount_cents
+		FROM return_lines WHERE return_id = ANY($1) ORDER BY return_id, product_id`, ids)
+	if err != nil {
+		return wrap(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			returnID string
+			l        domain.ReturnLine
+			amt      int64
+		)
+		if err := rows.Scan(&returnID, &l.ProductID, &l.Quantity, &amt); err != nil {
+			return wrap(err)
+		}
+		r, ok := byID[returnID]
+		if !ok {
+			continue
+		}
+		l.RefundAmount = domain.Money{Currency: r.RefundTotal.Currency, Cents: amt}
+		r.Lines = append(r.Lines, l)
+	}
+	return wrap(rows.Err())
+}
+
 func (s *Store) getReturn(ctx context.Context, q querier, id, ownerID string) (*domain.Return, error) {
 	if err := notFoundID(id, "RETURN_NOT_FOUND"); err != nil {
 		return nil, err
 	}
-	var (
-		r   domain.Return
-		st  string
-		cur string
-		tot int64
-	)
-	err := q.QueryRow(ctx, `
-		SELECT id, order_id, owner_id, status, reason, currency, refund_total_cents,
-		       decided_by, decision_note, created_at, updated_at
-		FROM returns WHERE id = $1`, id).
-		Scan(&r.ID, &r.OrderID, &r.OwnerID, &st, &r.Reason, &cur, &tot,
-			&r.DecidedBy, &r.DecisionNote, &r.CreatedAt, &r.UpdatedAt)
+	r, err := scanReturn(q.QueryRow(ctx, `SELECT `+returnCols+` FROM returns WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, pkgerrs.New(pkgerrs.KindNotFound, "RETURN_NOT_FOUND", "no such return")
 	}
@@ -76,25 +125,10 @@ func (s *Store) getReturn(ctx context.Context, q querier, id, ownerID string) (*
 	if ownerID != "" && r.OwnerID != ownerID {
 		return nil, pkgerrs.New(pkgerrs.KindNotFound, "RETURN_NOT_FOUND", "no such return")
 	}
-	r.Status = domain.ReturnStatus(st)
-	r.RefundTotal = domain.Money{Currency: cur, Cents: tot}
-
-	rows, err := q.Query(ctx,
-		`SELECT product_id, quantity, refund_amount_cents FROM return_lines WHERE return_id = $1 ORDER BY product_id`, id)
-	if err != nil {
-		return nil, wrap(err)
+	if err := attachReturnLines(ctx, q, []*domain.Return{r}); err != nil {
+		return nil, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var l domain.ReturnLine
-		var amt int64
-		if err := rows.Scan(&l.ProductID, &l.Quantity, &amt); err != nil {
-			return nil, wrap(err)
-		}
-		l.RefundAmount = domain.Money{Currency: cur, Cents: amt}
-		r.Lines = append(r.Lines, l)
-	}
-	return &r, wrap(rows.Err())
+	return r, nil
 }
 
 // ListReturns returns returns newest-first, keyset-paginated by created_at.
@@ -114,37 +148,37 @@ func (s *Store) ListReturns(ctx context.Context, ownerID, status string, limit i
 	f.Add("created_at < $%d", cursor)
 	f.AddNonEmpty("owner_id = $%d", ownerID)
 	f.AddNonEmpty("status = $%d", status)
-	rows, err := s.pool.Query(ctx, "SELECT id FROM returns"+f.Where()+
+	// Rows, not ids to re-fetch: 2 queries per page instead of 1 + 2N. The
+	// per-row owner check getReturn applied is already in the WHERE clause
+	// above when ownerID is set.
+	rows, err := s.pool.Query(ctx, "SELECT "+returnCols+" FROM returns"+f.Where()+
 		" ORDER BY created_at DESC LIMIT "+f.Placeholder(limit+1), f.Args()...)
 	if err != nil {
 		return nil, "", wrap(err)
 	}
-	ids := make([]string, 0, limit+1)
+	out := make([]*domain.Return, 0, limit+1)
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		r, err := scanReturn(rows)
+		if err != nil {
 			rows.Close()
 			return nil, "", wrap(err)
 		}
-		ids = append(ids, id)
+		out = append(out, r)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, "", wrap(err)
 	}
 
-	out := make([]*domain.Return, 0, len(ids))
-	for _, id := range ids {
-		r, err := s.getReturn(ctx, s.pool, id, ownerID)
-		if err != nil {
-			return nil, "", err
-		}
-		out = append(out, r)
-	}
+	// Trim before loading lines, so the look-ahead row doesn't pull lines that
+	// are never returned.
 	next := ""
 	if len(out) > limit {
 		next = out[limit-1].CreatedAt.Format(time.RFC3339Nano)
 		out = out[:limit]
+	}
+	if err := attachReturnLines(ctx, s.pool, out); err != nil {
+		return nil, "", err
 	}
 	return out, next, nil
 }
