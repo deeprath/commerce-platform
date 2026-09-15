@@ -196,7 +196,7 @@ jobs:
         run: npm ci && npm run test:coverage
       - name: SonarCloud scan
         if: steps.gate.outputs.enabled == 'true'
-        uses: SonarSource/sonarqube-scan-action@v6
+        uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io
