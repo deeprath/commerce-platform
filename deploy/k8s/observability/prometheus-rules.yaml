@@ -115,9 +115,9 @@ spec:
           for: 10m
           labels: { severity: ticket }
           annotations:
-            summary: "{{ $labels.service }}: outbox not draining"
+            summary: "{{ $labels.job }}: outbox not draining"
             description: >
-              {{ $labels.service }} has had {{ $value }} unpublished outbox rows for 10m. Domain
+              {{ $labels.job }} has had {{ $value }} unpublished outbox rows for 10m. Domain
               writes are committing but their events are not reaching Kafka, so every consumer
               downstream is working from stale state.
 
@@ -126,9 +126,9 @@ spec:
           for: 5m
           labels: { severity: page }
           annotations:
-            summary: "{{ $labels.service }}: an outbox row is {{ $value | humanizeDuration }} old"
+            summary: "{{ $labels.job }}: an outbox row is {{ $value | humanizeDuration }} old"
             description: >
-              The oldest unpublished row in {{ $labels.service }}'s outbox predates the last
+              The oldest unpublished row in {{ $labels.job }}'s outbox predates the last
               5 minutes. Publishing stops at the first failure to preserve per-key ordering, so
               one stuck row blocks every event behind it.
 

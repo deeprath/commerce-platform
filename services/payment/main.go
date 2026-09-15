@@ -71,13 +71,6 @@ func run() error {
 	defer producer.Close()
 	relay := kafka.NewOutboxRelay(pool, producer,
 		config.Duration("OUTBOX_INTERVAL", 0), config.Int("OUTBOX_BATCH", 0))
-	// Reports the backlog even if the relay itself wedges — which is the
-	// failure worth seeing.
-	if stop, oerr := relay.ObserveBacklog(svc.Name); oerr != nil {
-		slog.Warn("outbox backlog metric unavailable", slog.Any("err", oerr))
-	} else {
-		defer func() { _ = stop() }()
-	}
 
 	srv := grpcx.NewServer(
 		grpcx.WithAuth(verifier, "/grpc.health.v1.Health/Check", "/grpc.health.v1.Health/Watch"),
