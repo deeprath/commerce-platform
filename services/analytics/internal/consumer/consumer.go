@@ -46,9 +46,14 @@ func Handler(sink adder) func(context.Context, *kgo.Record) error {
 			return nil
 		}
 		if err := sink.Add(ctx, ev); err != nil {
-			slog.ErrorContext(ctx, "analytics buffer failed",
+			// Only ErrBufferFull reaches here — the sink swallows flush
+			// failures because those rows are already buffered. Returning the
+			// error stops this consumer committing offsets, which is the point:
+			// the backlog stays in Kafka, which is durable and replayable,
+			// instead of accumulating in this process's heap.
+			slog.ErrorContext(ctx, "analytics sink refused the event; holding offsets",
 				slog.String("topic", r.Topic), slog.Any("err", err))
-			return err // retry
+			return err
 		}
 		return nil
 	}

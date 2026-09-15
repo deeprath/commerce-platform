@@ -36,7 +36,7 @@ func spinUp(t *testing.T) *clickhouse.Sink {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sink, err := clickhouse.Open(ctx, dsn, 100)
+	sink, err := clickhouse.Open(ctx, dsn, 100, 10_000)
 	if err != nil {
 		t.Fatalf("open sink: %v", err)
 	}

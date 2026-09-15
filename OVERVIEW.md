@@ -318,22 +318,26 @@ code as far as this pass could tell, but the service table is the section to dis
 
 Ordered by how likely they are to bite, worst first.
 
-### 10.1 Unbounded analytics buffer — memory exhaustion on a ClickHouse outage
+### 10.1 ~~Unbounded analytics buffer~~ — **fixed**
 
 [`services/analytics/internal/clickhouse/clickhouse.go`](services/analytics/internal/clickhouse/clickhouse.go)
 
-`Add` appends to an in-memory slice and only flushes at `batchSize`. When a flush fails, `requeue`
-**prepends the failed rows back**:
+Previously: `Add` appended to an in-memory slice unconditionally, and a failed flush **prepended the
+rows back** (`s.buf = append(rows, s.buf...)`) with no cap and no drop policy — so a ClickHouse
+outage grew the buffer until the pod OOMed. Worse, `RunFlusher` *returned* the flush error, and it
+runs in the service's errgroup, so one transient blip exited the whole analytics process and then
+crash-looped it.
 
-```go
-func (s *Sink) requeue(rows []Event) {
-    s.buf = append(rows, s.buf...)   // no cap, no drop policy
-}
-```
+Now the buffer is a bounded staging area and Kafka is the durable backlog:
 
-If ClickHouse is unavailable, the buffer grows without bound while new events keep arriving — the
-service OOMs rather than shedding load. There is no max-buffer size, no drop-oldest policy, and no
-circuit breaker. **This is the single most likely production incident in the repo.**
+- Rows are **reserved, not removed**, until ClickHouse confirms the write — there is no
+  requeue-on-failure path left to grow the buffer.
+- At `ANALYTICS_MAX_BUFFER` (default 50,000) `Add`/`AddClick` return `ErrBufferFull` and buffer
+  nothing, so the consumers stop committing offsets and the backlog stays in Kafka — which is
+  already durable and replayable — instead of being copied into heap.
+- A flush failure logs, counts, and retries on the next tick rather than ending the service.
+- `Stats()` exposes `refused` / `flushFailures` / `degraded`, and the transitions into and out of
+  backpressure are logged once each rather than per row.
 
 ### 10.2 Outbox relay throughput ceiling
 
