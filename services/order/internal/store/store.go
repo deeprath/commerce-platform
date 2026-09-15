@@ -79,28 +79,80 @@ func notFoundID(id, reason string) error {
 	return nil
 }
 
+// orderCols is the orders projection scanOrder expects, shared by the
+// single-row and list paths so they cannot drift apart.
+const orderCols = `id, owner_id, status, currency, subtotal_cents, discount_cents, tax_cents,
+	total_cents, ship_to, cart_id, coupon_code, payment_id, reservation_id, pricing_signature,
+	cancel_reason, created_at, updated_at`
+
+// scanOrder reads one orders row. pgx.Rows satisfies pgx.Row, so this serves
+// both QueryRow and a row-at-a-time loop over a result set.
+func scanOrder(row pgx.Row) (*domain.Order, error) {
+	var (
+		o                       domain.Order
+		status, cur             string
+		shipTo                  []byte
+		subC, discC, taxC, totC int64
+	)
+	if err := row.Scan(&o.ID, &o.OwnerID, &status, &cur, &subC, &discC, &taxC, &totC,
+		&shipTo, &o.CartID, &o.CouponCode, &o.PaymentID, &o.ReservationID, &o.PricingSignature,
+		&o.CancelReason, &o.CreatedAt, &o.UpdatedAt); err != nil {
+		return nil, err
+	}
+	o.Status = domain.Status(status)
+	o.Subtotal = domain.Money{Currency: cur, Cents: subC}
+	o.Discount = domain.Money{Currency: cur, Cents: discC}
+	o.Tax = domain.Money{Currency: cur, Cents: taxC}
+	o.Total = domain.Money{Currency: cur, Cents: totC}
+	_ = json.Unmarshal(shipTo, &o.ShipTo)
+	return &o, nil
+}
+
+// attachLines loads the lines for every given order in one query and
+// distributes them, rather than a round trip per order. The line currency comes
+// from the order it belongs to, which scanOrder has already set on Total.
+func attachLines(ctx context.Context, q querier, orders []*domain.Order) error {
+	if len(orders) == 0 {
+		return nil
+	}
+	ids := make([]string, len(orders))
+	byID := make(map[string]*domain.Order, len(orders))
+	for i, o := range orders {
+		ids[i] = o.ID
+		byID[o.ID] = o
+	}
+	rows, err := q.Query(ctx, `
+		SELECT order_id, product_id, title, quantity, unit_price_cents, line_total_cents, shop_id
+		FROM order_lines WHERE order_id = ANY($1) ORDER BY order_id, product_id`, ids)
+	if err != nil {
+		return wrap(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			orderID string
+			l       domain.Line
+			up, lt  int64
+		)
+		if err := rows.Scan(&orderID, &l.ProductID, &l.Title, &l.Quantity, &up, &lt, &l.ShopID); err != nil {
+			return wrap(err)
+		}
+		o, ok := byID[orderID]
+		if !ok {
+			continue
+		}
+		l.UnitPrice = domain.Money{Currency: o.Total.Currency, Cents: up}
+		l.LineTotal = domain.Money{Currency: o.Total.Currency, Cents: lt}
+		o.Lines = append(o.Lines, l)
+	}
+	return wrap(rows.Err())
+}
+
 func (s *Store) get(ctx context.Context, q querier, id, ownerID string) (*domain.Order, error) {
 	if err := notFoundID(id, "ORDER_NOT_FOUND"); err != nil {
 		return nil, err
 	}
-	var (
-		o      domain.Order
-		status string
-		shipTo []byte
-		cur    string
-		subC   int64
-		discC  int64
-		taxC   int64
-		totC   int64
-	)
-	row := q.QueryRow(ctx,
-		`SELECT id, owner_id, status, currency, subtotal_cents, discount_cents, tax_cents, total_cents,
-			ship_to, cart_id, coupon_code, payment_id, reservation_id, pricing_signature, cancel_reason,
-			created_at, updated_at
-		 FROM orders WHERE id = $1`, id)
-	err := row.Scan(&o.ID, &o.OwnerID, &status, &cur, &subC, &discC, &taxC, &totC,
-		&shipTo, &o.CartID, &o.CouponCode, &o.PaymentID, &o.ReservationID, &o.PricingSignature, &o.CancelReason,
-		&o.CreatedAt, &o.UpdatedAt)
+	o, err := scanOrder(q.QueryRow(ctx, `SELECT `+orderCols+` FROM orders WHERE id = $1`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, pkgerrs.New(pkgerrs.KindNotFound, "ORDER_NOT_FOUND", "no such order")
 	}
@@ -110,30 +162,10 @@ func (s *Store) get(ctx context.Context, q querier, id, ownerID string) (*domain
 	if ownerID != "" && o.OwnerID != ownerID {
 		return nil, pkgerrs.New(pkgerrs.KindNotFound, "ORDER_NOT_FOUND", "no such order")
 	}
-	o.Status = domain.Status(status)
-	o.Subtotal = domain.Money{Currency: cur, Cents: subC}
-	o.Discount = domain.Money{Currency: cur, Cents: discC}
-	o.Tax = domain.Money{Currency: cur, Cents: taxC}
-	o.Total = domain.Money{Currency: cur, Cents: totC}
-	_ = json.Unmarshal(shipTo, &o.ShipTo)
-
-	rows, err := q.Query(ctx,
-		`SELECT product_id, title, quantity, unit_price_cents, line_total_cents, shop_id FROM order_lines WHERE order_id = $1 ORDER BY product_id`, id)
-	if err != nil {
-		return nil, wrap(err)
+	if err := attachLines(ctx, q, []*domain.Order{o}); err != nil {
+		return nil, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var l domain.Line
-		var up, lt int64
-		if err := rows.Scan(&l.ProductID, &l.Title, &l.Quantity, &up, &lt, &l.ShopID); err != nil {
-			return nil, wrap(err)
-		}
-		l.UnitPrice = domain.Money{Currency: cur, Cents: up}
-		l.LineTotal = domain.Money{Currency: cur, Cents: lt}
-		o.Lines = append(o.Lines, l)
-	}
-	return &o, wrap(rows.Err())
+	return o, nil
 }
 
 // FindByPaymentID / FindByReservationID resolve an order for an inbound event.
@@ -177,35 +209,40 @@ func (s *Store) List(ctx context.Context, ownerID, status string, limit int, bef
 	f.Add("created_at < $%d", cursor)
 	f.AddNonEmpty("owner_id = $%d", ownerID)
 	f.AddNonEmpty("status = $%d", status)
-	q := "SELECT id FROM orders" + f.Where() +
+	// Select the rows themselves, not ids to re-fetch one by one: this used to
+	// run 1 + 2N queries for a page (an id list, then Get per order, each of
+	// which loaded its own lines). It is now 2, whatever the page size. The
+	// owner check Get used to apply per row is already in the WHERE clause
+	// above when ownerID is set, so the scoping is unchanged.
+	q := "SELECT " + orderCols + " FROM orders" + f.Where() +
 		" ORDER BY created_at DESC LIMIT " + f.Placeholder(limit+1)
 	rows, err := s.pool.Query(ctx, q, f.Args()...)
 	if err != nil {
 		return nil, "", wrap(err)
 	}
-	var ids []string
+	out := make([]*domain.Order, 0, limit+1)
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		o, err := scanOrder(rows)
+		if err != nil {
 			rows.Close()
 			return nil, "", wrap(err)
 		}
-		ids = append(ids, id)
-	}
-	rows.Close()
-
-	out := make([]*domain.Order, 0, len(ids))
-	for _, id := range ids {
-		o, err := s.Get(ctx, id, ownerID)
-		if err != nil {
-			return nil, "", err
-		}
 		out = append(out, o)
 	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, "", wrap(err)
+	}
+
+	// Trim to the page before loading lines, so the extra look-ahead row used
+	// to detect "there is more" doesn't pull lines it will never return.
 	next := ""
 	if len(out) > limit {
 		out = out[:limit]
 		next = out[limit-1].CreatedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if err := attachLines(ctx, s.pool, out); err != nil {
+		return nil, "", err
 	}
 	return out, next, nil
 }
