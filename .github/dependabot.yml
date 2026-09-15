@@ -25,6 +25,18 @@ updates:
     groups:
       npm-dependencies:
         patterns: ["*"]
+    ignore:
+      # typescript-eslint's peer range caps below the next typescript major
+      # (>=4.8.4 <6.1.0, checked against the registry 2026-09-15, no newer
+      # typescript-eslint supports it yet) — a routine grouped bump already
+      # took typescript to ~7.0.2 once and broke `npm ci` in four different
+      # CI jobs at once (PR #71), precisely because a group bumps every
+      # package in one PR without checking their peer ranges against each
+      # other. Block major bumps here specifically; typescript still gets
+      # every 6.x minor/patch automatically. Safe to remove once
+      # typescript-eslint ships support for TS 7.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"

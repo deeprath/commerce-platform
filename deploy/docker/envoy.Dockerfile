@@ -19,3 +19,11 @@ RUN curl -sfL --retry 3 --retry-delay 2 -o coraza.zip \
 
 FROM envoyproxy/envoy:${ENVOY_TAG}
 COPY --from=fetch /tmp/coraza-proxy-wasm.wasm /etc/envoy/coraza-proxy-wasm.wasm
+# Unlike the nginx-unprivileged images used elsewhere in this repo,
+# envoyproxy/envoy runs as root by default — confirmed by inspection, not
+# assumed. It does ship a built-in "envoy" user (uid 101) with read access
+# to the binary and /etc/envoy, and this edge only ever binds unprivileged
+# ports (8080, the 9901 admin listener), so no capability is lost by
+# switching. envoy.yaml itself stays a read-only bind mount
+# (deploy/compose/docker-compose.yml), which this user only needs to read.
+USER envoy

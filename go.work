@@ -20,3 +20,17 @@ use (
 	./services/search
 	./services/seller
 )
+
+// github.com/moby/go-archive: testcontainers-go@v0.44.0 (the version pinned
+// across every service that uses testcontainers) requires go-archive v0.2.0
+// itself, and v0.44.0 is already the latest testcontainers-go release — so
+// there's no newer version to bump to that fixes this upstream. v0.2.0 is
+// CVE-2026-17106 (arbitrary file write via link following in tar
+// extraction). Left unpinned, any module's `go mod tidy` silently
+// re-selects v0.2.0 via minimal version selection, since nothing else in
+// the graph asks for higher — this has already happened twice independently
+// (services/cart, then services/media, both caught only after the fact by
+// trivy-fs failing in CI). A workspace-level replace fixes it exactly once,
+// for every module, permanently — instead of a fragile per-service `go get`
+// pin that the next `go mod tidy` anywhere quietly reverts.
+replace github.com/moby/go-archive => github.com/moby/go-archive v0.3.0
