@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Built without the go.work workspace (GOWORK=off): the service's own go.mod
 # replace directive resolves pkg/ from the copied tree.
-FROM golang:1.26 AS build
+FROM golang:1.27 AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOTOOLCHAIN=auto GOWORK=off
 
