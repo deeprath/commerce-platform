@@ -11,11 +11,28 @@ import (
 
 	catalogv1 "github.com/deeprath/commerce-platform/gen/go/commerce/catalog/v1"
 	"github.com/deeprath/commerce-platform/pkg/errs"
-	"github.com/deeprath/commerce-platform/services/search/internal/index"
 )
 
+// indexer is the part of *index.Client this package uses, narrowed so the
+// handler can be tested without an OpenSearch behind it.
+type indexer interface {
+	UpsertFromEvent(ctx context.Context, evt *catalogv1.ProductChanged) error
+}
+
+// Retryable is the kafka.DeadLetter policy for Handler's errors: Unavailable
+// means OpenSearch is down or shedding load, so the record is only late and its
+// offset should be held. Anything else is the record's own problem.
+func Retryable(err error) bool { return errs.Is(err, errs.KindUnavailable) }
+
 // Handler returns a kafka.Handler that indexes/deletes products from events.
-func Handler(idx *index.Client) func(context.Context, *kgo.Record) error {
+//
+// Indexing failures are returned, all of them. Deciding what happens next is
+// pkg/kafka's job, via Retryable: an Unavailable error (OpenSearch down or
+// shedding load) holds the offset until the cluster recovers, and anything else
+// is parked on the DLQ after its retries. Swallowing an error here would do
+// neither — the event would be committed and lost, leaving the index out of
+// step with the catalog until that product happens to change again.
+func Handler(idx indexer) func(context.Context, *kgo.Record) error {
 	return func(ctx context.Context, r *kgo.Record) error {
 		var evt catalogv1.ProductChanged
 		if err := proto.Unmarshal(r.Value, &evt); err != nil {
@@ -25,12 +42,7 @@ func Handler(idx *index.Client) func(context.Context, *kgo.Record) error {
 			return nil
 		}
 		if err := idx.UpsertFromEvent(ctx, &evt); err != nil {
-			if errs.Is(err, errs.KindUnavailable) {
-				return err // retry: OpenSearch is down
-			}
-			slog.ErrorContext(ctx, "index apply failed (skipping)",
-				slog.String("product_id", evt.GetProductId()), slog.Any("err", err))
-			return nil
+			return err
 		}
 		slog.DebugContext(ctx, "indexed",
 			slog.String("product_id", evt.GetProductId()),

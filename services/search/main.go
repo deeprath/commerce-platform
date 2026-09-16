@@ -56,7 +56,9 @@ func run() error {
 
 	brokers := config.String("KAFKA_BROKERS", "kafka:9092")
 	// search publishes no events of its own; this producer exists only so a
-	// record the indexer can never accept has somewhere to go.
+	// record the indexer can never accept has somewhere to go. An OpenSearch
+	// that is down or shedding load is not that: those errors are Unavailable,
+	// and they hold the offset so the backlog waits in Kafka for the cluster.
 	dlq, err := kafka.NewProducer(brokers)
 	if err != nil {
 		return err
@@ -72,9 +74,10 @@ func run() error {
 		return err
 	}
 	cons.WithDeadLetter(kafka.DeadLetter{
-		Producer: dlq,
-		Attempts: config.Int("KAFKA_RETRY_ATTEMPTS", 0),
-		Backoff:  config.Duration("KAFKA_RETRY_BACKOFF", 0),
+		Producer:  dlq,
+		Attempts:  config.Int("KAFKA_RETRY_ATTEMPTS", 0),
+		Backoff:   config.Duration("KAFKA_RETRY_BACKOFF", 0),
+		Retryable: consumer.Retryable,
 	})
 
 	srv := grpcx.NewServer() // browse is fully anonymous — no auth interceptor
