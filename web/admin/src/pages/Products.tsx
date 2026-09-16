@@ -11,7 +11,7 @@ export function Products() {
   const [msg, setMsg] = useState<string | null>(null);
   const { data, loading, error, reload } = useAsync(() => api.listProducts(), "products");
 
-  async function create(e: React.FormEvent) {
+  async function create(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setMsg(null);

@@ -7,7 +7,7 @@ export function Login({ onAuthed }: Readonly<{ onAuthed: () => void }>) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setErr(null);

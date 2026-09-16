@@ -46,7 +46,7 @@ export function Browse() {
     };
   }, [q, category, sort]);
 
-  function submit(e: React.FormEvent) {
+  function submit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     const next = new URLSearchParams(params);
     if (term) next.set("q", term);

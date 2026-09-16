@@ -29,7 +29,7 @@ export function SellerStaff({ authed }: Readonly<{ authed: boolean }>) {
       </p>
     );
 
-  async function add(e: React.FormEvent) {
+  async function add(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!subject.trim()) return;
     setBusy(true);

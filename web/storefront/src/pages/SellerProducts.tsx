@@ -171,7 +171,7 @@ function ProductForm({
   const [err, setErr] = useState<string | null>(null);
   const isCreate = initial.slug !== undefined;
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setErr(null);
