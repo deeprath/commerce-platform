@@ -78,6 +78,22 @@ func (b *Broker) Login(ctx context.Context, username, password string) (*TokenRe
 	return &TokenResult{AccessToken: body.AccessToken, RefreshToken: body.RefreshToken, ExpiresIn: body.ExpiresIn}, nil
 }
 
+// The auth cookies, named and scoped in one place.
+//
+// A cookie is identified by its name *and* its path, so setting and clearing
+// have to agree on both: a Set-Cookie that expires a name at the wrong path
+// creates a second, already-expired cookie and leaves the real one in the
+// browser. Keeping the paths here is what stops the two from drifting apart.
+const (
+	accessCookie = "access_token"
+	accessPath   = "/" // sent with every API call
+
+	refreshCookie = "refresh_token"
+	// Narrower on purpose: the refresh token is only ever redeemed at the auth
+	// routes, so there is no reason to attach it to every other request.
+	refreshPath = "/api/v1/auth"
+)
+
 // SetCookies writes the access (and refresh) tokens as httpOnly cookies.
 func (b *Broker) SetCookies(w http.ResponseWriter, t *TokenResult) {
 	ttl := t.ExpiresIn
@@ -85,24 +101,33 @@ func (b *Broker) SetCookies(w http.ResponseWriter, t *TokenResult) {
 		ttl = 300
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: "access_token", Value: t.AccessToken, Path: "/",
+		Name: accessCookie, Value: t.AccessToken, Path: accessPath,
 		HttpOnly: true, Secure: b.cookieSecure, SameSite: http.SameSiteLaxMode,
 		MaxAge: ttl,
 	})
 	if t.RefreshToken != "" {
 		http.SetCookie(w, &http.Cookie{
-			Name: "refresh_token", Value: t.RefreshToken, Path: "/api/v1/auth",
+			Name: refreshCookie, Value: t.RefreshToken, Path: refreshPath,
 			HttpOnly: true, Secure: b.cookieSecure, SameSite: http.SameSiteLaxMode,
 			MaxAge: 1800,
 		})
 	}
 }
 
-// ClearCookies expires the auth cookies. Secure must match what SetCookies used
-// — some browsers won't let a non-Secure Set-Cookie overwrite/delete a cookie
-// that was set Secure.
+// ClearCookies expires the auth cookies, each at the path it was set on.
+//
+// Both halves of that matter. Secure must match what SetCookies used — some
+// browsers won't let a non-Secure Set-Cookie delete a cookie that was set
+// Secure — and so must the path, or the refresh token outlives the logout that
+// was supposed to revoke it.
 func (b *Broker) ClearCookies(w http.ResponseWriter) {
-	for _, n := range []string{"access_token", "refresh_token"} {
-		http.SetCookie(w, &http.Cookie{Name: n, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: b.cookieSecure})
+	for _, c := range []struct{ name, path string }{
+		{accessCookie, accessPath},
+		{refreshCookie, refreshPath},
+	} {
+		http.SetCookie(w, &http.Cookie{
+			Name: c.name, Value: "", Path: c.path, MaxAge: -1,
+			HttpOnly: true, Secure: b.cookieSecure, SameSite: http.SameSiteLaxMode,
+		})
 	}
 }
