@@ -79,7 +79,7 @@ export function Checkout({ authed }: Readonly<{ authed: boolean }>) {
     );
   }
 
-  async function placeOrder(e: React.FormEvent) {
+  async function placeOrder(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setMsg(null);
     setPhase("paying");

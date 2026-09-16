@@ -64,7 +64,7 @@ function Onboarding({ onCreated }: Readonly<{ onCreated: (s: Shop) => void }>) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setErr(null);
@@ -125,7 +125,7 @@ function ShopCard({ shop, onUpdated }: Readonly<{ shop: Shop; onUpdated: (s: Sho
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setErr(null);
