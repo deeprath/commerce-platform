@@ -48,6 +48,22 @@ func (f *fakeSaga) OnShipmentDelivered(_ context.Context, eventID, orderID, shop
 	return f.record("OnShipmentDelivered", eventID, orderID, shopID)
 }
 
+// assertIs compares a recorded call against the expected step and arguments.
+func (c call) assertIs(t *testing.T, want call) {
+	t.Helper()
+	if c.step != want.step {
+		t.Errorf("step = %s, want %s", c.step, want.step)
+	}
+	if len(c.args) != len(want.args) {
+		t.Fatalf("args = %v, want %v", c.args, want.args)
+	}
+	for i := range want.args {
+		if c.args[i] != want.args[i] {
+			t.Errorf("arg %d = %q, want %q", i, c.args[i], want.args[i])
+		}
+	}
+}
+
 func mustMarshal(t *testing.T, m proto.Message) []byte {
 	t.Helper()
 	b, err := proto.Marshal(m)
@@ -113,20 +129,11 @@ func TestHandler_RoutesEachTopicToItsOwnStep(t *testing.T) {
 			if len(sg.calls) != 1 {
 				t.Fatalf("saga calls = %v, want exactly one", sg.calls)
 			}
-			got := sg.calls[0]
-			if got.step != tc.want.step {
-				t.Errorf("step = %s, want %s", got.step, tc.want.step)
-			}
 			// args[0] is always the event id; the rest come off the payload.
-			wantArgs := append([]string{tc.topic + coords}, tc.want.args...)
-			if len(got.args) != len(wantArgs) {
-				t.Fatalf("args = %v, want %v", got.args, wantArgs)
-			}
-			for i := range wantArgs {
-				if got.args[i] != wantArgs[i] {
-					t.Errorf("arg %d = %q, want %q", i, got.args[i], wantArgs[i])
-				}
-			}
+			sg.calls[0].assertIs(t, call{
+				step: tc.want.step,
+				args: append([]string{tc.topic + coords}, tc.want.args...),
+			})
 		})
 	}
 }
