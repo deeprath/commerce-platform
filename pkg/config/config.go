@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -40,15 +41,30 @@ func Int(key string, def int) int {
 	return n
 }
 
-// Bool returns the env var parsed as bool ("1","true","yes"), or def.
+// Bool returns the env var parsed as a bool, or def if unset.
+//
+// Case and surrounding whitespace are ignored: values arrive from YAML written
+// by hand and from secrets mounted as files, which routinely carry a trailing
+// newline.
+//
+// Anything it cannot read panics, like Int and Duration. That matters more here
+// than for them. Both booleans in the platform are the secure setting when true
+// — COOKIE_SECURE and MINIO_USE_SSL — so resolving an unreadable value to false
+// would turn a typo in a values file into auth cookies served without the
+// Secure flag, in production, with nothing logged and nothing failing. Refusing
+// to start is the only answer that cannot be missed.
 func Bool(key string, def bool) bool {
-	switch os.Getenv(key) {
-	case "":
+	v := os.Getenv(key)
+	if v == "" {
 		return def
-	case "1", "true", "TRUE", "yes", "on":
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "t", "yes", "y", "on":
 		return true
-	default:
+	case "0", "false", "f", "no", "n", "off":
 		return false
+	default:
+		panic(fmt.Sprintf("env var %s = %q is not a bool: use true/false (also 1/0, yes/no, on/off)", key, v))
 	}
 }
 
