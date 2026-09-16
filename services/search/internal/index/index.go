@@ -87,8 +87,7 @@ func (c *Client) EnsureIndex(ctx context.Context) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return errs.New(errs.KindInternal, "OS_CREATE_FAILED", "create index: "+string(b))
+		return statusErr(resp, "OS_CREATE_FAILED", "create index")
 	}
 	return nil
 }
@@ -119,8 +118,7 @@ func (c *Client) UpsertFromEvent(ctx context.Context, evt *catalogv1.ProductChan
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return errs.New(errs.KindInternal, "OS_INDEX_ERR", "index: "+string(b))
+		return statusErr(resp, "OS_INDEX_ERR", "index")
 	}
 	return nil
 }
@@ -133,8 +131,7 @@ func (c *Client) Delete(ctx context.Context, productID string) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 && resp.StatusCode != http.StatusNotFound {
-		b, _ := io.ReadAll(resp.Body)
-		return errs.New(errs.KindInternal, "OS_DELETE_ERR", "delete: "+string(b))
+		return statusErr(resp, "OS_DELETE_ERR", "delete")
 	}
 	return nil
 }
@@ -147,14 +144,30 @@ func (c *Client) RawSearch(ctx context.Context, body []byte) (*SearchResult, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, errs.New(errs.KindInternal, "OS_SEARCH_ERR", "search: "+string(b))
+		return nil, statusErr(resp, "OS_SEARCH_ERR", "search")
 	}
 	var out SearchResult
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, errs.Wrap(err, errs.KindInternal, "OS_DECODE", "cannot decode search response")
 	}
 	return &out, nil
+}
+
+// statusErr turns a non-2xx OpenSearch response into an error whose kind says
+// whether trying again can help.
+//
+// 429 is OpenSearch shedding load (a full write or search queue) and 5xx is the
+// cluster itself failing — no primary, a node gone. Both clear on their own, so
+// they are Unavailable: the consumer holds its offset and waits rather than
+// parking a perfectly good event. Every other status is a problem with the
+// request, which no amount of waiting fixes.
+func statusErr(resp *http.Response, reason, op string) error {
+	b, _ := io.ReadAll(resp.Body)
+	kind := errs.KindInternal
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		kind = errs.KindUnavailable
+	}
+	return errs.New(kind, reason, op+": "+string(b))
 }
 
 // SearchResult is the slice of the OpenSearch response the service needs.
