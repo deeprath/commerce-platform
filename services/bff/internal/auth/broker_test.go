@@ -190,9 +190,9 @@ func TestClearCookies_ExpiresBothTokensAtThePathsTheyWereSetOn(t *testing.T) {
 		setPaths[name] = c.Path
 	}
 
-	clear := httptest.NewRecorder()
-	b.ClearCookies(clear)
-	cleared := cookiesFrom(clear)
+	rec := httptest.NewRecorder()
+	b.ClearCookies(rec)
+	cleared := cookiesFrom(rec)
 
 	for name, path := range setPaths {
 		c, ok := cleared[name]
