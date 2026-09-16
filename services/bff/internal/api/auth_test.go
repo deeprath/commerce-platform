@@ -36,14 +36,16 @@ func bffWithIdP(t *testing.T, idpStatus int, idpBody string) (*httptest.Server, 
 	return bff, &http.Client{Jar: jar}
 }
 
-func post(t *testing.T, c *http.Client, url, body string) *http.Response {
+// post returns the status code; no test here cares about a response body, and
+// closing it inside keeps every caller from having to.
+func post(t *testing.T, c *http.Client, url, body string) int {
 	t.Helper()
 	resp, err := c.Post(url, "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("POST %s: %v", url, err)
 	}
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	return resp
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode
 }
 
 // cookiesAt reports what the browser would send to a given path.
@@ -69,8 +71,8 @@ const idpToken = `{"access_token":"at-1","refresh_token":"rt-1","expires_in":300
 func TestLogout_LeavesNoTokenBehind(t *testing.T) {
 	bff, client := bffWithIdP(t, 200, idpToken)
 
-	if resp := post(t, client, bff.URL+"/api/v1/auth/login", `{"username":"ada","password":"hunter2"}`); resp.StatusCode != 200 {
-		t.Fatalf("login status = %d", resp.StatusCode)
+	if got := post(t, client, bff.URL+"/api/v1/auth/login", `{"username":"ada","password":"hunter2"}`); got != 200 {
+		t.Fatalf("login status = %d", got)
 	}
 	// Precondition: the login actually put both tokens in the jar, so a clean
 	// jar after logout means they were removed rather than never stored.
@@ -81,8 +83,8 @@ func TestLogout_LeavesNoTokenBehind(t *testing.T) {
 		t.Fatalf("refresh_token not held after login: %v", got)
 	}
 
-	if resp := post(t, client, bff.URL+"/api/v1/auth/logout", ""); resp.StatusCode != 204 {
-		t.Fatalf("logout status = %d", resp.StatusCode)
+	if got := post(t, client, bff.URL+"/api/v1/auth/logout", ""); got != 204 {
+		t.Fatalf("logout status = %d", got)
 	}
 
 	// Check the auth path specifically: it is the only place the refresh cookie
@@ -98,9 +100,8 @@ func TestLogin_RequiresBothFields(t *testing.T) {
 	bff, client := bffWithIdP(t, 200, idpToken)
 
 	for _, body := range []string{`{}`, `{"username":"ada"}`, `{"password":"hunter2"}`, `not json`} {
-		resp := post(t, client, bff.URL+"/api/v1/auth/login", body)
-		if resp.StatusCode != 400 {
-			t.Errorf("body %q: status = %d, want 400", body, resp.StatusCode)
+		if got := post(t, client, bff.URL+"/api/v1/auth/login", body); got != 400 {
+			t.Errorf("body %q: status = %d, want 400", body, got)
 		}
 		if got := cookiesAt(t, client, bff.URL, "/"); len(got) != 0 {
 			t.Errorf("body %q: a rejected login set cookies: %v", body, got)
@@ -114,9 +115,8 @@ func TestLogin_RequiresBothFields(t *testing.T) {
 func TestLogin_BadCredentialsAre401(t *testing.T) {
 	bff, client := bffWithIdP(t, http.StatusUnauthorized, `{"error":"invalid_grant"}`)
 
-	resp := post(t, client, bff.URL+"/api/v1/auth/login", `{"username":"ada","password":"wrong"}`)
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	if got := post(t, client, bff.URL+"/api/v1/auth/login", `{"username":"ada","password":"wrong"}`); got != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", got)
 	}
 	if got := cookiesAt(t, client, bff.URL, "/"); len(got) != 0 {
 		t.Fatalf("a failed login set cookies: %v", got)
@@ -126,12 +126,12 @@ func TestLogin_BadCredentialsAre401(t *testing.T) {
 func TestLogin_ProviderOutageIsNot401(t *testing.T) {
 	bff, client := bffWithIdP(t, http.StatusInternalServerError, `{}`)
 
-	resp := post(t, client, bff.URL+"/api/v1/auth/login", `{"username":"ada","password":"hunter2"}`)
-	if resp.StatusCode == http.StatusUnauthorized {
+	got := post(t, client, bff.URL+"/api/v1/auth/login", `{"username":"ada","password":"hunter2"}`)
+	if got == http.StatusUnauthorized {
 		t.Fatal("an identity-provider outage was reported as bad credentials")
 	}
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	if got != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", got)
 	}
 }
 
@@ -140,7 +140,7 @@ func TestLogin_ProviderOutageIsNot401(t *testing.T) {
 func TestLogout_WithoutASessionStillSucceeds(t *testing.T) {
 	bff, client := bffWithIdP(t, 200, idpToken)
 
-	if resp := post(t, client, bff.URL+"/api/v1/auth/logout", ""); resp.StatusCode != 204 {
-		t.Fatalf("status = %d, want 204", resp.StatusCode)
+	if got := post(t, client, bff.URL+"/api/v1/auth/logout", ""); got != 204 {
+		t.Fatalf("status = %d, want 204", got)
 	}
 }
