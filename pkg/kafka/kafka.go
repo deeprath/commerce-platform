@@ -87,8 +87,9 @@ type DeadLetter struct {
 	// <=0 means 200ms.
 	Backoff time.Duration
 	// Retryable reports whether an error means "try again later" rather than
-	// "this record is bad". A retryable failure is never parked: the offset is
-	// held instead, so the backlog waits in Kafka for the condition to clear.
+	// "this record is bad". A retryable failure is never parked: the record is
+	// retried where it stands until the condition clears, and the consumer does
+	// not move past it, so the backlog waits in Kafka.
 	//
 	// This is the difference between a malformed payload, which no amount of
 	// waiting will fix and which should be set aside so the group can move on,
@@ -120,6 +121,10 @@ func NewConsumer(group string, topics []string, h Handler, brokers ...string) (*
 	return &Consumer{cl: cl, handler: h}, nil
 }
 
+// defaultBackoff is the first retry delay when none is configured. A var so
+// tests can shorten it.
+var defaultBackoff = 200 * time.Millisecond
+
 // WithDeadLetter enables bounded retry and DLQ parking. Returns the consumer so
 // it can be chained onto NewConsumer.
 func (c *Consumer) WithDeadLetter(dl DeadLetter) *Consumer {
@@ -127,7 +132,7 @@ func (c *Consumer) WithDeadLetter(dl DeadLetter) *Consumer {
 		dl.Attempts = 3
 	}
 	if dl.Backoff <= 0 {
-		dl.Backoff = 200 * time.Millisecond
+		dl.Backoff = defaultBackoff
 	}
 	c.dl = &dl
 	return c
@@ -177,9 +182,13 @@ func (c *Consumer) park(ctx context.Context, r *kgo.Record, cause error) error {
 
 // dispatch handles one record and reports whether its offset may advance.
 //
-// False means the offset must be held, which is the only way not to lose the
-// record — at the cost of the group never moving past it. True means the record
-// is either done or safely parked on the DLQ for someone to look at.
+// It returns false only when ctx is cancelled mid-record: that is unfinished
+// work, left uncommitted so a restart redoes it. Every other outcome is decided
+// here, before the loop moves on, because moving on is itself a decision. The
+// client's poll position has already passed this record, so it will never be
+// offered again, and the next commit covers it whether or not it was handled.
+// "Hold the offset" therefore has to mean "do not return until the record is
+// done or parked"; skipping a single commit holds nothing.
 func (c *Consumer) dispatch(ctx context.Context, r *kgo.Record) bool {
 	err := c.handleRecord(ctx, r)
 	if err == nil {
@@ -188,47 +197,131 @@ func (c *Consumer) dispatch(ctx context.Context, r *kgo.Record) bool {
 	slog.ErrorContext(ctx, "kafka handler error",
 		slog.String("topic", r.Topic), slog.Int64("offset", r.Offset), slog.Any("err", err))
 
-	// No DLQ configured, or we're shutting down and this is unfinished work
-	// rather than a poison record: hold the offset and redo it on restart.
-	if c.dl == nil {
-		recordHeld(ctx, r.Topic, "no_dlq")
-		return false
-	}
+	// Interrupted by shutdown: unfinished work, not a verdict on the record.
 	if ctx.Err() != nil {
 		recordHeld(ctx, r.Topic, "shutdown")
 		return false
 	}
-	// A downstream that is full or unreachable will accept this record later.
-	// Hold the offset so the backlog waits in Kafka rather than being parked as
-	// though the payload were at fault.
-	if c.dl.Retryable != nil && c.dl.Retryable(err) {
-		recordHeld(ctx, r.Topic, "retryable")
-		slog.WarnContext(ctx, "kafka handler failure is retryable; holding offsets",
-			slog.String("topic", r.Topic), slog.Int64("offset", r.Offset))
-		return false
+	if c.shouldHold(err) {
+		if err = c.retryInPlace(ctx, r, err); err != nil {
+			return false // shutting down
+		}
+		return true
 	}
-	if perr := c.park(ctx, r, err); perr != nil {
-		recordHeld(ctx, r.Topic, "park_failed")
-		slog.ErrorContext(ctx, "kafka dlq publish failed",
-			slog.String("topic", r.Topic), slog.Int64("offset", r.Offset), slog.Any("err", perr))
-		return false
-	}
-	recordParked(ctx, r.Topic)
-	slog.WarnContext(ctx, "kafka record parked on dlq",
-		slog.String("topic", r.Topic), slog.String("dlq", DLQ(r.Topic)),
-		slog.Int64("offset", r.Offset), slog.Any("err", err))
-	return true
+	return c.parkInPlace(ctx, r, err)
 }
 
-// handleFetches dispatches every record in a fetch and reports whether the
-// group's offsets may be committed. One record that could not be handled or
-// parked holds the whole commit, since the offset is per-partition and there is
-// no way to skip past just that one.
+// shouldHold reports whether a failure means "not yet" rather than "never".
+// Without a DLQ there is nowhere to set a record aside, so every failure is
+// held — at the cost, as before, of the group not moving past it.
+func (c *Consumer) shouldHold(err error) bool {
+	return c.dl == nil || (c.dl.Retryable != nil && c.dl.Retryable(err))
+}
+
+// retryInPlace re-runs the handler on r, backing off between attempts, until it
+// succeeds, fails in a way that is no longer retryable (then it is parked), or
+// ctx ends.
+//
+// This blocks the whole consumer, not just r's partition. That is deliberate:
+// a downstream that is down fails every record that needs it, so there is
+// nothing useful the other partitions could do meanwhile, and a partition that
+// skipped ahead would break the per-key ordering consumers rely on.
+func (c *Consumer) retryInPlace(ctx context.Context, r *kgo.Record, err error) error {
+	delay := c.holdBackoff()
+	for {
+		recordHeld(ctx, r.Topic, c.holdReason())
+		slog.WarnContext(ctx, "kafka record held; retrying in place",
+			slog.String("topic", r.Topic), slog.Int64("offset", r.Offset),
+			slog.Duration("retry_in", delay), slog.Any("err", err))
+		if !sleep(ctx, delay) {
+			return ctx.Err()
+		}
+		delay = min(delay*2, maxHoldBackoff)
+
+		if err = c.handler(ctx, r); err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !c.shouldHold(err) {
+			// The downstream came back and turned the record down: it is the
+			// record's fault after all.
+			if !c.parkInPlace(ctx, r, err) {
+				return ctx.Err()
+			}
+			return nil
+		}
+	}
+}
+
+// parkInPlace sets r aside on its DLQ, retrying the publish until it lands. A
+// record that can be neither handled nor parked must not be skipped either.
+// Reports false only if ctx ended first.
+func (c *Consumer) parkInPlace(ctx context.Context, r *kgo.Record, cause error) bool {
+	delay := c.holdBackoff()
+	for {
+		perr := c.park(ctx, r, cause)
+		if perr == nil {
+			recordParked(ctx, r.Topic)
+			slog.WarnContext(ctx, "kafka record parked on dlq",
+				slog.String("topic", r.Topic), slog.String("dlq", DLQ(r.Topic)),
+				slog.Int64("offset", r.Offset), slog.Any("err", cause))
+			return true
+		}
+		recordHeld(ctx, r.Topic, "park_failed")
+		slog.ErrorContext(ctx, "kafka dlq publish failed; retrying",
+			slog.String("topic", r.Topic), slog.Int64("offset", r.Offset),
+			slog.Duration("retry_in", delay), slog.Any("err", perr))
+		if !sleep(ctx, delay) {
+			return false
+		}
+		delay = min(delay*2, maxHoldBackoff)
+	}
+}
+
+// maxHoldBackoff caps the wait between in-place retries, so a long outage is
+// still noticed within half a minute of it ending.
+const maxHoldBackoff = 30 * time.Second
+
+func (c *Consumer) holdBackoff() time.Duration {
+	if c.dl != nil {
+		return c.dl.Backoff
+	}
+	return defaultBackoff
+}
+
+func (c *Consumer) holdReason() string {
+	if c.dl == nil {
+		return "no_dlq"
+	}
+	return "retryable"
+}
+
+// sleep waits d, reporting false if ctx ended first.
+func sleep(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+// handleFetches dispatches the records in a fetch, in order, and reports
+// whether the group's offsets may be committed.
+//
+// dispatch only gives up on a record when the consumer is shutting down, and
+// then nothing after it is touched either: the restart redoes that record
+// first, and running later ones now would apply their effects ahead of it and
+// then apply them again.
 func (c *Consumer) handleFetches(ctx context.Context, fetches kgo.Fetches) bool {
 	committable := true
 	fetches.EachRecord(func(r *kgo.Record) {
-		if !c.dispatch(ctx, r) {
-			committable = false
+		if committable {
+			committable = c.dispatch(ctx, r)
 		}
 	})
 	return committable
