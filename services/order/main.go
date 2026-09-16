@@ -152,7 +152,8 @@ func run() error {
 	rec := reconcile.New(st, orch,
 		config.Duration("COMPENSATION_SWEEP_INTERVAL", 0),
 		config.Duration("COMPENSATION_SETTLED_AFTER", 0),
-		config.Int("COMPENSATION_SWEEP_BATCH", 0))
+		config.Int("COMPENSATION_SWEEP_BATCH", 0)).
+		WithKeyReaper(st, config.Duration("IDEMPOTENCY_KEY_RETAIN", 0))
 
 	g.Go(func() error { return relay.Run(gctx) })
 	g.Go(func() error { return rec.Run(gctx) })

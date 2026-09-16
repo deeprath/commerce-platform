@@ -162,6 +162,7 @@ describe("Checkout", () => {
           currency_code: "USD",
           payment_method_token: "pm_card_ok",
         }),
+        expect.any(String), // idempotency key
       ),
     );
     expect(await screen.findByText("Complete payment")).toBeInTheDocument();

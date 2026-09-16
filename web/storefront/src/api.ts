@@ -158,13 +158,23 @@ export const api = {
   },
 
   // --- checkout & orders ---
-  checkout(body: {
-    ship_to: Address;
-    coupon_code?: string;
-    currency_code?: string;
-    payment_method_token: string;
-  }): Promise<CheckoutResponse> {
-    return req(`/checkout`, { method: "POST", body: JSON.stringify(body) });
+  // idempotencyKey makes this safe to retry: the same key returns the order the
+  // first attempt created instead of placing a second one. Generate it per
+  // checkout attempt and reuse it for every retry of that attempt.
+  checkout(
+    body: {
+      ship_to: Address;
+      coupon_code?: string;
+      currency_code?: string;
+      payment_method_token: string;
+    },
+    idempotencyKey: string,
+  ): Promise<CheckoutResponse> {
+    return req(`/checkout`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
   },
   confirmCheckout(paymentId: string, outcome: "authorize" | "fail"): Promise<{ status: string }> {
     return req(`/checkout/confirm`, {

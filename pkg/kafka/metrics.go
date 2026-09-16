@@ -30,6 +30,17 @@ var (
 		metric.WithDescription("Records the consumer could not complete or park, so the group's offsets stopped advancing."))
 )
 
+// meterFor is telemetry.Meter in production. Tests replace it to bind a relay
+// to a provider of their own.
+//
+// They cannot use the global one: instruments created through it are *replayed*
+// onto whatever provider is installed later, so every relay any test has ever
+// built reports into the next test's collection. Both gauges here are
+// deliberately unlabelled, so those stray data points are indistinguishable from
+// the relay under test — which made an assertion on the first data point a
+// coin flip decided by test order.
+var meterFor = telemetry.Meter
+
 func recordParked(ctx context.Context, topic string) {
 	dlqParked.Add(ctx, 1, metric.WithAttributes(attribute.String("topic", topic)))
 }
@@ -58,7 +69,7 @@ func (r *OutboxRelay) observeBacklog() {
 	// Resolved here rather than at package init so a process — or a test — that
 	// installs a meter provider after this package loads still gets real
 	// instruments.
-	m := telemetry.Meter("github.com/deeprath/commerce-platform/pkg/kafka")
+	m := meterFor("github.com/deeprath/commerce-platform/pkg/kafka")
 
 	depth, err := m.Int64ObservableGauge("commerce.outbox.pending",
 		metric.WithDescription("Outbox rows written but not yet published to Kafka."))
