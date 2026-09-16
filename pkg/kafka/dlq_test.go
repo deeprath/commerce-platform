@@ -20,7 +20,9 @@ type capturedRecord struct {
 type fakePublisher struct {
 	mu   sync.Mutex
 	recs []capturedRecord
-	err  error
+	err  error // returned from every publish
+	// failFor makes the first failFor publishes fail, then lets them through.
+	failFor int
 }
 
 func (p *fakePublisher) Publish(_ context.Context, topic string, key, value []byte, headers map[string]string) error {
@@ -28,6 +30,10 @@ func (p *fakePublisher) Publish(_ context.Context, topic string, key, value []by
 	defer p.mu.Unlock()
 	if p.err != nil {
 		return p.err
+	}
+	if p.failFor > 0 {
+		p.failFor--
+		return errors.New("broker unavailable")
 	}
 	p.recs = append(p.recs, capturedRecord{topic: topic, key: key, value: value, headers: headers})
 	return nil
@@ -138,27 +144,71 @@ func TestDispatch_ParksAPoisonRecordAndLetsTheOffsetAdvance(t *testing.T) {
 	}
 }
 
-// With no DLQ configured, a failure must still hold the offset — losing the
-// record silently would be worse than the backlog.
-func TestDispatch_WithoutDeadLetterHoldsTheOffset(t *testing.T) {
+// With no DLQ there is nowhere to set a failed record aside, so it is retried
+// where it stands until it goes through. Returning to the poll loop instead
+// would lose it: the client has already moved past it, and the next commit
+// would cover it.
+func TestDispatch_WithoutDeadLetterRetriesInPlaceUntilItSucceeds(t *testing.T) {
+	var calls int
 	c := &Consumer{handler: func(context.Context, *kgo.Record) error {
-		return errors.New("nope")
+		calls++
+		if calls < 3 {
+			return errors.New("nope")
+		}
+		return nil
 	}}
-	if c.dispatch(context.Background(), rec()) {
-		t.Fatal("offset advanced past a failed record with no DLQ to park it on")
+	withFastHold(t)
+
+	if !c.dispatch(context.Background(), rec()) {
+		t.Fatal("dispatch gave up on a record that went through on its third try")
+	}
+	if calls != 3 {
+		t.Fatalf("handler ran %d times, want 3", calls)
 	}
 }
 
-// If the record cannot even be parked, holding the offset is the only way not
-// to drop it.
-func TestDispatch_HoldsTheOffsetWhenParkingFails(t *testing.T) {
+// Shutdown is the one thing that ends the wait, and the record is then left
+// uncommitted for the restart.
+func TestDispatch_HeldRecordIsLeftForTheRestartOnShutdown(t *testing.T) {
+	c := &Consumer{handler: func(context.Context, *kgo.Record) error {
+		return errors.New("still down")
+	}}
+	withFastHold(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	if c.dispatch(ctx, rec()) {
+		t.Fatal("offset allowed to advance past a record that never succeeded")
+	}
+}
+
+// A record that can be neither handled nor parked must not be skipped: the
+// publish is retried until the DLQ takes it.
+func TestDispatch_RetriesTheParkUntilTheDLQAcceptsIt(t *testing.T) {
+	pub := &fakePublisher{failFor: 2}
+	c := &Consumer{handler: func(context.Context, *kgo.Record) error {
+		return errors.New("poison")
+	}}
+	c.WithDeadLetter(DeadLetter{Producer: pub, Attempts: 1, Backoff: time.Millisecond})
+
+	if !c.dispatch(context.Background(), rec()) {
+		t.Fatal("dispatch gave up while the DLQ was briefly unavailable")
+	}
+	if len(pub.parked()) != 1 {
+		t.Fatalf("parked %d records, want 1 once the broker came back", len(pub.parked()))
+	}
+}
+
+func TestDispatch_UnparkableRecordIsLeftForTheRestartOnShutdown(t *testing.T) {
 	pub := &fakePublisher{err: errors.New("broker down")}
 	c := &Consumer{handler: func(context.Context, *kgo.Record) error {
 		return errors.New("poison")
 	}}
-	c.WithDeadLetter(DeadLetter{Producer: pub, Attempts: 1})
+	c.WithDeadLetter(DeadLetter{Producer: pub, Attempts: 1, Backoff: time.Millisecond})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
 
-	if c.dispatch(context.Background(), rec()) {
+	if c.dispatch(ctx, rec()) {
 		t.Fatal("offset advanced although the record was never parked — it would be lost")
 	}
 }
@@ -204,12 +254,19 @@ func TestWithDeadLetter_AppliesDefaults(t *testing.T) {
 }
 
 // A downstream that is full or unreachable will take the record later; parking
-// it would discard data that was only ever going to be late. Such a failure
-// holds the offset so the backlog waits in Kafka instead.
-func TestDispatch_RetryableFailureHoldsTheOffsetInsteadOfParking(t *testing.T) {
+// it would discard data that was only ever going to be late. The record is
+// retried in place until the downstream takes it, and never reaches the DLQ.
+func TestDispatch_RetryableFailureWaitsForTheDownstreamInsteadOfParking(t *testing.T) {
 	errFull := errors.New("sink buffer full")
+	var calls int
 	pub := &fakePublisher{}
-	c := &Consumer{handler: func(context.Context, *kgo.Record) error { return errFull }}
+	c := &Consumer{handler: func(context.Context, *kgo.Record) error {
+		calls++
+		if calls < 5 { // outlasts the two-attempt budget
+			return errFull
+		}
+		return nil
+	}}
 	c.WithDeadLetter(DeadLetter{
 		Producer:  pub,
 		Attempts:  2,
@@ -217,11 +274,43 @@ func TestDispatch_RetryableFailureHoldsTheOffsetInsteadOfParking(t *testing.T) {
 		Retryable: func(err error) bool { return errors.Is(err, errFull) },
 	})
 
-	if c.dispatch(context.Background(), rec()) {
-		t.Fatal("offset advanced past a record the sink will accept later — the event is lost")
+	if !c.dispatch(context.Background(), rec()) {
+		t.Fatal("dispatch gave up on a record the sink accepted once it drained")
+	}
+	if calls != 5 {
+		t.Fatalf("handler ran %d times, want 5", calls)
 	}
 	if len(pub.parked()) != 0 {
-		t.Fatal("backpressure parked on the DLQ; it should wait in Kafka")
+		t.Fatal("backpressure parked on the DLQ; it should have waited")
+	}
+}
+
+// If the downstream comes back and rejects the record, it was the record's
+// fault after all, and it is parked rather than retried forever.
+func TestDispatch_HeldRecordIsParkedIfTheDownstreamThenRejectsIt(t *testing.T) {
+	errFull := errors.New("sink buffer full")
+	var calls int
+	pub := &fakePublisher{}
+	c := &Consumer{handler: func(context.Context, *kgo.Record) error {
+		calls++
+		if calls < 3 {
+			return errFull
+		}
+		return errors.New("malformed payload")
+	}}
+	c.WithDeadLetter(DeadLetter{
+		Producer:  pub,
+		Attempts:  1,
+		Backoff:   time.Millisecond,
+		Retryable: func(err error) bool { return errors.Is(err, errFull) },
+	})
+
+	if !c.dispatch(context.Background(), rec()) {
+		t.Fatal("dispatch did not settle a record that ended up parked")
+	}
+	parked := pub.parked()
+	if len(parked) != 1 || parked[0].headers["dlq-error"] != "malformed payload" {
+		t.Fatalf("parked %+v, want the record with the rejection as its reason", parked)
 	}
 }
 
@@ -258,27 +347,60 @@ func fetchOf(recs ...*kgo.Record) kgo.Fetches {
 	}}
 }
 
-// One unhandleable record holds the commit for the whole fetch: the offset is
-// per-partition, so there is no way to skip past just that one.
-func TestHandleFetches_OneHeldRecordHoldsTheWholeCommit(t *testing.T) {
-	var seen int
+// A held record is finished before anything after it on the partition. The old
+// behaviour — run the rest, then skip the commit — let the next successful
+// fetch commit straight over the failed record.
+func TestHandleFetches_LaterRecordsWaitForAHeldOne(t *testing.T) {
+	var order []int64
+	var failed bool
 	c := &Consumer{handler: func(_ context.Context, r *kgo.Record) error {
-		seen++
-		if r.Offset == 42 {
-			return errors.New("poison")
+		if r.Offset == 42 && !failed {
+			failed = true
+			return errors.New("transient")
 		}
+		order = append(order, r.Offset)
 		return nil
 	}}
-	// No DLQ, so the poison record cannot be parked and must hold the commit.
-	if c.handleFetches(context.Background(), fetchOf(
+	withFastHold(t)
+
+	if !c.handleFetches(context.Background(), fetchOf(
 		&kgo.Record{Topic: "commerce.order.confirmed", Offset: 41},
 		&kgo.Record{Topic: "commerce.order.confirmed", Offset: 42},
 		&kgo.Record{Topic: "commerce.order.confirmed", Offset: 43},
 	)) {
-		t.Fatal("commit allowed despite a record that could not be handled")
+		t.Fatal("fetch not committable although every record was handled")
 	}
-	if seen != 3 {
-		t.Fatalf("handled %d records, want all 3 attempted", seen)
+	if len(order) != 3 || order[0] != 41 || order[1] != 42 || order[2] != 43 {
+		t.Fatalf("handled offsets %v, want [41 42 43]", order)
+	}
+}
+
+// On shutdown the held record is left for the restart, and so is everything
+// after it: running 43 now would apply it ahead of 42, then again on restart.
+func TestHandleFetches_ShutdownLeavesTheRestUntouched(t *testing.T) {
+	var seen []int64
+	c := &Consumer{handler: func(_ context.Context, r *kgo.Record) error {
+		seen = append(seen, r.Offset)
+		if r.Offset == 42 {
+			return errors.New("still down")
+		}
+		return nil
+	}}
+	withFastHold(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	if c.handleFetches(ctx, fetchOf(
+		&kgo.Record{Topic: "commerce.order.confirmed", Offset: 41},
+		&kgo.Record{Topic: "commerce.order.confirmed", Offset: 42},
+		&kgo.Record{Topic: "commerce.order.confirmed", Offset: 43},
+	)) {
+		t.Fatal("commit allowed despite a record that was never handled")
+	}
+	for _, off := range seen {
+		if off == 43 {
+			t.Fatalf("record 43 ran while 42 was unfinished: %v", seen)
+		}
 	}
 }
 
@@ -313,4 +435,12 @@ func TestHandleFetches_CleanFetchIsCommittable(t *testing.T) {
 	)) {
 		t.Fatal("clean fetch not committable")
 	}
+}
+
+// withFastHold makes the no-DLQ hold retry quickly for the test's duration.
+func withFastHold(t *testing.T) {
+	t.Helper()
+	prev := defaultBackoff
+	defaultBackoff = time.Millisecond
+	t.Cleanup(func() { defaultBackoff = prev })
 }

@@ -179,6 +179,16 @@ Every consumer now retries a failing record a bounded number of times and parks 
 offsets. A failure the downstream will accept later — backpressure rather than a bad payload — is
 held rather than parked, so the backlog waits in Kafka instead of being discarded.
 
+**Correction:** until the fix that added this paragraph, that last sentence was false. "Held" meant
+only "skip this commit", but franz-go moves its poll position past every record it hands over,
+committed or not. The held record was never offered again, and the next fetch that succeeded
+committed straight over it, so the record was lost even across a restart. A consumer now retries a
+held record in place, with backoff capped at 30s, and does not move past it until it succeeds,
+turns out to be unprocessable (then it is parked), or the process shuts down (then it is left
+uncommitted for the restart). `pkg/kafka/hold_live_test.go` checks this against a real poll/commit
+loop, using franz-go's in-process `kfake` broker. The unit tests before it only checked what
+`dispatch` returned, which is how the gap went unnoticed.
+
 ---
 
 ## 6. Data flow: the outbox relay
