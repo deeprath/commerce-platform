@@ -14,7 +14,12 @@ in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/DECISIONS.md`](docs
 before proposing a different stack for something; the tradeoffs were already litigated there. Day-2 and
 setup procedures are in [`docs/SETUP.md`](docs/SETUP.md) (local + production, step by step) and
 [`docs/RUNBOOKS.md`](docs/RUNBOOKS.md) (disaster recovery). [`docs/SECURITY.md`](docs/SECURITY.md) is the
-threat model + CI scanning policy + real findings log.
+threat model + CI scanning policy + real findings log. Five shorter companions sit beside them:
+[`docs/PRD.md`](docs/PRD.md) (what the product must do), [`docs/DESIGN.md`](docs/DESIGN.md) (the
+BFF surface + both SPAs), [`docs/RULES.md`](docs/RULES.md) (**conventions and the hard don'ts —
+read this before changing anything**), [`docs/TASKS.md`](docs/TASKS.md) (open work), and
+[`docs/MEMORY.md`](docs/MEMORY.md) (the traps, symptom-first — the quirks listed below are kept
+there too).
 
 **Repo is public.** Commit messages and PR descriptions end with the standard Claude Code attribution
 (see any recent commit for the exact form) — don't ask, just append it.
