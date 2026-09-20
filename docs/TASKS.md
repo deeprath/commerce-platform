@@ -26,6 +26,13 @@ Status key: `[ ]` open · `[~]` in progress · `[x]` done · `[!]` blocked on so
 
 ## Next
 
+- [ ] **A payout has no clawback path.** `Payout` has two states, `PENDING` and `PAID`, and the
+  service consumes `order.confirmed` + `payment.authorized` — not `payment.refunded` or
+  `order.return_approved`. A refund or approved return after a payout is `PAID` cannot recover the
+  money, and payouts are created at confirmation rather than at delivery, which widens the window.
+  Needs a reversal state and the two missing consumers. → `services/payout/internal/domain/payout.go`,
+  `services/payout/internal/consumer/`. Surfaced by [`PRD.md`](PRD.md) §3.3.
+
 - [ ] **Compensation failures need a visible signal.** `compensateRelease` / `compensateVoid` log
   and return nothing, so a cancelled order can hold stock until the TTL expires with nothing
   surfacing it. At minimum a counter + alert; ideally a retry queue. `OVERVIEW.md` §8.2.
