@@ -34,6 +34,26 @@ Then restart the affected service containers.
 anywhere in the workspace. **`go.work`'s `replace` is the only durable mechanism.** This bit the repo
 twice with `moby/go-archive`.
 
+### The storefront tests will not run on macOS
+
+Two separate causes, both environmental, neither worth "fixing" in the repo:
+
+- `package-lock.json` resolves **Linux-only** `rolldown` bindings, so `node_modules` has no
+  darwin binary and vitest cannot start — a clean `npm ci` does not help.
+- `html-encoding-sniffer` does `require()` on an ES module, which only works on **Node 22.12+**.
+  On Node 20 it fails with `ERR_REQUIRE_ESM` before any test runs.
+
+Run them the way CI does instead, in a Node 22 Linux container, with an anonymous volume
+shadowing the host `node_modules` so the host tree is left alone:
+
+```bash
+docker run --rm -v "$PWD":/app -v /app/node_modules -w /app node:22 \
+  sh -c "npm ci --silent && npx vitest run"
+```
+
+This matters more than it looks: `tsc --noEmit` and `eslint` both pass on changes that break
+the component tests outright, so "typecheck is clean" is not evidence the UI still works.
+
 ### Every form-submit test silently passes while testing nothing
 **Use jsdom, not happy-dom** (`vite.config.ts` in both SPAs). happy-dom doesn't dispatch a form's
 `submit` event when its `type="submit"` button is clicked, so the handler never runs and the
