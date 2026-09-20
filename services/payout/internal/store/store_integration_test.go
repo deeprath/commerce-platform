@@ -247,3 +247,168 @@ func TestListPaginationAndStatusFilter(t *testing.T) {
 		t.Fatalf("cross-shop list leaked: %+v", other)
 	}
 }
+
+func TestReverseFromReturn_PendingPayoutIsReducedAndEmits(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	created, _ := st.CreateFromOrder(ctx, "order-r1",
+		[]store.ShopAmount{{ShopID: "shop-a", Amount: usd(1000)}}, "e:0:100")
+	p := created[0]
+
+	reversed, err := st.ReverseFromReturn(ctx, "order-r1",
+		[]store.ShopAmount{{ShopID: "shop-a", Amount: usd(400)}}, "r:0:100")
+	if err != nil || len(reversed) != 1 {
+		t.Fatalf("reverse: %v %+v", err, reversed)
+	}
+
+	got, err := st.Get(ctx, p.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Reversed.Cents != 400 || got.Outstanding().Cents != 600 {
+		t.Fatalf("reversed=%d outstanding=%d", got.Reversed.Cents, got.Outstanding().Cents)
+	}
+	// A partial reversal must not take the payout out of the settlement sweep.
+	if got.Status != domain.StatusPending {
+		t.Fatalf("status = %s, want PENDING", got.Status)
+	}
+	if got.ReversedAt == nil {
+		t.Fatal("reversed_at should be set")
+	}
+
+	var payload []byte
+	if err := pool.QueryRow(ctx,
+		`SELECT payload FROM outbox WHERE topic='commerce.payout.reversed'`).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	var e payoutv1.PayoutReversed
+	if err := proto.Unmarshal(payload, &e); err != nil {
+		t.Fatal(err)
+	}
+	if e.GetAmount().GetUnits() != 4 || e.GetReversedTotal().GetUnits() != 4 {
+		t.Fatalf("event amounts: %+v", &e)
+	}
+	if e.GetWasPaid() {
+		t.Fatal("was_paid should be false for a payout that was never paid")
+	}
+}
+
+func TestReverseFromReturn_PaidPayoutRecordsADebt(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	created, _ := st.CreateFromOrder(ctx, "order-r2",
+		[]store.ShopAmount{{ShopID: "shop-a", Amount: usd(1000)}}, "e:0:200")
+	if _, err := st.MarkPaid(ctx, created[0].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// This is the case the whole change exists for: the money has already left.
+	if _, err := st.ReverseFromReturn(ctx, "order-r2",
+		[]store.ShopAmount{{ShopID: "shop-a", Amount: usd(1000)}}, "r:0:200"); err != nil {
+		t.Fatalf("reverse a paid payout: %v", err)
+	}
+
+	got, err := st.Get(ctx, created[0].ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.StatusReversed || got.Outstanding().Cents != 0 {
+		t.Fatalf("status=%s outstanding=%d", got.Status, got.Outstanding().Cents)
+	}
+	if !got.WasPaid() {
+		t.Fatal("paid_at must survive the reversal — it is how a consumer knows to claw back")
+	}
+
+	var payload []byte
+	if err := pool.QueryRow(ctx,
+		`SELECT payload FROM outbox WHERE topic='commerce.payout.reversed'`).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	var e payoutv1.PayoutReversed
+	if err := proto.Unmarshal(payload, &e); err != nil {
+		t.Fatal(err)
+	}
+	if !e.GetWasPaid() {
+		t.Fatal("was_paid should be true — the provider has to recover the money")
+	}
+}
+
+func TestReverseFromReturn_IsIdempotentOnEventID(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	created, _ := st.CreateFromOrder(ctx, "order-r3",
+		[]store.ShopAmount{{ShopID: "shop-a", Amount: usd(1000)}}, "e:0:300")
+
+	refunds := []store.ShopAmount{{ShopID: "shop-a", Amount: usd(500)}}
+	if _, err := st.ReverseFromReturn(ctx, "order-r3", refunds, "r:0:300"); err != nil {
+		t.Fatal(err)
+	}
+	// Redelivery of the same record must not reverse a second time.
+	again, err := st.ReverseFromReturn(ctx, "order-r3", refunds, "r:0:300")
+	if err != nil || again != nil {
+		t.Fatalf("redelivery should short-circuit: %v %+v", err, again)
+	}
+
+	got, _ := st.Get(ctx, created[0].ID, "")
+	if got.Reversed.Cents != 500 {
+		t.Fatalf("reversed = %d, want 500 — redelivery double-counted", got.Reversed.Cents)
+	}
+	var n int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM outbox WHERE topic='commerce.payout.reversed'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected exactly 1 reversal event, got %d", n)
+	}
+}
+
+func TestReverseFromReturn_SkipsShopsWithNoPayout(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+	created, _ := st.CreateFromOrder(ctx, "order-r4",
+		[]store.ShopAmount{{ShopID: "shop-a", Amount: usd(1000)}}, "e:0:400")
+
+	// shop-b never had a payout on this order, and the first-party share never
+	// gets one at all. Neither may fail the batch or block shop-a's reversal.
+	reversed, err := st.ReverseFromReturn(ctx, "order-r4", []store.ShopAmount{
+		{ShopID: "", Amount: usd(700)},
+		{ShopID: "shop-b", Amount: usd(300)},
+		{ShopID: "shop-a", Amount: usd(200)},
+	}, "r:0:400")
+	if err != nil {
+		t.Fatalf("reverse: %v", err)
+	}
+	if len(reversed) != 1 || reversed[0].ShopID != "shop-a" {
+		t.Fatalf("only shop-a should be reversed: %+v", reversed)
+	}
+	got, _ := st.Get(ctx, created[0].ID, "")
+	if got.Reversed.Cents != 200 {
+		t.Fatalf("reversed = %d, want 200", got.Reversed.Cents)
+	}
+}
+
+func TestDuePayoutIDs_ExcludesFullyReversed(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+	if _, err := st.CreateFromOrder(ctx, "order-r5",
+		[]store.ShopAmount{{ShopID: "shop-a", Amount: usd(1000)}}, "e:0:500"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ReverseFromReturn(ctx, "order-r5",
+		[]store.ShopAmount{{ShopID: "shop-a", Amount: usd(1000)}}, "r:0:500"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The sweep must not settle a payout there is nothing left to pay on.
+	due, err := st.DuePayoutIDs(ctx, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("a fully reversed payout must not be due for settlement: %v", due)
+	}
+}

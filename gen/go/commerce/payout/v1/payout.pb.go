@@ -20,6 +20,14 @@
 // way. v1 also takes no platform commission: a payout is 100% of the shop's
 // line total for that order; a fee/commission model is a deliberate later
 // refinement (see ADR-043).
+//
+// A payout can be reversed. An approved return (commerce.order.return_approved)
+// carries a per-shop refund breakdown, and the matching shop's payout is
+// reduced by that amount. A reversal against a PENDING payout simply lowers
+// what the settlement sweep will pay; against a PAID payout the money has
+// already left, so PayoutReversed is the instruction to the payout provider to
+// recover it. Reversals accumulate: a payout is REVERSED only once its whole
+// amount has been reversed.
 
 package payoutv1
 
@@ -45,6 +53,9 @@ const (
 	PayoutStatus_PAYOUT_STATUS_UNSPECIFIED PayoutStatus = 0
 	PayoutStatus_PAYOUT_STATUS_PENDING     PayoutStatus = 1
 	PayoutStatus_PAYOUT_STATUS_PAID        PayoutStatus = 2
+	// Fully reversed — reversed_amount has reached amount. A partly reversed
+	// payout keeps its PENDING/PAID status and reports reversed_amount.
+	PayoutStatus_PAYOUT_STATUS_REVERSED PayoutStatus = 3
 )
 
 // Enum value maps for PayoutStatus.
@@ -53,11 +64,13 @@ var (
 		0: "PAYOUT_STATUS_UNSPECIFIED",
 		1: "PAYOUT_STATUS_PENDING",
 		2: "PAYOUT_STATUS_PAID",
+		3: "PAYOUT_STATUS_REVERSED",
 	}
 	PayoutStatus_value = map[string]int32{
 		"PAYOUT_STATUS_UNSPECIFIED": 0,
 		"PAYOUT_STATUS_PENDING":     1,
 		"PAYOUT_STATUS_PAID":        2,
+		"PAYOUT_STATUS_REVERSED":    3,
 	}
 )
 
@@ -89,16 +102,20 @@ func (PayoutStatus) EnumDescriptor() ([]byte, []int) {
 }
 
 type Payout struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	ShopId        string                 `protobuf:"bytes,3,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
-	Amount        *v1.Money              `protobuf:"bytes,4,opt,name=amount,proto3" json:"amount,omitempty"`
-	Status        PayoutStatus           `protobuf:"varint,5,opt,name=status,proto3,enum=commerce.payout.v1.PayoutStatus" json:"status,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	PaidAt        string                 `protobuf:"bytes,7,opt,name=paid_at,json=paidAt,proto3" json:"paid_at,omitempty"` // set once PAID
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OrderId   string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	ShopId    string                 `protobuf:"bytes,3,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
+	Amount    *v1.Money              `protobuf:"bytes,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	Status    PayoutStatus           `protobuf:"varint,5,opt,name=status,proto3,enum=commerce.payout.v1.PayoutStatus" json:"status,omitempty"`
+	CreatedAt string                 `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	PaidAt    string                 `protobuf:"bytes,7,opt,name=paid_at,json=paidAt,proto3" json:"paid_at,omitempty"` // set once PAID
+	// Cumulative amount reversed by approved returns. Never exceeds amount.
+	// What is actually owed (or, once PAID, overpaid) is amount - reversed_amount.
+	ReversedAmount *v1.Money `protobuf:"bytes,8,opt,name=reversed_amount,json=reversedAmount,proto3" json:"reversed_amount,omitempty"`
+	ReversedAt     string    `protobuf:"bytes,9,opt,name=reversed_at,json=reversedAt,proto3" json:"reversed_at,omitempty"` // set on the most recent reversal
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Payout) Reset() {
@@ -176,6 +193,20 @@ func (x *Payout) GetCreatedAt() string {
 func (x *Payout) GetPaidAt() string {
 	if x != nil {
 		return x.PaidAt
+	}
+	return ""
+}
+
+func (x *Payout) GetReversedAmount() *v1.Money {
+	if x != nil {
+		return x.ReversedAmount
+	}
+	return nil
+}
+
+func (x *Payout) GetReversedAt() string {
+	if x != nil {
+		return x.ReversedAt
 	}
 	return ""
 }
@@ -524,11 +555,108 @@ func (x *PayoutPaid) GetOccurredAt() string {
 	return ""
 }
 
+// PayoutReversed is emitted per reversal, not per payout: a second approved
+// return against the same order emits a second event. was_paid distinguishes
+// the two cases that matter downstream — false means the settlement sweep will
+// simply pay less, true means money already left and the provider has to
+// recover it.
+type PayoutReversed struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PayoutId      string                 `protobuf:"bytes,1,opt,name=payout_id,json=payoutId,proto3" json:"payout_id,omitempty"`
+	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	ShopId        string                 `protobuf:"bytes,3,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
+	Amount        *v1.Money              `protobuf:"bytes,4,opt,name=amount,proto3" json:"amount,omitempty"`                                    // this reversal alone
+	ReversedTotal *v1.Money              `protobuf:"bytes,5,opt,name=reversed_total,json=reversedTotal,proto3" json:"reversed_total,omitempty"` // cumulative, after this one
+	WasPaid       bool                   `protobuf:"varint,6,opt,name=was_paid,json=wasPaid,proto3" json:"was_paid,omitempty"`
+	OccurredAt    string                 `protobuf:"bytes,7,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PayoutReversed) Reset() {
+	*x = PayoutReversed{}
+	mi := &file_commerce_payout_v1_payout_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PayoutReversed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PayoutReversed) ProtoMessage() {}
+
+func (x *PayoutReversed) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_payout_v1_payout_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PayoutReversed.ProtoReflect.Descriptor instead.
+func (*PayoutReversed) Descriptor() ([]byte, []int) {
+	return file_commerce_payout_v1_payout_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *PayoutReversed) GetPayoutId() string {
+	if x != nil {
+		return x.PayoutId
+	}
+	return ""
+}
+
+func (x *PayoutReversed) GetOrderId() string {
+	if x != nil {
+		return x.OrderId
+	}
+	return ""
+}
+
+func (x *PayoutReversed) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
+}
+
+func (x *PayoutReversed) GetAmount() *v1.Money {
+	if x != nil {
+		return x.Amount
+	}
+	return nil
+}
+
+func (x *PayoutReversed) GetReversedTotal() *v1.Money {
+	if x != nil {
+		return x.ReversedTotal
+	}
+	return nil
+}
+
+func (x *PayoutReversed) GetWasPaid() bool {
+	if x != nil {
+		return x.WasPaid
+	}
+	return false
+}
+
+func (x *PayoutReversed) GetOccurredAt() string {
+	if x != nil {
+		return x.OccurredAt
+	}
+	return ""
+}
+
 var File_commerce_payout_v1_payout_proto protoreflect.FileDescriptor
 
 const file_commerce_payout_v1_payout_proto_rawDesc = "" +
 	"\n" +
-	"\x1fcommerce/payout/v1/payout.proto\x12\x12commerce.payout.v1\x1a\x1ecommerce/common/v1/types.proto\"\xf1\x01\n" +
+	"\x1fcommerce/payout/v1/payout.proto\x12\x12commerce.payout.v1\x1a\x1ecommerce/common/v1/types.proto\"\xd6\x02\n" +
 	"\x06Payout\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x17\n" +
@@ -537,7 +665,10 @@ const file_commerce_payout_v1_payout_proto_rawDesc = "" +
 	"\x06status\x18\x05 \x01(\x0e2 .commerce.payout.v1.PayoutStatusR\x06status\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x06 \x01(\tR\tcreatedAt\x12\x17\n" +
-	"\apaid_at\x18\a \x01(\tR\x06paidAt\"\"\n" +
+	"\apaid_at\x18\a \x01(\tR\x06paidAt\x12B\n" +
+	"\x0freversed_amount\x18\b \x01(\v2\x19.commerce.common.v1.MoneyR\x0ereversedAmount\x12\x1f\n" +
+	"\vreversed_at\x18\t \x01(\tR\n" +
+	"reversedAt\"\"\n" +
 	"\x10GetPayoutRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"z\n" +
 	"\x12ListPayoutsRequest\x12\x17\n" +
@@ -562,11 +693,21 @@ const file_commerce_payout_v1_payout_proto_rawDesc = "" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x17\n" +
 	"\ashop_id\x18\x03 \x01(\tR\x06shopId\x12\x1f\n" +
 	"\voccurred_at\x18\x04 \x01(\tR\n" +
-	"occurredAt*`\n" +
+	"occurredAt\"\x92\x02\n" +
+	"\x0ePayoutReversed\x12\x1b\n" +
+	"\tpayout_id\x18\x01 \x01(\tR\bpayoutId\x12\x19\n" +
+	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x17\n" +
+	"\ashop_id\x18\x03 \x01(\tR\x06shopId\x121\n" +
+	"\x06amount\x18\x04 \x01(\v2\x19.commerce.common.v1.MoneyR\x06amount\x12@\n" +
+	"\x0ereversed_total\x18\x05 \x01(\v2\x19.commerce.common.v1.MoneyR\rreversedTotal\x12\x19\n" +
+	"\bwas_paid\x18\x06 \x01(\bR\awasPaid\x12\x1f\n" +
+	"\voccurred_at\x18\a \x01(\tR\n" +
+	"occurredAt*|\n" +
 	"\fPayoutStatus\x12\x1d\n" +
 	"\x19PAYOUT_STATUS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15PAYOUT_STATUS_PENDING\x10\x01\x12\x16\n" +
-	"\x12PAYOUT_STATUS_PAID\x10\x022\x8b\x02\n" +
+	"\x12PAYOUT_STATUS_PAID\x10\x02\x12\x1a\n" +
+	"\x16PAYOUT_STATUS_REVERSED\x10\x032\x8b\x02\n" +
 	"\rPayoutService\x12M\n" +
 	"\tGetPayout\x12$.commerce.payout.v1.GetPayoutRequest\x1a\x1a.commerce.payout.v1.Payout\x12^\n" +
 	"\vListPayouts\x12&.commerce.payout.v1.ListPayoutsRequest\x1a'.commerce.payout.v1.ListPayoutsResponse\x12K\n" +
@@ -586,7 +727,7 @@ func file_commerce_payout_v1_payout_proto_rawDescGZIP() []byte {
 }
 
 var file_commerce_payout_v1_payout_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_commerce_payout_v1_payout_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_commerce_payout_v1_payout_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_commerce_payout_v1_payout_proto_goTypes = []any{
 	(PayoutStatus)(0),           // 0: commerce.payout.v1.PayoutStatus
 	(*Payout)(nil),              // 1: commerce.payout.v1.Payout
@@ -596,28 +737,32 @@ var file_commerce_payout_v1_payout_proto_goTypes = []any{
 	(*MarkPaidRequest)(nil),     // 5: commerce.payout.v1.MarkPaidRequest
 	(*PayoutCreated)(nil),       // 6: commerce.payout.v1.PayoutCreated
 	(*PayoutPaid)(nil),          // 7: commerce.payout.v1.PayoutPaid
-	(*v1.Money)(nil),            // 8: commerce.common.v1.Money
-	(*v1.PageRequest)(nil),      // 9: commerce.common.v1.PageRequest
-	(*v1.PageResponse)(nil),     // 10: commerce.common.v1.PageResponse
+	(*PayoutReversed)(nil),      // 8: commerce.payout.v1.PayoutReversed
+	(*v1.Money)(nil),            // 9: commerce.common.v1.Money
+	(*v1.PageRequest)(nil),      // 10: commerce.common.v1.PageRequest
+	(*v1.PageResponse)(nil),     // 11: commerce.common.v1.PageResponse
 }
 var file_commerce_payout_v1_payout_proto_depIdxs = []int32{
-	8,  // 0: commerce.payout.v1.Payout.amount:type_name -> commerce.common.v1.Money
+	9,  // 0: commerce.payout.v1.Payout.amount:type_name -> commerce.common.v1.Money
 	0,  // 1: commerce.payout.v1.Payout.status:type_name -> commerce.payout.v1.PayoutStatus
-	9,  // 2: commerce.payout.v1.ListPayoutsRequest.page:type_name -> commerce.common.v1.PageRequest
-	1,  // 3: commerce.payout.v1.ListPayoutsResponse.payouts:type_name -> commerce.payout.v1.Payout
-	10, // 4: commerce.payout.v1.ListPayoutsResponse.page:type_name -> commerce.common.v1.PageResponse
-	8,  // 5: commerce.payout.v1.PayoutCreated.amount:type_name -> commerce.common.v1.Money
-	2,  // 6: commerce.payout.v1.PayoutService.GetPayout:input_type -> commerce.payout.v1.GetPayoutRequest
-	3,  // 7: commerce.payout.v1.PayoutService.ListPayouts:input_type -> commerce.payout.v1.ListPayoutsRequest
-	5,  // 8: commerce.payout.v1.PayoutService.MarkPaid:input_type -> commerce.payout.v1.MarkPaidRequest
-	1,  // 9: commerce.payout.v1.PayoutService.GetPayout:output_type -> commerce.payout.v1.Payout
-	4,  // 10: commerce.payout.v1.PayoutService.ListPayouts:output_type -> commerce.payout.v1.ListPayoutsResponse
-	1,  // 11: commerce.payout.v1.PayoutService.MarkPaid:output_type -> commerce.payout.v1.Payout
-	9,  // [9:12] is the sub-list for method output_type
-	6,  // [6:9] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	9,  // 2: commerce.payout.v1.Payout.reversed_amount:type_name -> commerce.common.v1.Money
+	10, // 3: commerce.payout.v1.ListPayoutsRequest.page:type_name -> commerce.common.v1.PageRequest
+	1,  // 4: commerce.payout.v1.ListPayoutsResponse.payouts:type_name -> commerce.payout.v1.Payout
+	11, // 5: commerce.payout.v1.ListPayoutsResponse.page:type_name -> commerce.common.v1.PageResponse
+	9,  // 6: commerce.payout.v1.PayoutCreated.amount:type_name -> commerce.common.v1.Money
+	9,  // 7: commerce.payout.v1.PayoutReversed.amount:type_name -> commerce.common.v1.Money
+	9,  // 8: commerce.payout.v1.PayoutReversed.reversed_total:type_name -> commerce.common.v1.Money
+	2,  // 9: commerce.payout.v1.PayoutService.GetPayout:input_type -> commerce.payout.v1.GetPayoutRequest
+	3,  // 10: commerce.payout.v1.PayoutService.ListPayouts:input_type -> commerce.payout.v1.ListPayoutsRequest
+	5,  // 11: commerce.payout.v1.PayoutService.MarkPaid:input_type -> commerce.payout.v1.MarkPaidRequest
+	1,  // 12: commerce.payout.v1.PayoutService.GetPayout:output_type -> commerce.payout.v1.Payout
+	4,  // 13: commerce.payout.v1.PayoutService.ListPayouts:output_type -> commerce.payout.v1.ListPayoutsResponse
+	1,  // 14: commerce.payout.v1.PayoutService.MarkPaid:output_type -> commerce.payout.v1.Payout
+	12, // [12:15] is the sub-list for method output_type
+	9,  // [9:12] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_commerce_payout_v1_payout_proto_init() }
@@ -631,7 +776,7 @@ func file_commerce_payout_v1_payout_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_commerce_payout_v1_payout_proto_rawDesc), len(file_commerce_payout_v1_payout_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

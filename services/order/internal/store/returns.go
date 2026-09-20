@@ -277,11 +277,16 @@ func emitReturnEvent(ctx context.Context, tx pgx.Tx, r *domain.Return) error {
 		})
 	case domain.ReturnApproved:
 		u, n := r.RefundTotal.UnitsNanos()
+		shopRefunds, sErr := shopRefundsFor(ctx, tx, r)
+		if sErr != nil {
+			return sErr
+		}
 		topic = "commerce.order.return_approved"
 		b, err = proto.Marshal(&orderv1.ReturnApproved{
 			ReturnId: r.ID, OrderId: r.OrderID, OwnerId: r.OwnerID,
 			RefundTotal: &commonv1.Money{CurrencyCode: r.RefundTotal.Currency, Units: u, Nanos: n},
 			OccurredAt:  now,
+			ShopRefunds: shopRefunds,
 		})
 	case domain.ReturnRejected:
 		topic = "commerce.order.return_rejected"
@@ -296,4 +301,45 @@ func emitReturnEvent(ctx context.Context, tx pgx.Tx, r *domain.Return) error {
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO outbox (topic, key, payload) VALUES ($1,$2,$3)`, topic, []byte(r.OrderID), b)
 	return wrap(err)
+}
+
+// shopRefundsFor splits an approved return's refund across the shops that own
+// the returned lines. The order service is the only place that holds the line
+// -> shop mapping, so the breakdown is computed here and carried on the event
+// rather than left for a consumer to re-derive — commerce.payout.v1 reverses a
+// shop's payout against exactly these amounts.
+//
+// Lines whose product is no longer on the order are impossible (return_lines
+// are created from the order's own lines), but the join is written as an inner
+// join anyway: a refund that cannot be attributed to a shop must not silently
+// become a first-party one.
+func shopRefundsFor(ctx context.Context, tx pgx.Tx, r *domain.Return) ([]*orderv1.ShopRefund, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT ol.shop_id, SUM(rl.refund_amount_cents)::BIGINT
+		FROM return_lines rl
+		JOIN order_lines ol
+		  ON ol.order_id = $2 AND ol.product_id = rl.product_id
+		WHERE rl.return_id = $1
+		GROUP BY ol.shop_id
+		ORDER BY ol.shop_id`, r.ID, r.OrderID)
+	if err != nil {
+		return nil, wrap(err)
+	}
+	defer rows.Close()
+
+	var out []*orderv1.ShopRefund
+	for rows.Next() {
+		var shopID string
+		var cents int64
+		if err := rows.Scan(&shopID, &cents); err != nil {
+			return nil, wrap(err)
+		}
+		m := domain.Money{Currency: r.RefundTotal.Currency, Cents: cents}
+		u, n := m.UnitsNanos()
+		out = append(out, &orderv1.ShopRefund{
+			ShopId: shopID,
+			Amount: &commonv1.Money{CurrencyCode: m.Currency, Units: u, Nanos: n},
+		})
+	}
+	return out, wrap(rows.Err())
 }

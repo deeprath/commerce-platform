@@ -53,6 +53,7 @@ Format per entry: **Status · Context · Decision · Alternatives · Consequence
 | [ADR-042](#adr-042--marketplace-slice-5-fulfillment-split-by-shop) | Marketplace, slice 5: fulfillment split by shop | Accepted · Phase 5 · builds on ADR-040, ADR-041 |
 | [ADR-043](#adr-043--marketplace-slice-6-per-shop-payouts-payout-service) | Marketplace, slice 6: per-shop payouts (`payout` service) | Accepted · Phase 5 · builds on ADR-040, ADR-042 |
 | [ADR-044](#adr-044--marketplace-slice-7-seller-dashboard) | Marketplace, slice 7: seller dashboard | Accepted · Phase 5 · builds on ADR-038, ADR-040, ADR-043 |
+| [ADR-045](#adr-045--payout-reversal-driven-by-the-approved-return-not-the-refund) | **Payout reversal: driven by the approved return** | Accepted · Phase 5 · corrects a gap in ADR-043 |
 
 ---
 
@@ -2082,3 +2083,71 @@ returns; a future backend change (e.g. a commission model landing per
 ADR-043's deferred item) needs no dashboard change beyond rendering whatever
 new field appears. Completes the marketplace/multi-seller roadmap item
 started at ADR-038.
+
+---
+
+## ADR-045 — Payout reversal: driven by the approved return, not the refund
+
+**Status:** Accepted (Phase 5) · corrects a gap in [ADR-043](#adr-043--marketplace-slice-6-per-shop-payouts-payout-service).
+
+**Context:** A payout was created on `order.confirmed` — at payment
+authorization, ahead of delivery — and could only move `PENDING → PAID`. The
+service consumed `order.confirmed` and `payment.authorized` and nothing else, so
+a refund or an approved return after a payout was marked `PAID` had no path to
+recover the money. Paying at confirmation rather than at delivery is what made
+this urgent rather than theoretical: the window between paying a shop and the
+buyer returning the goods is the normal case, not an edge case.
+
+**Decision:**
+
+- **Reversals are driven by `order.return_approved`, not `payment.refunded`.**
+  Only the order service knows which shop owns each refunded line — payment sees
+  an order-level amount with no line detail — and an approved return already
+  causes the refund, so consuming both would reverse the same money twice.
+- **The attribution is carried on the event, not re-derived.** `ReturnApproved`
+  gains `repeated ShopRefund shop_refunds`, summed in the order service by
+  joining the return's lines to the order's lines. A payout is per
+  `(order, shop)`, and the payout service reverses against exactly these amounts.
+  The first-party share is reported under `shop_id ""` so the breakdown still
+  sums to `refund_total`; the payout service drops it.
+- **Reversals accumulate and clamp.** `reversed_cents` is a running total, not a
+  flag, so a second return against the same order reduces the payout further. It
+  clamps at the outstanding amount because a refund total can legitimately
+  exceed a shop's line total (shipping, goodwill) while the payout is only ever
+  the line total — reversing more than was owed would invent money.
+- **`REVERSED` means fully reversed, and is terminal.** A partly reversed payout
+  keeps `PENDING`/`PAID` and reports `reversed_amount`; status alone never tells
+  you what is owed, `Outstanding()` does. The settlement sweep filters on
+  `amount_cents > reversed_cents` rather than trusting status.
+- **`PayoutReversed` carries `was_paid`.** False means the sweep will simply
+  settle less; true means money already left and the provider has to recover it.
+  `paid_at` survives the transition to `REVERSED`, which is what makes the
+  distinction recoverable from the row as well as the event.
+
+**Alternatives considered:**
+
+- **Consume `payment.refunded`.** Rejected: no shop attribution, and it
+  double-counts against the return path that caused it.
+- **Consume both, deduplicating by order.** Rejected: the dedup key would have
+  to span two topics with no shared identifier, and the refund event still
+  cannot say which shop to charge.
+- **A separate `payout_reversals` ledger table.** Deferred. A running total on
+  the payout answers every question the service is currently asked; a per-event
+  ledger is the right shape once there is a real provider with its own reversal
+  identifiers to reconcile against.
+- **Pay at delivery instead, removing the need for clawback.** Rejected for now:
+  it trades a recoverable accounting problem for a cash-flow promise to sellers
+  (see the market approach in `PRD.md` §3.2). Worth revisiting if reversals turn
+  out to be common.
+
+**Consequences:**
+
+- An operator-initiated refund with no return behind it has **no shop
+  attribution** and is not reversed automatically. This is the known remaining
+  gap; it needs either a shop-scoped refund API or an operator-driven manual
+  reversal.
+- There is still no provider-side clawback — `PayoutReversed` is the
+  instruction, and the SANDBOX settlement has nothing to send it to. The event
+  shape is what a real integration (e.g. Stripe Connect reversals) would consume.
+- `payout` now consumes an `order` topic it did not before, widening its
+  coupling to the order service's event contract by one message.

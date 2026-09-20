@@ -279,3 +279,82 @@ func TestListReturns_DoesNotScaleQueriesWithPageSize(t *testing.T) {
 		}
 	}
 }
+
+// An approved return carries a per-shop breakdown of the refund, because the
+// order service is the only place that knows which shop owns each line. The
+// payout service reverses against exactly these amounts, so a wrong split
+// takes money from the wrong shop.
+func TestDecideReturn_ApprovedEventCarriesShopBreakdown(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+
+	o := &domain.Order{
+		ID:      uuid.NewString(),
+		OwnerID: "owner-1",
+		Status:  domain.StatusPendingPayment,
+		Lines: []domain.Line{
+			{ProductID: "p1", Title: "Lamp", Quantity: 1, UnitPrice: usd(1000), LineTotal: usd(1000), ShopID: "shop-a"},
+			{ProductID: "p2", Title: "Shade", Quantity: 1, UnitPrice: usd(400), LineTotal: usd(400), ShopID: "shop-b"},
+			{ProductID: "p3", Title: "Bulb", Quantity: 1, UnitPrice: usd(250), LineTotal: usd(250)}, // first-party
+		},
+		Subtotal: usd(1650), Discount: usd(0), Tax: usd(0), Total: usd(1650),
+		ShipTo:    domain.Address{FullName: "Buyer", Line1: "1 Main St", City: "Shelbyville", Region: "IL", PostalCode: "62701", CountryCode: "US"},
+		PaymentID: "pay-1", ReservationID: "res-1",
+	}
+	if err := st.Insert(ctx, o); err != nil {
+		t.Fatalf("insert order: %v", err)
+	}
+
+	r := &domain.Return{
+		ID: uuid.NewString(), OrderID: o.ID, OwnerID: "owner-1",
+		Status: domain.ReturnRequested, Reason: "faulty",
+		Lines: []domain.ReturnLine{
+			{ProductID: "p1", Quantity: 1, RefundAmount: usd(1000)},
+			{ProductID: "p3", Quantity: 1, RefundAmount: usd(250)},
+		},
+		RefundTotal: usd(1250),
+	}
+	if err := st.InsertReturn(ctx, r); err != nil {
+		t.Fatalf("insert return: %v", err)
+	}
+	if _, err := st.DecideReturn(ctx, r.ID, "op-1", true, "ok"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+
+	var payload []byte
+	if err := pool.QueryRow(ctx,
+		`SELECT payload FROM outbox WHERE topic='commerce.order.return_approved'`).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	var e orderv1.ReturnApproved
+	if err := proto.Unmarshal(payload, &e); err != nil {
+		t.Fatal(err)
+	}
+
+	got := map[string]int64{}
+	for _, sr := range e.GetShopRefunds() {
+		got[sr.GetShopId()] = sr.GetAmount().GetUnits()*100 + int64(sr.GetAmount().GetNanos()/1e7)
+	}
+	// shop-b sold nothing that was returned, so it must not appear at all —
+	// an entry with any amount would reverse a payout it does not owe.
+	if _, present := got["shop-b"]; present {
+		t.Fatalf("shop-b should be absent from the breakdown: %v", got)
+	}
+	if got["shop-a"] != 1000 {
+		t.Fatalf("shop-a refund = %d, want 1000: %v", got["shop-a"], got)
+	}
+	// The first-party share is reported under "" so the breakdown still sums
+	// to refund_total; the payout service drops it.
+	if got[""] != 250 {
+		t.Fatalf("first-party refund = %d, want 250: %v", got[""], got)
+	}
+
+	var sum int64
+	for _, c := range got {
+		sum += c
+	}
+	if sum != 1250 {
+		t.Fatalf("breakdown sums to %d, want refund_total 1250", sum)
+	}
+}

@@ -20,6 +20,14 @@
 // way. v1 also takes no platform commission: a payout is 100% of the shop's
 // line total for that order; a fee/commission model is a deliberate later
 // refinement (see ADR-043).
+//
+// A payout can be reversed. An approved return (commerce.order.return_approved)
+// carries a per-shop refund breakdown, and the matching shop's payout is
+// reduced by that amount. A reversal against a PENDING payout simply lowers
+// what the settlement sweep will pay; against a PAID payout the money has
+// already left, so PayoutReversed is the instruction to the payout provider to
+// recover it. Reversals accumulate: a payout is REVERSED only once its whole
+// amount has been reversed.
 
 package payoutv1
 

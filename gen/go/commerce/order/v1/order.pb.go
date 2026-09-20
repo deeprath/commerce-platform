@@ -1813,20 +1813,82 @@ func (x *ReturnRequested) GetOccurredAt() string {
 	return ""
 }
 
-type ReturnApproved struct {
+// ShopRefund is one marketplace shop's share of an approved return, summed
+// from the return's lines via each line's owning shop on the order. The order
+// service is the only place that knows the line -> shop mapping, so the
+// breakdown is carried on the event rather than re-derived downstream: a
+// payout is per (order, shop), and commerce.payout.v1 reverses against exactly
+// these amounts. First-party lines are reported under shop_id "" and no payout
+// exists to reverse.
+type ShopRefund struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ReturnId      string                 `protobuf:"bytes,1,opt,name=return_id,json=returnId,proto3" json:"return_id,omitempty"`
-	OrderId       string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
-	OwnerId       string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
-	RefundTotal   *v1.Money              `protobuf:"bytes,4,opt,name=refund_total,json=refundTotal,proto3" json:"refund_total,omitempty"`
-	OccurredAt    string                 `protobuf:"bytes,5,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	ShopId        string                 `protobuf:"bytes,1,opt,name=shop_id,json=shopId,proto3" json:"shop_id,omitempty"`
+	Amount        *v1.Money              `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShopRefund) Reset() {
+	*x = ShopRefund{}
+	mi := &file_commerce_order_v1_order_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShopRefund) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShopRefund) ProtoMessage() {}
+
+func (x *ShopRefund) ProtoReflect() protoreflect.Message {
+	mi := &file_commerce_order_v1_order_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShopRefund.ProtoReflect.Descriptor instead.
+func (*ShopRefund) Descriptor() ([]byte, []int) {
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ShopRefund) GetShopId() string {
+	if x != nil {
+		return x.ShopId
+	}
+	return ""
+}
+
+func (x *ShopRefund) GetAmount() *v1.Money {
+	if x != nil {
+		return x.Amount
+	}
+	return nil
+}
+
+type ReturnApproved struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ReturnId    string                 `protobuf:"bytes,1,opt,name=return_id,json=returnId,proto3" json:"return_id,omitempty"`
+	OrderId     string                 `protobuf:"bytes,2,opt,name=order_id,json=orderId,proto3" json:"order_id,omitempty"`
+	OwnerId     string                 `protobuf:"bytes,3,opt,name=owner_id,json=ownerId,proto3" json:"owner_id,omitempty"`
+	RefundTotal *v1.Money              `protobuf:"bytes,4,opt,name=refund_total,json=refundTotal,proto3" json:"refund_total,omitempty"`
+	OccurredAt  string                 `protobuf:"bytes,5,opt,name=occurred_at,json=occurredAt,proto3" json:"occurred_at,omitempty"`
+	// Per-shop breakdown of refund_total. Sums to refund_total across all
+	// shops, first-party included.
+	ShopRefunds   []*ShopRefund `protobuf:"bytes,6,rep,name=shop_refunds,json=shopRefunds,proto3" json:"shop_refunds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReturnApproved) Reset() {
 	*x = ReturnApproved{}
-	mi := &file_commerce_order_v1_order_proto_msgTypes[26]
+	mi := &file_commerce_order_v1_order_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1838,7 +1900,7 @@ func (x *ReturnApproved) String() string {
 func (*ReturnApproved) ProtoMessage() {}
 
 func (x *ReturnApproved) ProtoReflect() protoreflect.Message {
-	mi := &file_commerce_order_v1_order_proto_msgTypes[26]
+	mi := &file_commerce_order_v1_order_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1851,7 +1913,7 @@ func (x *ReturnApproved) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReturnApproved.ProtoReflect.Descriptor instead.
 func (*ReturnApproved) Descriptor() ([]byte, []int) {
-	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{26}
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ReturnApproved) GetReturnId() string {
@@ -1889,6 +1951,13 @@ func (x *ReturnApproved) GetOccurredAt() string {
 	return ""
 }
 
+func (x *ReturnApproved) GetShopRefunds() []*ShopRefund {
+	if x != nil {
+		return x.ShopRefunds
+	}
+	return nil
+}
+
 type ReturnRejected struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ReturnId      string                 `protobuf:"bytes,1,opt,name=return_id,json=returnId,proto3" json:"return_id,omitempty"`
@@ -1901,7 +1970,7 @@ type ReturnRejected struct {
 
 func (x *ReturnRejected) Reset() {
 	*x = ReturnRejected{}
-	mi := &file_commerce_order_v1_order_proto_msgTypes[27]
+	mi := &file_commerce_order_v1_order_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1913,7 +1982,7 @@ func (x *ReturnRejected) String() string {
 func (*ReturnRejected) ProtoMessage() {}
 
 func (x *ReturnRejected) ProtoReflect() protoreflect.Message {
-	mi := &file_commerce_order_v1_order_proto_msgTypes[27]
+	mi := &file_commerce_order_v1_order_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1926,7 +1995,7 @@ func (x *ReturnRejected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReturnRejected.ProtoReflect.Descriptor instead.
 func (*ReturnRejected) Descriptor() ([]byte, []int) {
-	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{27}
+	return file_commerce_order_v1_order_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ReturnRejected) GetReturnId() string {
@@ -1967,7 +2036,7 @@ type RequestReturnRequest_Line struct {
 
 func (x *RequestReturnRequest_Line) Reset() {
 	*x = RequestReturnRequest_Line{}
-	mi := &file_commerce_order_v1_order_proto_msgTypes[28]
+	mi := &file_commerce_order_v1_order_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1979,7 +2048,7 @@ func (x *RequestReturnRequest_Line) String() string {
 func (*RequestReturnRequest_Line) ProtoMessage() {}
 
 func (x *RequestReturnRequest_Line) ProtoReflect() protoreflect.Message {
-	mi := &file_commerce_order_v1_order_proto_msgTypes[28]
+	mi := &file_commerce_order_v1_order_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2155,14 +2224,19 @@ const file_commerce_order_v1_order_proto_rawDesc = "" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x19\n" +
 	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12\x1f\n" +
 	"\voccurred_at\x18\x04 \x01(\tR\n" +
-	"occurredAt\"\xc2\x01\n" +
+	"occurredAt\"X\n" +
+	"\n" +
+	"ShopRefund\x12\x17\n" +
+	"\ashop_id\x18\x01 \x01(\tR\x06shopId\x121\n" +
+	"\x06amount\x18\x02 \x01(\v2\x19.commerce.common.v1.MoneyR\x06amount\"\x84\x02\n" +
 	"\x0eReturnApproved\x12\x1b\n" +
 	"\treturn_id\x18\x01 \x01(\tR\breturnId\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x19\n" +
 	"\bowner_id\x18\x03 \x01(\tR\aownerId\x12<\n" +
 	"\frefund_total\x18\x04 \x01(\v2\x19.commerce.common.v1.MoneyR\vrefundTotal\x12\x1f\n" +
 	"\voccurred_at\x18\x05 \x01(\tR\n" +
-	"occurredAt\"\x84\x01\n" +
+	"occurredAt\x12@\n" +
+	"\fshop_refunds\x18\x06 \x03(\v2\x1d.commerce.order.v1.ShopRefundR\vshopRefunds\"\x84\x01\n" +
 	"\x0eReturnRejected\x12\x1b\n" +
 	"\treturn_id\x18\x01 \x01(\tR\breturnId\x12\x19\n" +
 	"\border_id\x18\x02 \x01(\tR\aorderId\x12\x19\n" +
@@ -2210,7 +2284,7 @@ func file_commerce_order_v1_order_proto_rawDescGZIP() []byte {
 }
 
 var file_commerce_order_v1_order_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_commerce_order_v1_order_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_commerce_order_v1_order_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_commerce_order_v1_order_proto_goTypes = []any{
 	(OrderStatus)(0),                  // 0: commerce.order.v1.OrderStatus
 	(ReturnStatus)(0),                 // 1: commerce.order.v1.ReturnStatus
@@ -2240,69 +2314,72 @@ var file_commerce_order_v1_order_proto_goTypes = []any{
 	(*ListReturnsResponse)(nil),       // 25: commerce.order.v1.ListReturnsResponse
 	(*DecideReturnRequest)(nil),       // 26: commerce.order.v1.DecideReturnRequest
 	(*ReturnRequested)(nil),           // 27: commerce.order.v1.ReturnRequested
-	(*ReturnApproved)(nil),            // 28: commerce.order.v1.ReturnApproved
-	(*ReturnRejected)(nil),            // 29: commerce.order.v1.ReturnRejected
-	(*RequestReturnRequest_Line)(nil), // 30: commerce.order.v1.RequestReturnRequest.Line
-	(*v1.Money)(nil),                  // 31: commerce.common.v1.Money
-	(*v1.Address)(nil),                // 32: commerce.common.v1.Address
-	(*v1.PageRequest)(nil),            // 33: commerce.common.v1.PageRequest
-	(*v1.PageResponse)(nil),           // 34: commerce.common.v1.PageResponse
+	(*ShopRefund)(nil),                // 28: commerce.order.v1.ShopRefund
+	(*ReturnApproved)(nil),            // 29: commerce.order.v1.ReturnApproved
+	(*ReturnRejected)(nil),            // 30: commerce.order.v1.ReturnRejected
+	(*RequestReturnRequest_Line)(nil), // 31: commerce.order.v1.RequestReturnRequest.Line
+	(*v1.Money)(nil),                  // 32: commerce.common.v1.Money
+	(*v1.Address)(nil),                // 33: commerce.common.v1.Address
+	(*v1.PageRequest)(nil),            // 34: commerce.common.v1.PageRequest
+	(*v1.PageResponse)(nil),           // 35: commerce.common.v1.PageResponse
 }
 var file_commerce_order_v1_order_proto_depIdxs = []int32{
-	31, // 0: commerce.order.v1.OrderLine.unit_price:type_name -> commerce.common.v1.Money
-	31, // 1: commerce.order.v1.OrderLine.line_total:type_name -> commerce.common.v1.Money
+	32, // 0: commerce.order.v1.OrderLine.unit_price:type_name -> commerce.common.v1.Money
+	32, // 1: commerce.order.v1.OrderLine.line_total:type_name -> commerce.common.v1.Money
 	0,  // 2: commerce.order.v1.Order.status:type_name -> commerce.order.v1.OrderStatus
 	2,  // 3: commerce.order.v1.Order.lines:type_name -> commerce.order.v1.OrderLine
-	31, // 4: commerce.order.v1.Order.subtotal:type_name -> commerce.common.v1.Money
-	31, // 5: commerce.order.v1.Order.discount:type_name -> commerce.common.v1.Money
-	31, // 6: commerce.order.v1.Order.tax:type_name -> commerce.common.v1.Money
-	31, // 7: commerce.order.v1.Order.total:type_name -> commerce.common.v1.Money
-	32, // 8: commerce.order.v1.Order.ship_to:type_name -> commerce.common.v1.Address
-	32, // 9: commerce.order.v1.CreateOrderRequest.ship_to:type_name -> commerce.common.v1.Address
+	32, // 4: commerce.order.v1.Order.subtotal:type_name -> commerce.common.v1.Money
+	32, // 5: commerce.order.v1.Order.discount:type_name -> commerce.common.v1.Money
+	32, // 6: commerce.order.v1.Order.tax:type_name -> commerce.common.v1.Money
+	32, // 7: commerce.order.v1.Order.total:type_name -> commerce.common.v1.Money
+	33, // 8: commerce.order.v1.Order.ship_to:type_name -> commerce.common.v1.Address
+	33, // 9: commerce.order.v1.CreateOrderRequest.ship_to:type_name -> commerce.common.v1.Address
 	0,  // 10: commerce.order.v1.CreateOrderResponse.status:type_name -> commerce.order.v1.OrderStatus
-	31, // 11: commerce.order.v1.CreateOrderResponse.total:type_name -> commerce.common.v1.Money
-	33, // 12: commerce.order.v1.ListOrdersRequest.page:type_name -> commerce.common.v1.PageRequest
+	32, // 11: commerce.order.v1.CreateOrderResponse.total:type_name -> commerce.common.v1.Money
+	34, // 12: commerce.order.v1.ListOrdersRequest.page:type_name -> commerce.common.v1.PageRequest
 	3,  // 13: commerce.order.v1.ListOrdersResponse.orders:type_name -> commerce.order.v1.Order
-	34, // 14: commerce.order.v1.ListOrdersResponse.page:type_name -> commerce.common.v1.PageResponse
-	31, // 15: commerce.order.v1.OrderCreated.total:type_name -> commerce.common.v1.Money
-	32, // 16: commerce.order.v1.OrderConfirmed.ship_to:type_name -> commerce.common.v1.Address
+	35, // 14: commerce.order.v1.ListOrdersResponse.page:type_name -> commerce.common.v1.PageResponse
+	32, // 15: commerce.order.v1.OrderCreated.total:type_name -> commerce.common.v1.Money
+	33, // 16: commerce.order.v1.OrderConfirmed.ship_to:type_name -> commerce.common.v1.Address
 	2,  // 17: commerce.order.v1.OrderConfirmed.lines:type_name -> commerce.order.v1.OrderLine
-	31, // 18: commerce.order.v1.ReturnLine.refund_amount:type_name -> commerce.common.v1.Money
+	32, // 18: commerce.order.v1.ReturnLine.refund_amount:type_name -> commerce.common.v1.Money
 	1,  // 19: commerce.order.v1.Return.status:type_name -> commerce.order.v1.ReturnStatus
 	20, // 20: commerce.order.v1.Return.lines:type_name -> commerce.order.v1.ReturnLine
-	31, // 21: commerce.order.v1.Return.refund_total:type_name -> commerce.common.v1.Money
-	30, // 22: commerce.order.v1.RequestReturnRequest.lines:type_name -> commerce.order.v1.RequestReturnRequest.Line
-	33, // 23: commerce.order.v1.ListReturnsRequest.page:type_name -> commerce.common.v1.PageRequest
+	32, // 21: commerce.order.v1.Return.refund_total:type_name -> commerce.common.v1.Money
+	31, // 22: commerce.order.v1.RequestReturnRequest.lines:type_name -> commerce.order.v1.RequestReturnRequest.Line
+	34, // 23: commerce.order.v1.ListReturnsRequest.page:type_name -> commerce.common.v1.PageRequest
 	21, // 24: commerce.order.v1.ListReturnsResponse.returns:type_name -> commerce.order.v1.Return
-	34, // 25: commerce.order.v1.ListReturnsResponse.page:type_name -> commerce.common.v1.PageResponse
-	31, // 26: commerce.order.v1.ReturnApproved.refund_total:type_name -> commerce.common.v1.Money
-	4,  // 27: commerce.order.v1.OrderService.CreateOrder:input_type -> commerce.order.v1.CreateOrderRequest
-	6,  // 28: commerce.order.v1.OrderService.GetOrder:input_type -> commerce.order.v1.GetOrderRequest
-	7,  // 29: commerce.order.v1.OrderService.ListOrders:input_type -> commerce.order.v1.ListOrdersRequest
-	9,  // 30: commerce.order.v1.OrderService.CancelOrder:input_type -> commerce.order.v1.CancelOrderRequest
-	22, // 31: commerce.order.v1.OrderService.RequestReturn:input_type -> commerce.order.v1.RequestReturnRequest
-	23, // 32: commerce.order.v1.OrderService.GetReturn:input_type -> commerce.order.v1.GetReturnRequest
-	24, // 33: commerce.order.v1.OrderService.ListReturns:input_type -> commerce.order.v1.ListReturnsRequest
-	26, // 34: commerce.order.v1.OrderService.DecideReturn:input_type -> commerce.order.v1.DecideReturnRequest
-	10, // 35: commerce.order.v1.OrderService.ShareOrder:input_type -> commerce.order.v1.ShareOrderRequest
-	12, // 36: commerce.order.v1.OrderService.RevokeOrderShare:input_type -> commerce.order.v1.RevokeOrderShareRequest
-	14, // 37: commerce.order.v1.OrderService.ListOrderShares:input_type -> commerce.order.v1.ListOrderSharesRequest
-	5,  // 38: commerce.order.v1.OrderService.CreateOrder:output_type -> commerce.order.v1.CreateOrderResponse
-	3,  // 39: commerce.order.v1.OrderService.GetOrder:output_type -> commerce.order.v1.Order
-	8,  // 40: commerce.order.v1.OrderService.ListOrders:output_type -> commerce.order.v1.ListOrdersResponse
-	3,  // 41: commerce.order.v1.OrderService.CancelOrder:output_type -> commerce.order.v1.Order
-	21, // 42: commerce.order.v1.OrderService.RequestReturn:output_type -> commerce.order.v1.Return
-	21, // 43: commerce.order.v1.OrderService.GetReturn:output_type -> commerce.order.v1.Return
-	25, // 44: commerce.order.v1.OrderService.ListReturns:output_type -> commerce.order.v1.ListReturnsResponse
-	21, // 45: commerce.order.v1.OrderService.DecideReturn:output_type -> commerce.order.v1.Return
-	11, // 46: commerce.order.v1.OrderService.ShareOrder:output_type -> commerce.order.v1.ShareOrderResponse
-	13, // 47: commerce.order.v1.OrderService.RevokeOrderShare:output_type -> commerce.order.v1.RevokeOrderShareResponse
-	15, // 48: commerce.order.v1.OrderService.ListOrderShares:output_type -> commerce.order.v1.ListOrderSharesResponse
-	38, // [38:49] is the sub-list for method output_type
-	27, // [27:38] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	35, // 25: commerce.order.v1.ListReturnsResponse.page:type_name -> commerce.common.v1.PageResponse
+	32, // 26: commerce.order.v1.ShopRefund.amount:type_name -> commerce.common.v1.Money
+	32, // 27: commerce.order.v1.ReturnApproved.refund_total:type_name -> commerce.common.v1.Money
+	28, // 28: commerce.order.v1.ReturnApproved.shop_refunds:type_name -> commerce.order.v1.ShopRefund
+	4,  // 29: commerce.order.v1.OrderService.CreateOrder:input_type -> commerce.order.v1.CreateOrderRequest
+	6,  // 30: commerce.order.v1.OrderService.GetOrder:input_type -> commerce.order.v1.GetOrderRequest
+	7,  // 31: commerce.order.v1.OrderService.ListOrders:input_type -> commerce.order.v1.ListOrdersRequest
+	9,  // 32: commerce.order.v1.OrderService.CancelOrder:input_type -> commerce.order.v1.CancelOrderRequest
+	22, // 33: commerce.order.v1.OrderService.RequestReturn:input_type -> commerce.order.v1.RequestReturnRequest
+	23, // 34: commerce.order.v1.OrderService.GetReturn:input_type -> commerce.order.v1.GetReturnRequest
+	24, // 35: commerce.order.v1.OrderService.ListReturns:input_type -> commerce.order.v1.ListReturnsRequest
+	26, // 36: commerce.order.v1.OrderService.DecideReturn:input_type -> commerce.order.v1.DecideReturnRequest
+	10, // 37: commerce.order.v1.OrderService.ShareOrder:input_type -> commerce.order.v1.ShareOrderRequest
+	12, // 38: commerce.order.v1.OrderService.RevokeOrderShare:input_type -> commerce.order.v1.RevokeOrderShareRequest
+	14, // 39: commerce.order.v1.OrderService.ListOrderShares:input_type -> commerce.order.v1.ListOrderSharesRequest
+	5,  // 40: commerce.order.v1.OrderService.CreateOrder:output_type -> commerce.order.v1.CreateOrderResponse
+	3,  // 41: commerce.order.v1.OrderService.GetOrder:output_type -> commerce.order.v1.Order
+	8,  // 42: commerce.order.v1.OrderService.ListOrders:output_type -> commerce.order.v1.ListOrdersResponse
+	3,  // 43: commerce.order.v1.OrderService.CancelOrder:output_type -> commerce.order.v1.Order
+	21, // 44: commerce.order.v1.OrderService.RequestReturn:output_type -> commerce.order.v1.Return
+	21, // 45: commerce.order.v1.OrderService.GetReturn:output_type -> commerce.order.v1.Return
+	25, // 46: commerce.order.v1.OrderService.ListReturns:output_type -> commerce.order.v1.ListReturnsResponse
+	21, // 47: commerce.order.v1.OrderService.DecideReturn:output_type -> commerce.order.v1.Return
+	11, // 48: commerce.order.v1.OrderService.ShareOrder:output_type -> commerce.order.v1.ShareOrderResponse
+	13, // 49: commerce.order.v1.OrderService.RevokeOrderShare:output_type -> commerce.order.v1.RevokeOrderShareResponse
+	15, // 50: commerce.order.v1.OrderService.ListOrderShares:output_type -> commerce.order.v1.ListOrderSharesResponse
+	40, // [40:51] is the sub-list for method output_type
+	29, // [29:40] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_commerce_order_v1_order_proto_init() }
@@ -2316,7 +2393,7 @@ func file_commerce_order_v1_order_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_commerce_order_v1_order_proto_rawDesc), len(file_commerce_order_v1_order_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   29,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
