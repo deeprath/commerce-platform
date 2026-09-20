@@ -35,9 +35,13 @@ Status: **design**. This document is the blueprint the implementation follows.
 | **Observable** | Every request is traced end to end; every service exports RED metrics; business KPIs are first-class dashboards. |
 | **Operable by two people** | Monorepo, one runtime (Go), one deploy tool (Helm + Argo CD), one dashboard tool (Grafana), GitOps. The one place we spend operational complexity **on purpose** is the service mesh (§8) — it removes more custom code (mTLS, retries, traffic policy, circuit breaking) than it adds, and gives one data plane edge-to-internal. |
 
-**Non-goals for v1:** multi-region active-active, multi-tenant marketplace (single first-party
-seller assumed — the model leaves room for it), and a mobile app (the storefront is
+**Non-goals for v1:** multi-region active-active and a mobile app (the storefront is
 responsive web).
+
+> **Updated 2026-09-20.** "Multi-tenant marketplace (single first-party seller assumed)" was a
+> v1 non-goal here and is no longer one — the multi-seller model shipped in full (§14 Phase 5,
+> ADR-038…044): `seller`, `payout`, per-shop catalog ownership, fulfillment split by shop, and
+> the seller dashboard.
 
 ---
 
@@ -123,6 +127,13 @@ replication (for Debezium CDC) are worth more here.
 Each is a separate Go module, database, Helm subchart, and deployable. Ownership boundaries
 are drawn so that the **critical checkout path** touches as few services as possible.
 
+> ⚠️ **This table is the original design and has drifted.** Two rows describe things that were
+> never built: **`identity`** (login/session brokering lives in
+> `services/bff/internal/auth/broker.go` instead) and, in §7.2, the **`web/login` SPA** (each React
+> app has its own `pages/Login.tsx`). For what is actually deployed, read
+> [`../OVERVIEW.md`](../OVERVIEW.md) — §3 is the real service inventory and §9 lists every known
+> divergence. §14's roadmap checkmarks below are the accurate record of what shipped.
+
 | Service | Owns | Sync API (gRPC) | Publishes (Kafka) | Consumes |
 |---|---|---|---|---|
 | **bff** | Nothing — aggregation + auth cookie + gRPC-Web bridge | — | — | — |
@@ -134,10 +145,11 @@ are drawn so that the **critical checkout path** touches as few services as poss
 | **pricing** | List prices, promotions, coupons, tax rules, price calculation | `QuotePrice`, `ValidateCoupon`, `ApplyPromotions` | `pricing.price_changed`, `pricing.promotion_changed` | — |
 | **order** | Order aggregate, checkout **saga orchestrator**, order state machine, **returns (RMA)**, **delegated sharing (OpenFGA)** | `CreateOrder`, `GetOrder`, `ListOrders`, `CancelOrder`, `RequestReturn`, `GetReturn`, `ListReturns`, `DecideReturn`, `ShareOrder`, `RevokeOrderShare`, `ListOrderShares` | `order.created`, `order.confirmed`, `order.cancelled`, `order.fulfilled`, `order.return_requested`, `order.return_approved`, `order.return_rejected` | `payment.*`, `inventory.*`, `fulfillment.*` |
 | **payment** | Payment intents, PSP integration, **partial/cumulative refunds**, webhook ingestion | `CreatePayment`, `ConfirmPayment`, `Refund`, `Void` | `payment.authorized`, `payment.failed`, `payment.refunded` | `order.created`, `order.cancelled` |
-| **fulfillment** | Shipments (one per order in v1), sandbox carrier, tracking | `GetShipment`, `ListShipments`, `MarkShipped`, `MarkDelivered`, `CancelShipment` | `fulfillment.shipment_created`, `fulfillment.shipped`, `fulfillment.delivered`, `fulfillment.cancelled` | `order.confirmed` |
+| **fulfillment** | Shipments (**one per shop per order** since ADR-042; was one per order), sandbox carrier, tracking | `GetShipment`, `ListShipments`, `MarkShipped`, `MarkDelivered`, `CancelShipment` | `fulfillment.shipment_created`, `fulfillment.shipped`, `fulfillment.delivered`, `fulfillment.cancelled` | `order.confirmed` |
 | **notification** | Transactional notifications: templates, delivery history, sandbox channel | `ListNotifications`, `SendTest` | `notification.sent` | `order.created`, `order.confirmed`, `order.cancelled`, `order.fulfilled`, `fulfillment.shipped`, `fulfillment.delivered` |
 | **review** | Product ratings & reviews, verified-purchase index, moderation | `CreateReview`, `ListReviews`, `GetRatingSummary`, `ModerateReview` | `review.published`, `review.hidden` | `order.confirmed` (verified-purchase index) |
 | **seller** | Marketplace **shop aggregate** + onboarding lifecycle (PENDING_REVIEW → ACTIVE → SUSPENDED) + **shop staff** (OpenFGA `shop#staff`). One shop per user; operator (`shop_admin`) activates / suspends. | `CreateShop`, `GetMyShop`, `GetShop`, `UpdateShop`, `ListShops`, `ActivateShop`, `SuspendShop`, `AddShopStaff`, `RemoveShopStaff`, `ListShopStaff` | `shop.created`, `shop.activated`, `shop.suspended` | — |
+| **payout** | Per-shop payouts — groups a confirmed order's lines by shop into one `Payout` per shop per order, **100% passthrough, no platform commission**; SANDBOX settlement sweep PENDING → PAID. Reads gated by OpenFGA `shop#staff` or the `finance` role. [ADR-043](DECISIONS.md) | `ListPayouts`, `GetPayout`, `MarkPaid` | `payout.created`, `payout.paid` | `order.confirmed` |
 | **analytics** | OLAP sink — flattens domain events into ClickHouse for funnel + revenue analytics, and browser `clickstream.tracked` events into the `clickstream` table. Consumer-only (no gRPC API); two consumer groups. | — (health only) | — | `order.{created,confirmed,cancelled,fulfilled}`, `payment.{authorized,failed,refunded}`, `clickstream.tracked` |
 | **media** | Upload intake (MinIO), image derivatives, AV scan, CDN origin | `CreateUploadURL`, `GetAsset` | `media.asset_ready`, `media.asset_rejected` | — |
 

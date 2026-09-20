@@ -1,8 +1,11 @@
 # Security
 
-Status: **design / not yet executed.** This document is the target security posture and the
-CI scanning policy. Every "current findings" section below is a placeholder until the tool
-has actually run once for real against this repo — see [§7](#7-the-verification-rule).
+Status: **executed, except SonarCloud.** This document is the security posture, the CI scanning
+policy, and the findings log. Gitleaks and Trivy first ran for real on 2026-09-09, the
+authenticated ZAP active scan on 2026-09-10, and their real results have replaced the
+placeholders throughout §5 and §8. **SonarCloud is the one tool that has not yet run** — the job
+is wired and green but self-skips until the `SONAR_TOKEN` repo secret exists (§5.3, §8). The
+verification rule that makes this distinction load-bearing is [§7](#7-the-verification-rule).
 
 Companion to [`ARCHITECTURE.md`](ARCHITECTURE.md). Where they overlap, ARCHITECTURE.md is
 the *what*, this is the *how it's enforced and verified*.

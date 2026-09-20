@@ -150,9 +150,16 @@ Local login: `testuser` / `testuser123` (seeded in the Keycloak realm import).
 | [`docs/SETUP.md`](docs/SETUP.md) | Local dev setup on a new machine, and production deployment — both step by step. |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Threat model, controls, the 4-tool CI scanning policy, and the "did it actually run" verification rule. |
 | [`docs/RUNBOOKS.md`](docs/RUNBOOKS.md) | Disaster-recovery procedures — DB restore / PITR, MinIO, Kafka, outbox re-drive, deploy rollback, region loss — with a drill log. |
+| [`docs/PRD.md`](docs/PRD.md) | Product requirements — personas, capabilities, the authorization order, non-functional targets, explicit non-goals. |
+| [`docs/DESIGN.md`](docs/DESIGN.md) | Client surface — the BFF's REST shape, both SPAs, the auth-cookie flow, and the UI states an asynchronous backend forces. |
+| [`docs/RULES.md`](docs/RULES.md) | Engineering conventions and the hard don'ts — proto, Kafka, authz layering, testing, commits. |
+| [`docs/TASKS.md`](docs/TASKS.md) | Open work, with where to start on each. |
+| [`docs/MEMORY.md`](docs/MEMORY.md) | The traps — symptom-first notes on environment, CI, and bugs that hid behind passing tests. |
 | [`CLAUDE.md`](CLAUDE.md) | Orientation for Claude Code (or a new engineer) working in this repo. |
 
 ## Status
 
-Design phase. The three docs above are complete; service code, Istio/Helm manifests, and CI
-pipelines are the next milestone (see ARCHITECTURE.md §14).
+**Built.** Roadmap phases 0–5 are complete — 16 services, 2 SPAs, the checkout saga, the full
+marketplace/multi-seller model, Istio/Helm manifests, and CI (lint · unit · integration · build ·
+buf-breaking · security) all landed; see [ARCHITECTURE.md §14](docs/ARCHITECTURE.md) for the
+phase-by-phase record and [`docs/TASKS.md`](docs/TASKS.md) for what is still open.

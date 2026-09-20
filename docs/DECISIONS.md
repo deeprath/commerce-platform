@@ -26,6 +26,33 @@ Format per entry: **Status · Context · Decision · Alternatives · Consequence
 | [ADR-015](#adr-015--kubernetes--helm--argo-cd-keda-for-event-driven-scaling) | K8s + Helm + Argo CD, KEDA for event scaling | Accepted |
 | [ADR-016](#adr-016--security-scanning-gitleaks-trivy-sonarcloud-zap) | Security scanning: Gitleaks/Trivy/SonarCloud/ZAP | Accepted |
 | [ADR-017](#adr-017--monorepo-with-gowork--buf) | Monorepo with `go.work` + `buf` | Accepted |
+| [ADR-018](#adr-018--fulfillment-event-carried-shipment--a-sandbox-carrier) | Fulfillment: event-carried shipment + a sandbox carrier | Accepted (Phase 3) · superseded in part by ADR-042 |
+| [ADR-019](#adr-019--notification-event-driven-template-registry-sandbox-channel) | Notification: event-driven, template registry, sandbox channel | Accepted (Phase 3) |
+| [ADR-020](#adr-020--reviews-verified-purchase-index-from-events-published-on-create) | Reviews: verified-purchase index from events, published-on-create | Accepted (Phase 3) |
+| [ADR-021](#adr-021--returns-rma-live-in-the-order-service-partial-refunds-in-payment) | Returns (RMA) live in the order service; partial refunds in payment | Accepted (Phase 3) |
+| [ADR-022](#adr-022--admin-api-operator-mode-on-existing-list-rpcs-not-new-services) | Admin API: operator mode on existing list RPCs, not new services | Accepted (Phase 3) |
+| [ADR-023](#adr-023--admin-console-is-its-own-spa-on-its-own-hostname) | Admin console is its own SPA on its own hostname | Accepted (Phase 3) |
+| [ADR-024](#adr-024--slo-alerting-multi-window-multi-burn-rate-on-a-request-availability-slo) | SLO alerting: multi-window multi-burn-rate on a request-availability SLO | Accepted (Phase 4) |
+| [ADR-025](#adr-025--load-testing-k6-against-the-compose-stack-checkout-funnel-shaped) | Load testing: k6 against the compose stack, checkout-funnel-shaped | Accepted (Phase 2 deliverable, landed in Phase 4) |
+| [ADR-026](#adr-026--dast-authenticated-zap-active-scan-driven-by-a-hand-kept-openapi-file) | DAST: authenticated ZAP active scan driven by a hand-kept OpenAPI file | Accepted (Phase 4) |
+| [ADR-027](#adr-027--waf-coraza-owasp-crs-v4-as-a-proxy-wasm-filter-at-the-edge) | WAF: Coraza (OWASP CRS v4) as a proxy-wasm filter at the edge | Accepted (Phase 4) |
+| [ADR-028](#adr-028--kubernetes-workloads-one-templated-helm-chart-not-a-chart-per-service) | Kubernetes workloads: one templated Helm chart, not a chart per service | Accepted (Phase 4) |
+| [ADR-029](#adr-029--zero-trust-internal-networking-networkpolicy--per-service-authorizationpolicy-generated-from-one-call-graph) | Zero-trust internal networking: NetworkPolicy + per-service AuthorizationPolicy, generated from one call graph | Accepted (Phase 4) |
+| [ADR-030](#adr-030--autoscaling-keda-scaledobjects-one-autoscaling-block-per-service) | Autoscaling: KEDA ScaledObjects, one `autoscaling:` block per service | Accepted (Phase 4) |
+| [ADR-031](#adr-031--progressive-delivery-argo-rollouts-canary-for-the-bff-via-the-gateway-api-plugin) | Progressive delivery: Argo Rollouts canary for the BFF via the Gateway API plugin | Accepted (Phase 4). BFF only; internal gRPC canary deferred |
+| [ADR-032](#adr-032--disaster-recovery-layered-backups-numbered-runbooks-drilled) | Disaster recovery: layered backups, numbered runbooks, drilled | Accepted (Phase 4) |
+| [ADR-033](#adr-033--analytics-a-go-consumer-flattening-domain-events-into-clickhouse) | Analytics: a Go consumer flattening domain events into ClickHouse | Accepted (Phase 5, first cut). Browser clickstream is a follow-on |
+| [ADR-034](#adr-034--browser-clickstream-ingestion-bff-beacon--kafka--the-analytics-service) | Browser clickstream ingestion: BFF beacon → Kafka → the analytics service | Accepted · Phase 5 |
+| [ADR-035](#adr-035--fine-grained-authz-openfga-rebac-additive-first-used-for-order-sharing) | Fine-grained authz: OpenFGA (ReBAC), additive, first used for order sharing | Accepted · Phase 5 |
+| [ADR-036](#adr-036--cdn-for-product-media-a-caching-edge-in-front-of-the-object-store) | CDN for product media: a caching edge in front of the object store | Accepted · Phase 5 |
+| [ADR-037](#adr-037--multi-zone-resilience-zone-spread-pods-zone-aware-pdbs-istio-locality-failover) | Multi-zone resilience: zone-spread pods, zone-aware PDBs, Istio locality failover | Accepted · Phase 5 |
+| [ADR-038](#adr-038--marketplace-slice-1-the-seller-service-shop-aggregate--onboarding) | Marketplace, slice 1: the `seller` service (shop aggregate + onboarding) | Accepted · Phase 5 · first of a multi-slice arc |
+| [ADR-039](#adr-039--marketplace-slice-2-centralize-the-openfga-model-shop-staff-shopstaff) | Marketplace, slice 2: centralize the OpenFGA model; shop staff (`shop#staff`) | Accepted · Phase 5 · builds on ADR-035, ADR-038 |
+| [ADR-040](#adr-040--marketplace-slice-3-per-shop-catalog-ownership-productmanager) | Marketplace, slice 3: per-shop catalog ownership (`product#manager`) | Accepted · Phase 5 · builds on ADR-038, ADR-039 |
+| [ADR-041](#adr-041--marketplace-slice-4-storefront-sold-by) | Marketplace, slice 4: storefront "sold by" | Accepted · Phase 5 · builds on ADR-038, ADR-040 |
+| [ADR-042](#adr-042--marketplace-slice-5-fulfillment-split-by-shop) | Marketplace, slice 5: fulfillment split by shop | Accepted · Phase 5 · builds on ADR-040, ADR-041 |
+| [ADR-043](#adr-043--marketplace-slice-6-per-shop-payouts-payout-service) | Marketplace, slice 6: per-shop payouts (`payout` service) | Accepted · Phase 5 · builds on ADR-040, ADR-042 |
+| [ADR-044](#adr-044--marketplace-slice-7-seller-dashboard) | Marketplace, slice 7: seller dashboard | Accepted · Phase 5 · builds on ADR-038, ADR-040, ADR-043 |
 
 ---
 
@@ -495,7 +522,10 @@ because each service is its own module and its own image.
 
 ## ADR-018 — Fulfillment: event-carried shipment + a sandbox carrier
 
-**Status:** Accepted (Phase 3).
+**Status:** Accepted (Phase 3). **Superseded in part by [ADR-042](#adr-042--marketplace-slice-5-fulfillment-split-by-shop)**
+— the "one shipment per order in v1" decision below no longer holds: a confirmed order's lines are
+grouped by `shop_id` into one shipment per shop (`shipments` unique on `(order_id, shop_id)`). The
+rest of this ADR — event-carried shipment state and the sandbox carrier — stands.
 
 **Context:** A confirmed order had no path to `FULFILLED` — the status existed in the
 `order` aggregate but nothing produced it. Phase 3 adds a `fulfillment` service that turns
