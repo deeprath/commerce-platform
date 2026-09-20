@@ -1,14 +1,34 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import type { Payout } from "../types";
+import type { Money, Payout } from "../types";
 import { formatMoney } from "../types";
 import { SellerNav } from "../components/SellerNav";
 
 const STATUS_LABEL: Record<string, string> = {
   PAYOUT_STATUS_PENDING: "Pending",
   PAYOUT_STATUS_PAID: "Paid",
+  PAYOUT_STATUS_REVERSED: "Reversed",
 };
+
+// Cents held in a Money, which the API sends as units + nanos.
+function cents(m: Money | undefined): number {
+  if (!m) return 0;
+  return Number(m.units ?? 0) * 100 + Math.round((m.nanos ?? 0) / 1e7);
+}
+
+// What a payout actually settles for. A partly reversed payout still reads
+// PENDING, so the status alone would overstate what the shop is owed.
+function net(p: Payout): Money {
+  const gross = cents(p.amount);
+  const reversed = cents(p.reversed_amount);
+  const remaining = gross - reversed;
+  return {
+    currency_code: p.amount?.currency_code ?? "USD",
+    units: String(Math.trunc(remaining / 100)), // int64 is a string in protojson
+    nanos: (remaining % 100) * 1e7,
+  };
+}
 
 export function SellerPayouts({ authed }: Readonly<{ authed: boolean }>) {
   const [payouts, setPayouts] = useState<Payout[] | null>(null);
@@ -42,6 +62,7 @@ export function SellerPayouts({ authed }: Readonly<{ authed: boolean }>) {
           <option value="">All</option>
           <option value="PENDING">Pending</option>
           <option value="PAID">Paid</option>
+          <option value="REVERSED">Reversed</option>
         </select>
       </div>
 
@@ -55,6 +76,8 @@ export function SellerPayouts({ authed }: Readonly<{ authed: boolean }>) {
             <tr>
               <th>Order</th>
               <th>Amount</th>
+              <th>Returned</th>
+              <th>Net</th>
               <th>Status</th>
               <th>Created</th>
               <th>Paid</th>
@@ -67,6 +90,10 @@ export function SellerPayouts({ authed }: Readonly<{ authed: boolean }>) {
                   <code>{p.order_id.slice(0, 8)}</code>
                 </td>
                 <td>{formatMoney(p.amount)}</td>
+                <td className={cents(p.reversed_amount) > 0 ? "reversed" : "muted"}>
+                  {cents(p.reversed_amount) > 0 ? `−${formatMoney(p.reversed_amount)}` : "—"}
+                </td>
+                <td>{formatMoney(net(p))}</td>
                 <td>
                   <span className={`ostat s-${p.status}`}>{STATUS_LABEL[p.status] ?? p.status}</span>
                 </td>

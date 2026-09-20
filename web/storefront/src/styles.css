@@ -417,6 +417,9 @@ code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 0.8
 
 .s-SHOP_STATUS_ACTIVE, .s-PRODUCT_STATUS_ACTIVE, .s-PAYOUT_STATUS_PAID { color: #15803d; }
 .s-SHOP_STATUS_PENDING_REVIEW, .s-PAYOUT_STATUS_PENDING { color: #b45309; }
+.s-PAYOUT_STATUS_REVERSED { color: #b91c1c; }
+/* A reversal is money going back to the shopper — shown as a negative. */
+.seller-table td.reversed { color: #b91c1c; }
 .s-SHOP_STATUS_SUSPENDED { color: #b91c1c; }
 .s-PRODUCT_STATUS_DRAFT { color: var(--muted); }
 .s-PRODUCT_STATUS_ARCHIVED { color: #94a3b8; }

@@ -115,6 +115,13 @@ func toProto(p *domain.Payout) *payoutv1.Payout {
 	if p.PaidAt != nil {
 		out.PaidAt = p.PaidAt.Format(time.RFC3339)
 	}
+	// Always reported, including as a zero amount, so a client can subtract it
+	// from amount without having to special-case an absent field.
+	ru, rn := p.Reversed.UnitsNanos()
+	out.ReversedAmount = &commonv1.Money{CurrencyCode: p.Amount.Currency, Units: ru, Nanos: rn}
+	if p.ReversedAt != nil {
+		out.ReversedAt = p.ReversedAt.Format(time.RFC3339)
+	}
 	return out
 }
 
@@ -124,6 +131,8 @@ func statusToProto(s domain.Status) payoutv1.PayoutStatus {
 		return payoutv1.PayoutStatus_PAYOUT_STATUS_PENDING
 	case domain.StatusPaid:
 		return payoutv1.PayoutStatus_PAYOUT_STATUS_PAID
+	case domain.StatusReversed:
+		return payoutv1.PayoutStatus_PAYOUT_STATUS_REVERSED
 	default:
 		return payoutv1.PayoutStatus_PAYOUT_STATUS_UNSPECIFIED
 	}

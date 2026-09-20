@@ -59,6 +59,10 @@ export interface Payout {
   status: string;
   created_at: string;
   paid_at: string;
+  // Cumulative reversal from approved returns. What is actually settled is
+  // amount - reversed_amount; a partly reversed payout still reads PENDING.
+  reversed_amount?: Money;
+  reversed_at?: string;
 }
 
 export interface PayoutListResponse {

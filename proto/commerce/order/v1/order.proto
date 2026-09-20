@@ -263,12 +263,27 @@ message ReturnRequested {
   string occurred_at = 4;
 }
 
+// ShopRefund is one marketplace shop's share of an approved return, summed
+// from the return's lines via each line's owning shop on the order. The order
+// service is the only place that knows the line -> shop mapping, so the
+// breakdown is carried on the event rather than re-derived downstream: a
+// payout is per (order, shop), and commerce.payout.v1 reverses against exactly
+// these amounts. First-party lines are reported under shop_id "" and no payout
+// exists to reverse.
+message ShopRefund {
+  string shop_id = 1;
+  commerce.common.v1.Money amount = 2;
+}
+
 message ReturnApproved {
   string return_id = 1;
   string order_id = 2;
   string owner_id = 3;
   commerce.common.v1.Money refund_total = 4;
   string occurred_at = 5;
+  // Per-shop breakdown of refund_total. Sums to refund_total across all
+  // shops, first-party included.
+  repeated ShopRefund shop_refunds = 6;
 }
 
 message ReturnRejected {

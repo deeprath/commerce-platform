@@ -312,7 +312,7 @@ services:
 
   payout:
     db: payout
-    kafka: true # order.confirmed in, commerce.payout.* out via the transactional outbox
+    kafka: true # order.confirmed + order.return_approved in, commerce.payout.* out via the transactional outbox
     auth: true
     callers: [bff]
     egressExtra:
@@ -320,7 +320,7 @@ services:
     autoscaling:
       enabled: true
       maxReplicas: 8
-      triggers: [{ type: kafkaLag, group: payout, threshold: 100 }] # order.confirmed backlog
+      triggers: [{ type: kafkaLag, group: payout, threshold: 100 }] # order.confirmed + return_approved backlog
     env:
       GRPC_ADDR: ":50051"
       OPENFGA_API_URL: http://openfga.commerce.svc.cluster.local:8080

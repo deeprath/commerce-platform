@@ -121,8 +121,24 @@ func TestHandler_CreatesPayoutsPerShopAndDedupes(t *testing.T) {
 
 func TestTopics(t *testing.T) {
 	got := consumer.Topics()
-	if len(got) != 1 || got[0] != kafka.Topic("order", "confirmed") {
-		t.Fatalf("Topics() = %v", got)
+	want := []string{
+		kafka.Topic("order", "confirmed"),
+		kafka.Topic("order", "return_approved"),
+	}
+	if len(got) != len(want) {
+		t.Fatalf("Topics() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Topics()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	// payment.refunded is deliberately absent: an approved return already
+	// causes the refund, so consuming both would reverse the same money twice.
+	for _, tp := range got {
+		if tp == kafka.Topic("payment", "refunded") {
+			t.Fatal("payout must not consume payment.refunded — see ADR-045")
+		}
 	}
 }
 
@@ -136,5 +152,99 @@ func TestHandler_IgnoresOtherTopicsAndBadPayloads(t *testing.T) {
 	}
 	if err := h(ctx, &kgo.Record{Topic: kafka.Topic("order", "confirmed"), Value: []byte("not-proto")}); err != nil {
 		t.Fatalf("bad payload should be skipped: %v", err)
+	}
+}
+
+func returnRecord(t *testing.T, offset int64, e *orderv1.ReturnApproved) *kgo.Record {
+	t.Helper()
+	b, err := proto.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &kgo.Record{
+		Topic: kafka.Topic("order", "return_approved"), Partition: 0, Offset: offset, Value: b,
+	}
+}
+
+// End-to-end through the handler: a confirmed order creates the payouts, and
+// an approved return reverses only the shops named in its breakdown.
+func TestHandler_ReturnApprovedReversesTheNamedShopsOnly(t *testing.T) {
+	ctx := context.Background()
+	pool := spinUp(t)
+	st := store.New(pool)
+	h := consumer.Handler(st)
+
+	if err := h(ctx, record(t, 1, &orderv1.OrderConfirmed{
+		OrderId: "order-rev",
+		Lines: []*orderv1.OrderLine{
+			{ProductId: "a1", ShopId: "shop-a", LineTotal: money(30)},
+			{ProductId: "b1", ShopId: "shop-b", LineTotal: money(20)},
+		},
+	})); err != nil {
+		t.Fatalf("confirm: %v", err)
+	}
+
+	if err := h(ctx, returnRecord(t, 1, &orderv1.ReturnApproved{
+		OrderId: "order-rev", ReturnId: "ret-1",
+		RefundTotal: money(12),
+		ShopRefunds: []*orderv1.ShopRefund{{ShopId: "shop-a", Amount: money(12)}},
+	})); err != nil {
+		t.Fatalf("return approved: %v", err)
+	}
+
+	byShop := map[string]int64{}
+	rows, err := pool.Query(ctx,
+		`SELECT shop_id, reversed_cents FROM payouts WHERE order_id='order-rev'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var shop string
+		var reversed int64
+		if err := rows.Scan(&shop, &reversed); err != nil {
+			t.Fatal(err)
+		}
+		byShop[shop] = reversed
+	}
+	if byShop["shop-a"] != 1200 {
+		t.Fatalf("shop-a reversed = %d, want 1200", byShop["shop-a"])
+	}
+	// shop-b was not in the breakdown and must be untouched.
+	if byShop["shop-b"] != 0 {
+		t.Fatalf("shop-b reversed = %d, want 0", byShop["shop-b"])
+	}
+
+	// Redelivery of the same record must not reverse twice.
+	if err := h(ctx, returnRecord(t, 1, &orderv1.ReturnApproved{
+		OrderId: "order-rev", ReturnId: "ret-1",
+		RefundTotal: money(12),
+		ShopRefunds: []*orderv1.ShopRefund{{ShopId: "shop-a", Amount: money(12)}},
+	})); err != nil {
+		t.Fatalf("redelivery: %v", err)
+	}
+	var reversed int64
+	if err := pool.QueryRow(ctx,
+		`SELECT reversed_cents FROM payouts WHERE order_id='order-rev' AND shop_id='shop-a'`).
+		Scan(&reversed); err != nil {
+		t.Fatal(err)
+	}
+	if reversed != 1200 {
+		t.Fatalf("redelivery double-counted: reversed = %d", reversed)
+	}
+}
+
+// An event with no shop breakdown (first-party-only return, or one published
+// before the field existed) must be a clean no-op rather than an error that
+// wedges the consumer group.
+func TestHandler_ReturnApprovedWithNoBreakdownIsANoOp(t *testing.T) {
+	ctx := context.Background()
+	st := store.New(spinUp(t))
+	h := consumer.Handler(st)
+
+	if err := h(ctx, returnRecord(t, 9, &orderv1.ReturnApproved{
+		OrderId: "order-none", ReturnId: "ret-9", RefundTotal: money(5),
+	})); err != nil {
+		t.Fatalf("empty breakdown should be a no-op, got %v", err)
 	}
 }
